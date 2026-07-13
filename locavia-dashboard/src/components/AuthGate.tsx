@@ -56,10 +56,13 @@ export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
     void resolve();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Só o resolve() decide o redirect inicial (após consumir o handoff). Aqui reagimos apenas
+    // a transições explícitas: login (SIGNED_IN) libera; logout (SIGNED_OUT) volta ao hub.
+    // NÃO redirecionar no INITIAL_SESSION null — ele dispara antes do handoff e redirecionava cedo demais.
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (session) setState('authed');
-      else if (!embedded) { setState('redirecting'); redirectToHub(); }
+      else if (event === 'SIGNED_OUT' && !embedded) { setState('redirecting'); redirectToHub(); }
     });
 
     return () => {

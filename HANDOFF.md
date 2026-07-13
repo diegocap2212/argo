@@ -1,54 +1,41 @@
-# HANDOFF — Estado da implementação NEO
+# HANDOFF — NEO (Núcleo de Evolução e Operação)
 
-> Retomada rápida. Plano em `C:\Users\Usuario\.claude\plans\fable-precisamos-sincronizar-essas-frolicking-rainbow.md`.
-> Marca: **NEO — Núcleo de Evolução e Operação** (ex-"ARGO", renomeado por conflito com o carro Fiat).
-> Última atualização: 2026-07-13.
+> Plano: `C:\Users\Usuario\.claude\plans\fable-precisamos-sincronizar-essas-frolicking-rainbow.md`.
+> **Estado: NO AR e validado E2E em produção (2026-07-13).**
 
-## Arquitetura decidida (definitiva)
+## URLs de produção (Vercel, org diegocaporusso-2820s-projects)
+- **Hub:** https://neo-lm.vercel.app (login Magic Link)
+- **Performance Dash:** https://locavia-dashboard.vercel.app
+- **Portal MMA:** https://maturitymodel-ashen.vercel.app
+- Supabase: projeto `cvkcngrmnfwupstyrpsd` (auth + Postgres + allowlist)
 
-- **Login = Magic Link (e-mail OTP) do Supabase, só no hub.** Sem Azure/Microsoft (a conta do Diego não tem privilégio para criar App Registration no tenant LM; optamos por não depender do TI).
-- **Autorização = allowlist `is_neo_allowed()`**: auto-libera `@lmmobilidade.com.br` + exceções na tabela `neo_access` (gerenciadas no dashboard Supabase). Papéis do MMA continuam manuais via `/admin`.
-- **Apps sem login próprio**: sem sessão → redirecionam ao hub. Hub e apps são origens Vercel distintas → hub faz **handoff de sessão via fragment** (`#neo_at`/`#neo_rt`), consumido e limpo no boot das apps.
-- **Iframe MMA→Dash**: sessão repassada por `postMessage` (`neo:session`/`neo:ready`, origin validado).
-- Domínios seguem em `*.vercel.app` (sem domínio único por ora).
+## Arquitetura (definitiva, validada)
+- **Login = Magic Link (e-mail OTP), só no hub.** `flowType: 'implicit'` no hub (PKCE quebrava cross-browser). Sem Azure.
+- **Autorização = allowlist Postgres**: `is_neo_allowed()` (pós-login, lê JWT) e `is_neo_email_allowed(email)` (pré-envio no hub). Liberam `@lmmobilidade.com.br` OU exceção aprovada em `public.neo_access`. Migração: `maturitymodel/supabase/migrations/20260713120000_neo_access_allowlist.sql` (JÁ APLICADA no banco via Management API).
+- **Apps sem login próprio**: sem sessão → redirecionam ao hub. Handoff de sessão cross-origin via **fragment** (`#neo_at`/`#neo_rt`) que a app consome com `setSession()` e limpa. Iframe MMA→Dash via **postMessage** (`neo:session`/`neo:ready`).
+- **Backend Dash** (`api/*`): valida Bearer + allowlist via RPC `is_neo_allowed` (aceita cookie legado na transição — a remover).
+- Projetos Vercel do Dash e Maturity foram **desconectados do Git** (deploy via CLI `vercel --prod`); o monorepo NÃO está no GitHub. Push nos repos antigos não afeta produção.
 
-## ✅ FEITO (working tree; buildado, commit pendente após o rebrand)
+## E-mail (SMTP) — ESTADO ATUAL
+- Configurado no Supabase: **SMTP do Gmail** (`smtp.gmail.com:587`, user `diegocaporusso@gmail.com`, senha de app). `rate_limit_email_sent=100`.
+- Envia para qualquer `@lmmobilidade` (validado — Diego recebeu o link e logou). **Cai no spam** porque o remetente é gmail (SPF/DKIM não são do domínio).
+- **Resend** também está configurado como domínio pendente de verificação: domínio `lmmobilidade.com.br` registrado (id `59139aa3-a009-499d-b34e-1471783e5a33`), aguardando os 3 registros DNS (TXT `resend._domainkey`, MX `send`, TXT `send` SPF). Quando o DNS for adicionado e verificado, trocar o SMTP de volta para o Resend (`smtp.resend.com:465`, user `resend`, pass = API key) e remetente `neo@lmmobilidade.com.br` → sai do spam.
 
-Commits existentes: `6cf820c` (monorepo+limpeza), `89c5afa` (hub inicial+workflow).
+## ✅ E2E validado (Playwright, produção)
+Login (magic link implicit) → gate allowlist (@lmmobilidade) → portas → Dash logado com dados (`/api/data` 200) → Maturity logado (squad/admin) → iframe de métricas no Maturity buscou `/api/data` 200 → botões "Trocar aplicação/Voltar ao NEO". Fix aplicados nesta sessão: `[hidden]!important` (portas não vazam sem login), `flowType implicit`, e AuthGate do Dash não redireciona no `INITIAL_SESSION null` (só `SIGNED_OUT`).
 
-1. **Limpeza + monorepo + README raiz** (NEO, arquitetura completa).
-2. **Migração Supabase** `maturitymodel/supabase/migrations/20260713120000_neo_access_allowlist.sql`: tabela `neo_access` + função `is_neo_allowed()` (SECURITY DEFINER). **Ainda não aplicada no Supabase.**
-3. **Hub** (`neo-hub/`): app Vite, identidade preservada, login Magic Link, gate de allowlist, handoff de sessão nas doors. Tagline = "Núcleo de Evolução e Operação". Build ✓.
-4. **Locavia (Performance Dash)**:
-   - `api/data.ts`, `api/refresh.ts`, `api/comments.ts`: `isAuthed` aceita cookie legado OU `verifyBearer` (RPC `is_neo_allowed`). Envs novas: `SUPABASE_URL`, `SUPABASE_ANON_KEY`.
-   - `api/login.ts` e `src/components/LoginScreen.tsx` DELETADOS.
-   - `src/lib/supabase.ts` novo; `authService.ts` reescrito (getSession/authHeaders/hasSession/logout/consumeNeoSession/redirectToHub).
-   - `AuthGate.tsx`: sem sessão→hub; embed recebe sessão via postMessage. `dataService.ts` usa Bearer. `AppShell.tsx` logout novo. `vite.config.ts` sem mock de /api/login. `tsc -b` ✓.
-5. **Maturity (Portal MMA)**:
-   - `useAuth.tsx`: sem `signInWithPassword`; expõe `allowed`, `signOut`→hub, `redirectToHub`, `consumeNeoSession` no boot.
-   - `ProtectedRoute.tsx`: sem sessão→hub; sem allowlist→signOut; interstitials.
-   - `App.tsx`: rotas `/login` e `/reset-password` + `AuthRecoveryGate` removidas (legadas → `/`).
-   - `Login.tsx` e `ResetPassword.tsx` DELETADOS. `Metricas.tsx`: envia sessão ao iframe via postMessage. `tsc --noEmit` ✓.
-6. **Rebrand ARGO→NEO** em todo o código/docs (preservando "cargo"/"encargo" no conteúdo do MMA). Pasta `argo-hub`→`neo-hub`.
+## ⏳ Pendências (não bloqueiam o uso)
+1. **Produção do e-mail (sair do spam):** adicionar os 3 registros DNS do Resend no DNS de `lmmobilidade.com.br`; depois `POST https://api.resend.com/domains/59139aa3.../verify` e reconfigurar o SMTP para Resend + remetente `neo@lmmobilidade.com.br`.
+2. **Segurança — ROTACIONAR (passaram pelo chat):** senha de app do Gmail, API key do Resend (`re_...`), token de management do Supabase (`sbp_...`). Ao trocar a key do Resend/Gmail, reconfigurar `smtp_pass` no Supabase (via Management API ou dashboard).
+3. **Papéis do MMA:** atribuídos manualmente em `/admin` (AdminMMA, por e-mail). Usuário novo @lmmobilidade sem squad vê onboarding.
+4. **Fase 3c (limpeza):** remover ramo cookie legado das 3 functions do Dash + envs `DASHBOARD_PASSWORD`/`SESSION_SECRET`; atualizar `openapi.ts`.
 
-## ⏳ FALTA (ordem de deploy)
-
-**Ferramentas prontas:** Vercel CLI 54.14.0 logado como `diegocapstealth` (org `diegocaporusso-2820s-projects`); `gh` logado como `diegocap2212`. Projetos Vercel atuais: `locavia-dashboard`, `maturitymodel`. Hub ainda não existe.
-
-1. **Commit** de todo o working tree.
-2. **Supabase**: aplicar a migração `neo_access` (dashboard SQL editor OU `supabase db push`, projeto `cvkcngrmnfwupstyrpsd`). Auth → URL Configuration: additional_redirect_urls += URL do hub (`/**`). Confirmar Magic Link (e-mail) habilitado.
-3. **GitHub**: criar repo `diegocap2212/neo` e push da `main`.
-4. **Vercel**:
-   - Criar projeto do hub (nome a confirmar: "neo"?), Root Directory `neo-hub`, envs `VITE_SUPABASE_*`. Anotar URL.
-   - Reapontar `locavia-dashboard` e `maturitymodel` para o repo `neo`. Envs novas: locavia (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VITE_SUPABASE_*`, `VITE_HUB_URL`, `GITHUB_REPO=diegocap2212/neo`), maturity (`VITE_HUB_URL`).
-   - Ajustar `HUB_URL` default (hoje `https://neo-lm.vercel.app`) em `locavia-dashboard/src/services/authService.ts` e `maturitymodel/src/hooks/useAuth.tsx` para a URL real, ou setar `VITE_HUB_URL`.
-   - GitHub Actions secrets (JIRA_*, BLOB_READ_WRITE_TOKEN) no repo novo.
-5. **E2E**: hub → magic link (@lmmobilidade) → doors → Dash (Bearer) → Maturity → /s/:id/metricas (iframe) → logout. E-mail fora do domínio: bloqueado.
-6. **Pós-validação (Fase 3c)**: remover ramo cookie das 3 functions + envs `DASHBOARD_PASSWORD`/`SESSION_SECRET`; atualizar `openapi.ts`, `CLAUDE.md`, `ARCHITECTURE.md`. Apagar este HANDOFF.
+## Contas/tokens (na máquina)
+- Vercel CLI logado (`diegocapstealth`). `gh` logado (`diegocap2212`). Supabase CLI logado. Anon key do Supabase em `/tmp/neo_anon_key.txt`.
+- Envs de produção já setadas nos 3 projetos Vercel (VITE_SUPABASE_*, SUPABASE_URL/ANON_KEY, VITE_HUB_URL=neo-lm.vercel.app).
 
 ## Pegadinhas
-- Aplicar a migração `neo_access` ANTES de setar `SUPABASE_URL`/`SUPABASE_ANON_KEY` no locavia (senão RPC 404 → gate nega). O cookie legado cobre a transição.
-- `supabase config push` reseta `[auth]` (aviso em `maturitymodel/supabase/config.toml`).
-- Redis (Upstash) permanece necessário para `api/comments.ts`.
-- `verifyBearer`/`isAuthed` é duplicado inline nas 3 functions de propósito (Vercel não bundleia imports entre functions).
-- Logo NEO oficial (imagem do Diego): o hub usa hoje símbolo abstrato + texto "NEO". Para o logo oficial, salvar PNG/SVG em `neo-hub/public/` e trocar no `index.html`.
+- `supabase config push` reseta `[auth]` (aviso em `config.toml`) — a config SMTP/allowlist foi feita via Management API, não via config.toml.
+- Redis (Upstash) ainda é usado por `api/comments.ts`.
+- `verifyBearer`/`isAuthed` duplicado inline nas 3 functions de propósito (Vercel não bundleia imports entre functions).
+- Handoff de sessão: quem PEDE o magic link e quem CLICA no link devem ser o mesmo dispositivo só no fluxo implicit? Não — implicit resolve cross-browser. Mas link ANTIGO (gerado em PKCE) não funciona; sempre pedir link novo.
