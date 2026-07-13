@@ -17,11 +17,6 @@ export default defineConfig(({ mode }) => {
         configureServer(server) {
           if (apiTarget) return
           server.middlewares.use((req, res, next) => {
-            if (req.method === 'GET' && req.url === '/api/login') {
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ authenticated: true, configured: false }))
-              return
-            }
             if (req.method === 'GET' && req.url === '/api/data') {
               res.setHeader('Content-Type', 'application/json')
               res.end(JSON.stringify({ items: localDataset, syncedAt: localMeta?.syncedAt ?? null }))

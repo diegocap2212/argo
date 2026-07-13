@@ -73,7 +73,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => { alive = false; };
   }, [embedded]);
 
-  const handleLogout = async () => { await logout(); window.location.reload(); };
+  const handleLogout = async () => { await logout(); };
 
   if (embedded) {
     return <div data-embed="maturity" style={{ minHeight: '100vh', background: 'var(--page)', fontFamily: 'Inter, system-ui, sans-serif' }}>{children}</div>;

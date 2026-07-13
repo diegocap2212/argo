@@ -9,7 +9,7 @@
 //
 // repo e workflow são fixos (não são segredos). GITHUB_REPO pode ser sobrescrito por env.
 
-const GITHUB_REPO = process.env.GITHUB_REPO || 'diegocap2212/argo';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'diegocap2212/neo';
 const GITHUB_WORKFLOW = 'hourly-sync.yml';
 
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).

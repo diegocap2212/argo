@@ -2,13 +2,34 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
+// Hub NEO: página de login única (Magic Link). O Portal MMA não tem tela de login própria.
+const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || "https://neo-hub.vercel.app";
+
+/**
+ * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.
+ * Hub e Portal são origens distintas (localStorage não é compartilhado). Limpa o fragment depois.
+ */
+async function consumeNeoSession(): Promise<void> {
+  const hash = window.location.hash;
+  if (!hash.includes("neo_at=")) return;
+  const p = new URLSearchParams(hash.slice(1));
+  const access_token = p.get("neo_at");
+  const refresh_token = p.get("neo_rt");
+  if (access_token && refresh_token) {
+    await supabase.auth.setSession({ access_token, refresh_token });
+  }
+  history.replaceState(null, "", window.location.pathname + window.location.search);
+}
+
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   loading: boolean;
   isAnonymous: boolean;
-  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  /** Autorizado pela allowlist do NEO (@lmmobilidade.com.br ou exceção aprovada). */
+  allowed: boolean;
   signOut: () => Promise<void>;
+  redirectToHub: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -16,27 +37,41 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    let mounted = true;
+
+    // Domínio corporativo entra direto; exceções são resolvidas pelo RPC is_neo_allowed.
+    const checkAllowed = async (s: Session | null) => {
+      if (!s) { if (mounted) setAllowed(false); return; }
+      const email = (s.user.email ?? "").toLowerCase();
+      if (email.endsWith("@lmmobilidade.com.br")) { if (mounted) setAllowed(true); return; }
+      const { data, error } = await supabase.rpc("is_neo_allowed");
+      if (mounted) setAllowed(!error && data === true);
+    };
+
+    // Aplica a sessão vinda do hub (fragment) antes de ler a sessão persistida.
+    consumeNeoSession().then(() => supabase.auth.getSession()).then(async ({ data }) => {
+      if (!mounted) return;
       setSession(data.session);
-      setLoading(false);
+      await checkAllowed(data.session);
+      if (mounted) setLoading(false);
     });
 
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, newSession) => {
       setSession(newSession);
+      void checkAllowed(newSession);
     });
 
-    return () => subscription.subscription.unsubscribe();
+    return () => { mounted = false; subscription.subscription.unsubscribe(); };
   }, []);
 
-  const signInWithPassword = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error: error?.message ?? null };
-  };
+  const redirectToHub = () => { window.location.href = HUB_URL; };
 
   const signOut = async () => {
     await supabase.auth.signOut();
+    redirectToHub();
   };
 
   const user = session?.user ?? null;
@@ -48,8 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         session,
         loading,
         isAnonymous: user?.is_anonymous ?? false,
-        signInWithPassword,
+        allowed,
         signOut,
+        redirectToHub,
       }}
     >
       {children}

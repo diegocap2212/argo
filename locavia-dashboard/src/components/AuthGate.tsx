@@ -1,37 +1,81 @@
 import React, { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { checkSession } from '../services/authService';
-import { LoginScreen } from './LoginScreen';
+import { supabase, supabaseConfigured } from '../lib/supabase';
+import { consumeNeoSession, hasSession, redirectToHub } from '../services/authService';
 
-type GateState = 'loading' | 'authed' | 'login';
+type GateState = 'loading' | 'authed' | 'redirecting';
+
+// Origem confiável do Portal MMA, que embute o Dash em iframe e repassa a sessão via postMessage.
+const MMA_ORIGIN = (import.meta.env.VITE_MMA_ORIGIN as string | undefined) || 'https://maturitymodel-ashen.vercel.app';
+
+const isEmbedded = () => new URLSearchParams(window.location.search).get('embed') === '1';
 
 /**
- * Envolve o app: checa a sessão e exibe a tela de login quando o gate está ativo
- * (envs SESSION_SECRET/DASHBOARD_PASSWORD setadas na Vercel) e o usuário não está autenticado.
- * Em dev/local (sem o endpoint ou gate desativado), libera direto.
+ * A autenticação do NEO acontece no hub. Este gate:
+ *  - libera direto em dev/local (sem Supabase configurado);
+ *  - reusa a sessão do Supabase (localStorage) quando existe;
+ *  - sem sessão e fora de iframe → manda ao hub (não há tela de login própria);
+ *  - dentro de iframe (?embed=1, Portal MMA) → recebe a sessão do pai via postMessage.
  */
 export const AuthGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<GateState>('loading');
 
   useEffect(() => {
     let mounted = true;
-    checkSession().then(({ authenticated }) => {
-      if (mounted) setState(authenticated ? 'authed' : 'login');
+    const embedded = isEmbedded();
+
+    // No modo embed, o Portal MMA envia a sessão do usuário. Aplicamos com setSession.
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== MMA_ORIGIN) return;
+      const data = event.data;
+      if (data?.type !== 'neo:session' || !data.access_token || !data.refresh_token) return;
+      void supabase.auth.setSession({
+        access_token: data.access_token,
+        refresh_token: data.refresh_token,
+      });
+    };
+    if (embedded && supabaseConfigured) {
+      window.addEventListener('message', onMessage);
+      // Avisa o pai que o iframe está pronto para receber a sessão.
+      window.parent?.postMessage({ type: 'neo:ready' }, MMA_ORIGIN);
+    }
+
+    const resolve = async () => {
+      // Aplica a sessão vinda do hub (fragment), se houver, antes de decidir.
+      await consumeNeoSession();
+      if (await hasSession()) {
+        if (mounted) setState('authed');
+        return;
+      }
+      // Sem sessão: no iframe aguardamos o postMessage; fora dele, vamos ao hub.
+      if (!embedded) {
+        if (mounted) setState('redirecting');
+        redirectToHub();
+      }
+    };
+
+    void resolve();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      if (session) setState('authed');
+      else if (!embedded) { setState('redirecting'); redirectToHub(); }
     });
-    return () => { mounted = false; };
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('message', onMessage);
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
-  if (state === 'loading') {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--page)' }}>
-        <Loader2 className="w-10 h-10 animate-spin" style={{ color: 'var(--accent-strong)' }} />
-      </div>
-    );
-  }
+  if (state === 'authed') return <>{children}</>;
 
-  if (state === 'login') {
-    return <LoginScreen onSuccess={() => setState('authed')} />;
-  }
-
-  return <>{children}</>;
+  const message = state === 'redirecting' ? 'Redirecionando para o NEO…' : 'Autenticando…';
+  return (
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: 'var(--page)' }}>
+      <Loader2 className="w-10 h-10 animate-spin" style={{ color: 'var(--accent-strong)' }} />
+      <span style={{ color: 'var(--muted)', fontSize: 13, letterSpacing: '0.02em' }}>{message}</span>
+    </div>
+  );
 };

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { ExternalLink } from "lucide-react";
 import { useTeamAnchors, useSyncAnchors } from "@/hooks/useAnchors";
@@ -8,6 +8,7 @@ import { cn, errMessage } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import type { Verdict } from "@/types/mma";
 import { useTeamDashboardTarget } from "@/hooks/useTorreData";
+import { useAuth } from "@/hooks/useAuth";
 
 const LOCAVIA_BASE_URL = "https://locavia-dashboard.vercel.app";
 
@@ -31,10 +32,32 @@ export default function Metricas() {
   const { data: dimensions = [] } = useDimensions();
   const { data: dashboardTarget, isLoading: dashboardLoading } = useTeamDashboardTarget(teamId);
   const sync = useSyncAnchors(teamId!);
+  const { session } = useAuth();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const locaviaUrl = dashboardTarget?.locaviaTeamId
     ? `${LOCAVIA_BASE_URL}/time/${encodeURIComponent(dashboardTarget.locaviaTeamId)}?embed=1`
     : null;
+
+  // O Dash é cross-origin e não roda OAuth em iframe: repassamos a sessão do NEO por postMessage.
+  const postSession = useCallback(() => {
+    const w = iframeRef.current?.contentWindow;
+    if (!w || !session) return;
+    w.postMessage(
+      { type: "neo:session", access_token: session.access_token, refresh_token: session.refresh_token },
+      LOCAVIA_BASE_URL,
+    );
+  }, [session]);
+
+  // O iframe avisa "neo:ready" quando monta; respondemos com a sessão. Reenvia se o token mudar.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.origin === LOCAVIA_BASE_URL && e.data?.type === "neo:ready") postSession();
+    };
+    window.addEventListener("message", onMessage);
+    postSession();
+    return () => window.removeEventListener("message", onMessage);
+  }, [postSession]);
 
   const dimName = useMemo(() => new Map(dimensions.map((d) => [d.id, d.name])), [dimensions]);
 
@@ -67,8 +90,10 @@ export default function Metricas() {
           <div className="p-8 text-center text-sm text-venice-textTertiary">Localizando dashboard do squad…</div>
         ) : locaviaUrl ? (
           <iframe
+            ref={iframeRef}
             title={`Dashboard Locavia · ${dashboardTarget?.name ?? "Squad"}`}
             src={locaviaUrl}
+            onLoad={postSession}
             className="h-[920px] w-full border-0 bg-background"
             loading="lazy"
             referrerPolicy="strict-origin-when-cross-origin"

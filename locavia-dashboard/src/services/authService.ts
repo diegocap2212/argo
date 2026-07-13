@@ -1,42 +1,53 @@
-export interface SessionState {
-  authenticated: boolean;
-  configured: boolean;
-}
+import { supabase, supabaseConfigured } from '../lib/supabase';
+
+// URL do hub NEO (página de login única). Configurável por env; default = projeto Vercel do hub.
+const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || 'https://neo-hub.vercel.app';
 
 /**
- * Consulta a sessão. Se o endpoint não existe (ex.: dev local sem serverless) ou o gate
- * não está configurado, consideramos "autenticado" para não travar o desenvolvimento.
+ * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.
+ * Necessário porque hub e Dash são origens distintas (localStorage não é compartilhado).
+ * Limpa o fragment em seguida para não deixar tokens na barra de endereços/histórico.
  */
-export async function checkSession(): Promise<SessionState> {
-  try {
-    const res = await fetch('/api/login', { method: 'GET' });
-    if (!res.ok) return { authenticated: true, configured: false };
-    const data = await res.json().catch(() => ({}));
-    return { authenticated: data?.authenticated ?? true, configured: data?.configured ?? false };
-  } catch {
-    return { authenticated: true, configured: false };
+export async function consumeNeoSession(): Promise<void> {
+  if (!supabaseConfigured) return;
+  const hash = window.location.hash;
+  if (!hash.includes('neo_at=')) return;
+  const p = new URLSearchParams(hash.slice(1));
+  const access_token = p.get('neo_at');
+  const refresh_token = p.get('neo_rt');
+  if (access_token && refresh_token) {
+    await supabase.auth.setSession({ access_token, refresh_token });
   }
+  history.replaceState(null, '', window.location.pathname + window.location.search);
 }
 
-export async function login(password: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const res = await fetch('/api/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) return { ok: false, error: data?.error || `HTTP ${res.status}` };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
-  }
+/** Access token da sessão Supabase, para enviar como Bearer às functions autenticadas. */
+export async function getAccessToken(): Promise<string | null> {
+  if (!supabaseConfigured) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
 }
 
+/** Header de autorização para o fetch dos endpoints /api/* (vazio em dev sem Supabase). */
+export async function authHeaders(): Promise<Record<string, string>> {
+  const token = await getAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/** Há sessão válida? Em dev/local (sem Supabase) libera direto — paridade com o gate antigo. */
+export async function hasSession(): Promise<boolean> {
+  if (!supabaseConfigured) return true;
+  const { data } = await supabase.auth.getSession();
+  return !!data.session;
+}
+
+/** Manda o usuário ao hub para autenticar (o Dash não tem tela de login própria). */
+export function redirectToHub(): void {
+  window.location.href = HUB_URL;
+}
+
+/** Encerra a sessão e volta ao hub. */
 export async function logout(): Promise<void> {
-  try {
-    await fetch('/api/login', { method: 'DELETE' });
-  } catch {
-    /* ignore */
-  }
+  if (supabaseConfigured) await supabase.auth.signOut();
+  redirectToHub();
 }

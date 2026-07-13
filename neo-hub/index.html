@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="ARGO — Performance Dash e Maturity Model em uma única jornada.">
-  <title>ARGO | Venice & LM</title>
+  <meta name="description" content="NEO — Performance Dash e Maturity Model em uma única jornada.">
+  <title>NEO | Venice & LM</title>
   <style>
     *{box-sizing:border-box}
     :root{--ink:#161915;--green:#2be86b;--paper:#f2f4ef;--muted:#707771;--line:#d9dfd8}
@@ -19,12 +19,12 @@
     .partnership{display:flex;align-items:center;gap:16px;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:2.4px;white-space:nowrap}
     .partnership:before,.partnership:after{content:"";width:48px;height:1px;background:#cfd5ce}
     .hero{text-align:center;padding:54px 24px 42px}
-    .argo-lockup{display:inline-flex;align-items:center;gap:18px;color:var(--ink)}
-    .argo-mark{position:relative;width:72px;height:66px;display:block;clip-path:polygon(22% 0,78% 0,100% 100%,72% 100%,62% 72%,38% 72%,28% 100%,0 100%)}
-    .argo-mark:before{content:"";position:absolute;inset:0;background:var(--ink)}
-    .argo-mark:after{content:"";position:absolute;left:50%;bottom:0;width:24px;height:29px;background:var(--green);clip-path:polygon(50% 0,100% 100%,0 100%);transform:translateX(-50%)}
-    .argo-word{font-size:66px;line-height:1;font-weight:800;letter-spacing:4px}
-    .argo-tagline{display:block;margin-top:16px;color:#666e67;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:3.2px}
+    .neo-lockup{display:inline-flex;align-items:center;gap:18px;color:var(--ink)}
+    .neo-mark{position:relative;width:72px;height:66px;display:block;clip-path:polygon(22% 0,78% 0,100% 100%,72% 100%,62% 72%,38% 72%,28% 100%,0 100%)}
+    .neo-mark:before{content:"";position:absolute;inset:0;background:var(--ink)}
+    .neo-mark:after{content:"";position:absolute;left:50%;bottom:0;width:24px;height:29px;background:var(--green);clip-path:polygon(50% 0,100% 100%,0 100%);transform:translateX(-50%)}
+    .neo-word{font-size:66px;line-height:1;font-weight:800;letter-spacing:4px}
+    .neo-tagline{display:block;margin-top:16px;color:#666e67;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:3.2px}
     .hero h1{font:400 clamp(46px,5.4vw,76px)/.96 Georgia,serif;letter-spacing:-3.5px;margin:42px 0 20px}
     .hero h1 em{font-weight:400;color:#4d554e}
     .hero>p{max-width:650px;margin:auto;color:#737a74;line-height:1.65;font-size:15px}
@@ -65,8 +65,17 @@
     .ms-btn:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(25,32,27,.22)}
     .ms-btn:focus-visible{outline:3px solid var(--green);outline-offset:4px}
     .ms-btn:disabled{opacity:.55;cursor:wait;transform:none}
+    .otp-form{display:flex;flex-direction:column;gap:12px;max-width:340px;margin:0 auto}
+    .otp-input{width:100%;background:#fff;border:1px solid var(--line);border-radius:99px;padding:15px 22px;font:400 14px Inter,Arial,sans-serif;color:var(--ink);text-align:center;transition:border-color .2s ease}
+    .otp-input::placeholder{color:#a7ada6}
+    .otp-input:focus{outline:none;border-color:var(--ink)}
+    .otp-form .ms-btn{justify-content:center;width:100%}
     .gate-hint{display:block;margin-top:18px;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
     .gate-status{margin:22px auto 0;max-width:380px;color:#b23b2e;font-size:12px;line-height:1.5}
+    .gate-sent{margin:8px auto 0;max-width:360px;color:#3d6b4a;font-size:13px;line-height:1.6}
+    .gate-sent strong{color:var(--ink)}
+    .gate-resend{margin-top:16px;background:none;border:0;padding:0;color:#666e67;font:600 9px Inter,Arial,sans-serif;text-transform:uppercase;letter-spacing:1.4px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+    .gate-resend:hover{color:var(--ink)}
     .gate-glow{position:absolute;width:260px;height:260px;border-radius:50%;background:var(--green);filter:blur(90px);opacity:.14;left:-90px;bottom:-120px;pointer-events:none}
     /* ── Sessão ativa ── */
     .session-bar{margin:-14px auto 34px;display:flex;align-items:center;gap:14px;color:#666e67;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px}
@@ -75,7 +84,7 @@
     .btn-logout:hover{color:var(--ink)}
     @media(max-width:760px){
       .brandbar{min-height:96px;padding:18px 24px}.brand{width:110px}.venice{width:95px}.lm{width:70px}.partnership{font-size:0;gap:8px}.partnership:before,.partnership:after{width:14px}.partnership:after{display:none}.partnership:before{content:"×";width:auto;height:auto;background:none;font-size:14px;color:#909790}
-      .hero{padding-top:44px}.argo-lockup{gap:12px}.argo-mark{width:48px;height:44px}.argo-mark:after{width:16px;height:20px}.argo-word{font-size:44px;letter-spacing:2px}.argo-tagline{letter-spacing:2.2px}.hero h1{margin-top:34px;letter-spacing:-2.5px}
+      .hero{padding-top:44px}.neo-lockup{gap:12px}.neo-mark{width:48px;height:44px}.neo-mark:after{width:16px;height:20px}.neo-word{font-size:44px;letter-spacing:2px}.neo-tagline{letter-spacing:2.2px}.hero h1{margin-top:34px;letter-spacing:-2.5px}
       .doors{grid-template-columns:1fr;width:calc(100% - 32px)}.door{min-height:420px;padding:28px}.footer{gap:20px;line-height:1.5;flex-direction:column}
       .gate{width:calc(100% - 32px)}.gate-card{padding:36px 26px}
     }
@@ -89,26 +98,35 @@
       <div class="brand"><img class="lm" src="/lm-mobilidade.png" alt="LM Mobilidade"></div>
     </header>
     <section class="hero">
-      <div class="argo-lockup" aria-label="ARGO"><span class="argo-mark" aria-hidden="true"></span><span class="argo-word">ARGO</span></div>
-      <span class="argo-tagline">Performance para agir. Maturidade para evoluir.</span>
+      <div class="neo-lockup" aria-label="NEO"><span class="neo-mark" aria-hidden="true"></span><span class="neo-word">NEO</span></div>
+      <span class="neo-tagline">Núcleo de Evolução e Operação</span>
       <h1>Escolha onde<br><em>quer evoluir.</em></h1>
       <p>Um único ponto de partida para acompanhar a performance da operação e desenvolver a maturidade dos nossos times.</p>
     </section>
 
     <div class="auth-loading" id="auth-loading" role="status">Verificando acesso…</div>
 
-    <section class="gate" id="gate" hidden aria-label="Acesso ARGO">
+    <section class="gate" id="gate" hidden aria-label="Acesso NEO">
       <div class="gate-card">
         <div class="gate-glow" aria-hidden="true"></div>
         <span class="gate-kicker">Acesso restrito</span>
         <h2>Entre para<br><em>continuar.</em></h2>
-        <p>O ARGO é exclusivo para o time LM Mobilidade. Autentique-se com sua conta corporativa para acessar as aplicações.</p>
-        <button class="ms-btn" id="btn-microsoft" type="button">
-          <svg width="15" height="15" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
-          Entrar com Microsoft
-        </button>
-        <span class="gate-hint">Use sua conta @lmmobilidade.com.br</span>
-        <p class="gate-status" id="gate-status" role="alert" hidden></p>
+
+        <div id="gate-form-view">
+          <p>O NEO é exclusivo para o time LM Mobilidade. Informe seu e-mail corporativo e enviaremos um link de acesso.</p>
+          <form class="otp-form" id="otp-form">
+            <input class="otp-input" id="otp-email" type="email" name="email" required autocomplete="email"
+                   inputmode="email" placeholder="voce@lmmobilidade.com.br" aria-label="E-mail corporativo">
+            <button class="ms-btn" id="btn-send" type="submit">Receber link de acesso</button>
+          </form>
+          <span class="gate-hint">Use sua conta @lmmobilidade.com.br</span>
+          <p class="gate-status" id="gate-status" role="alert" hidden></p>
+        </div>
+
+        <div id="gate-sent-view" hidden>
+          <p class="gate-sent">Enviamos um link de acesso para <strong id="gate-sent-email"></strong>.<br>Abra a mensagem no seu e-mail e clique para entrar.</p>
+          <button class="gate-resend" id="btn-resend" type="button">Usar outro e-mail</button>
+        </div>
       </div>
     </section>
 
@@ -117,21 +135,21 @@
       <button class="btn-logout" id="btn-logout" type="button">Sair</button>
     </div>
 
-    <section class="doors" id="doors" hidden aria-label="Aplicações ARGO">
-      <a class="door performance" href="https://locavia-dashboard.vercel.app/">
+    <section class="doors" id="doors" hidden aria-label="Aplicações NEO">
+      <a class="door performance" id="door-performance" href="https://locavia-dashboard.vercel.app/">
         <div class="glow"></div><div class="door-top"><span class="number">01</span><span class="tag">Operação</span></div>
         <div class="app-logo"><div class="performance-logo"><span class="symbol"><i></i><i></i><i></i></span><strong>PERFORMANCE</strong><b>DASH</b></div></div>
         <h2>Transforme dados<br>em decisões.</h2><p>Fluxo, entrega e previsibilidade em uma visão clara para orientar prioridades e conversas.</p>
         <div class="door-foot"><span>Acessar Performance Dash</span><b class="arrow">→</b></div>
       </a>
-      <a class="door maturity" href="https://maturitymodel-ashen.vercel.app/">
+      <a class="door maturity" id="door-maturity" href="https://maturitymodel-ashen.vercel.app/">
         <div class="door-top"><span class="number">02</span><span class="tag">Evolução</span></div>
         <div class="app-logo"><img class="maturity-logo" src="/maturity-model-logo.png" alt="Maturity Model"></div>
         <h2>Evolua práticas<br>com propósito.</h2><p>Diagnóstico, jornada e planos de ação para apoiar a evolução contínua de cada squad.</p>
         <div class="door-foot"><span>Acessar Maturity Model</span><b class="arrow">→</b></div>
       </a>
     </section>
-    <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>ARGO · Performance · Maturidade · Evolução</span></footer>
+    <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>NEO · Performance · Maturidade · Evolução</span></footer>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

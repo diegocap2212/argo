@@ -13,18 +13,22 @@ export interface JiraItem {
 }
 
 /**
- * Busca o dataset do endpoint AUTENTICADO `/api/data` (same-origin, cookie de sessão
- * enviado automaticamente). O data.json não é mais importado no client — só o servidor
- * o entrega, e apenas com sessão válida.
+ * Busca o dataset do endpoint AUTENTICADO `/api/data`, enviando o access token do Supabase
+ * como Bearer. O data.json não é mais importado no client — só o servidor o entrega, e apenas
+ * com sessão válida (autorizada pela allowlist do NEO).
  *
  * Memoizado em nível de módulo: todos os consumidores (hooks + AppShell) compartilham
  * uma única chamada de rede por carga da página.
  */
+import { authHeaders, redirectToHub } from './authService';
+
 let dataPromise: Promise<JiraItem[]> | null = null;
 
 async function loadData(): Promise<JiraItem[]> {
-  const res = await fetch('/api/data', { credentials: 'same-origin' });
+  const res = await fetch('/api/data', { headers: await authHeaders() });
   if (res.status === 401) {
+    // Sessão ausente/expirada/sem acesso → recomeça o login no hub.
+    redirectToHub();
     throw new Error('Não autenticado para acessar os dados.');
   }
   if (!res.ok) {

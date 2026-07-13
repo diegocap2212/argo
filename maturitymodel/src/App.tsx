@@ -1,16 +1,13 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute, RequireAM } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/layout/AppShell";
-import { supabase } from "@/integrations/supabase/client";
 
-const Login = lazy(() => import("@/pages/Login"));
-const ResetPassword = lazy(() => import("@/pages/ResetPassword"));
 const Inicio = lazy(() => import("@/pages/Inicio"));
 const Torre = lazy(() => import("@/pages/Torre"));
 const Guia = lazy(() => import("@/pages/Guia"));
@@ -48,29 +45,6 @@ function TeamRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/s/${teamId}${suffix}`} replace />;
 }
 
-/**
- * Captura o fluxo de convite/recuperação de senha e leva pra /reset-password —
- * independentemente de onde o link do email cair (Supabase redireciona pra
- * Site URL raiz por padrão). Cobre dois sinais: o evento PASSWORD_RECOVERY do
- * supabase-js e o `type=recovery|invite` no hash da URL no primeiro carregamento.
- */
-function AuthRecoveryGate() {
-  const navigate = useNavigate();
-  useEffect(() => {
-    const hash = window.location.hash;
-    if (/type=(recovery|invite)/.test(hash) && window.location.pathname !== "/reset-password") {
-      navigate("/reset-password", { replace: true });
-    }
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" && window.location.pathname !== "/reset-password") {
-        navigate("/reset-password", { replace: true });
-      }
-    });
-    return () => sub.subscription.unsubscribe();
-  }, [navigate]);
-  return null;
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -79,12 +53,8 @@ function App() {
             <Toaster />
             <Sonner />
             <BrowserRouter>
-              <AuthRecoveryGate />
               <Suspense fallback={<PageFallback />}>
                 <Routes>
-                  <Route path="/login" element={<Login />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
-
                   <Route path="/" element={<Shell><Inicio /></Shell>} />
                   <Route path="/torre" element={<Shell><Torre /></Shell>} />
                   <Route path="/guia" element={<Shell><Guia /></Shell>} />
@@ -116,8 +86,10 @@ function App() {
                     }
                   />
 
-                  {/* Redirects legados (app antigo → Portal MMA) */}
-                  <Route path="/auth" element={<Navigate to="/login" replace />} />
+                  {/* Redirects legados (app antigo → Portal MMA). O login vive no hub NEO. */}
+                  <Route path="/auth" element={<Navigate to="/" replace />} />
+                  <Route path="/login" element={<Navigate to="/" replace />} />
+                  <Route path="/reset-password" element={<Navigate to="/" replace />} />
                   <Route path="/welcome" element={<Navigate to="/" replace />} />
                   <Route path="/dashboard" element={<Navigate to="/torre" replace />} />
                   <Route path="/guide" element={<Navigate to="/guia" replace />} />

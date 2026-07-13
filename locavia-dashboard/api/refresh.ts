@@ -52,11 +52,39 @@ interface ApiResponse {
   json(body: unknown): void;
 }
 
-function isAuthed(req: ApiRequest): boolean {
-  const secret = process.env.SESSION_SECRET || '';
-  if (!secret || !process.env.DASHBOARD_PASSWORD) return true;
-  const token = parseCookie(req?.headers?.cookie, SESSION_COOKIE);
-  return !!token && verifyToken(token, secret);
+// Autentica (JWT do Supabase via Authorization: Bearer) E autoriza (allowlist do NEO) numa
+// única chamada ao RPC is_neo_allowed: o PostgREST rejeita token inválido, e a função retorna
+// true só para @lmmobilidade.com.br ou exceção aprovada em neo_access. Ver NEO README.
+async function verifyBearer(req: ApiRequest): Promise<boolean> {
+  const url = process.env.SUPABASE_URL;
+  const anon = process.env.SUPABASE_ANON_KEY;
+  if (!url || !anon) return false;
+  const auth = req?.headers?.authorization || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (!token) return false;
+  try {
+    const r = await fetch(`${url}/rest/v1/rpc/is_neo_allowed`, {
+      method: 'POST',
+      headers: { apikey: anon, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    });
+    return r.ok && (await r.json().catch(() => false)) === true;
+  } catch {
+    return false;
+  }
+}
+
+// Aceita a sessão nova (JWT do Supabase) OU a antiga (cookie HMAC) durante a migração.
+// Fail-open quando nenhum mecanismo está configurado (paridade com o dev local).
+async function isAuthed(req: ApiRequest): Promise<boolean> {
+  const sessionConfigured = !!(process.env.SESSION_SECRET && process.env.DASHBOARD_PASSWORD);
+  const supabaseConfigured = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
+  if (!sessionConfigured && !supabaseConfigured) return true;
+  if (sessionConfigured) {
+    const token = parseCookie(req?.headers?.cookie, SESSION_COOKIE);
+    if (token && verifyToken(token, process.env.SESSION_SECRET as string)) return true;
+  }
+  if (supabaseConfigured && (await verifyBearer(req))) return true;
+  return false;
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -94,7 +122,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   res.setHeader('Cache-Control', 'no-store');
 
   // Gate de login (quando configurado): só usuário autenticado dispara/consulta o sync.
-  if (!isAuthed(req)) {
+  if (!(await isAuthed(req))) {
     return res.status(401).json({ error: 'Não autenticado.' });
   }
 
