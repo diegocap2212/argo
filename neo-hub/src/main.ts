@@ -139,11 +139,16 @@ async function init() {
     if (token.length < 6 || !pendingEmail) return;
     btnVerify.disabled = true;
     btnVerify.textContent = 'Entrando…';
-    const { error } = await supabase.auth.verifyOtp({ email: pendingEmail, token, type: 'email' });
+    // Tenta como OTP de e-mail e, se falhar, como magiclink — o código do Supabase pode ser
+    // verificado por qualquer um dos dois tipos dependendo de como foi emitido.
+    let error = (await supabase.auth.verifyOtp({ email: pendingEmail, token, type: 'email' })).error;
+    if (error) {
+      error = (await supabase.auth.verifyOtp({ email: pendingEmail, token, type: 'magiclink' })).error;
+    }
     btnVerify.disabled = false;
     btnVerify.textContent = 'Entrar';
     if (error) {
-      codeStatus.textContent = 'Código inválido ou expirado. Confira o código ou peça outro.';
+      codeStatus.textContent = 'Código inválido ou expirado. Peça um código novo e use o do e-mail mais recente.';
       codeStatus.hidden = false;
       return;
     }
