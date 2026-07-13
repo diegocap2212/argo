@@ -12,7 +12,7 @@ const btnLogout = $<HTMLButtonElement>('btn-logout');
 const doorPerformance = $<HTMLAnchorElement>('door-performance');
 const doorMaturity = $<HTMLAnchorElement>('door-maturity');
 
-// Login (Magic Link)
+// Login (código OTP por e-mail — mais robusto que o link, que scanners de spam consomem)
 const formView = $('gate-form-view');
 const sentView = $('gate-sent-view');
 const otpForm = $<HTMLFormElement>('otp-form');
@@ -21,6 +21,12 @@ const btnSend = $<HTMLButtonElement>('btn-send');
 const gateStatus = $('gate-status');
 const sentEmail = $('gate-sent-email');
 const btnResend = $<HTMLButtonElement>('btn-resend');
+const codeForm = $<HTMLFormElement>('code-form');
+const otpCode = $<HTMLInputElement>('otp-code');
+const btnVerify = $<HTMLButtonElement>('btn-verify');
+const codeStatus = $('code-status');
+
+let pendingEmail = '';
 
 const ALLOWED_DOMAIN = '@lmmobilidade.com.br';
 
@@ -105,18 +111,43 @@ async function init() {
       return;
     }
     btnSend.textContent = 'Enviando…';
+    // shouldCreateUser: cria o usuário no 1º acesso. Sem emailRedirectTo o e-mail usa o código
+    // ({{ .Token }}) em vez do link — imune ao scanner de spam que consumia o link de uso único.
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: `${location.origin}/` },
+      options: { shouldCreateUser: true },
     });
     btnSend.disabled = false;
-    btnSend.textContent = 'Receber link de acesso';
+    btnSend.textContent = 'Receber código de acesso';
     if (error) {
       showError(error.message);
       return;
     }
+    pendingEmail = email;
     sentEmail.textContent = email;
     showGate('sent');
+    otpCode.value = '';
+    codeStatus.hidden = true;
+    otpCode.focus();
+  });
+
+  // Verifica o código digitado (6 dígitos do e-mail) → cria a sessão.
+  codeForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    codeStatus.hidden = true;
+    const token = otpCode.value.trim();
+    if (token.length < 6 || !pendingEmail) return;
+    btnVerify.disabled = true;
+    btnVerify.textContent = 'Entrando…';
+    const { error } = await supabase.auth.verifyOtp({ email: pendingEmail, token, type: 'email' });
+    btnVerify.disabled = false;
+    btnVerify.textContent = 'Entrar';
+    if (error) {
+      codeStatus.textContent = 'Código inválido ou expirado. Confira o código ou peça outro.';
+      codeStatus.hidden = false;
+      return;
+    }
+    // Sucesso: onAuthStateChange(SIGNED_IN) dispara reconcile → mostra as portas.
   });
 
   // Handoff de sessão: hub e apps são origens diferentes (localStorage não é compartilhado),
