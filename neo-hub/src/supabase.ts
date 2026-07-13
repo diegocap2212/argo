@@ -10,6 +10,10 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
     storage: localStorage,
     persistSession: true,
     autoRefreshToken: true,
-    flowType: 'pkce',
+    // 'implicit': o Magic Link traz o token direto no fragment da URL, sem depender do
+    // navegador que pediu o código (PKCE quebrava ao abrir o link em outra aba/app, ou
+    // quando o filtro de spam pré-visita o link e consome o token de uso único).
+    flowType: 'implicit',
+    detectSessionInUrl: true,
   },
 });
