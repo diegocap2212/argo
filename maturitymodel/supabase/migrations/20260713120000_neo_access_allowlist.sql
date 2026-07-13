@@ -50,3 +50,24 @@ create policy "neo_access readable by allowed"
   on public.neo_access
   for select
   using (public.is_neo_allowed());
+
+-- Checagem PRÉ-login (sem sessão): o hub usa isto para decidir quem pode receber o Magic Link,
+-- em vez de validar o domínio só no cliente. Recebe o e-mail digitado como argumento.
+create or replace function public.is_neo_email_allowed(check_email text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    lower(check_email) like '%@lmmobilidade.com.br'
+    or exists (
+      select 1 from public.neo_access a
+      where a.email = lower(check_email) and a.approved
+    ),
+    false
+  );
+$$;
+
+grant execute on function public.is_neo_email_allowed(text) to anon, authenticated;

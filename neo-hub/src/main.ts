@@ -93,11 +93,17 @@ async function init() {
     e.preventDefault();
     gateStatus.hidden = true;
     const email = otpEmail.value.trim().toLowerCase();
-    if (!email.endsWith(ALLOWED_DOMAIN)) {
-      showError('Use um e-mail corporativo @lmmobilidade.com.br.');
+    if (!email) return;
+    btnSend.disabled = true;
+    btnSend.textContent = 'Verificando…';
+    // A allowlist decide quem pode receber o link: domínio @lmmobilidade OU exceção aprovada.
+    const { data: allowed, error: allowErr } = await supabase.rpc('is_neo_email_allowed', { check_email: email });
+    if (allowErr || allowed !== true) {
+      btnSend.disabled = false;
+      btnSend.textContent = 'Receber link de acesso';
+      showError('Este e-mail não tem acesso ao NEO. Use sua conta @lmmobilidade.com.br ou fale com o administrador.');
       return;
     }
-    btnSend.disabled = true;
     btnSend.textContent = 'Enviando…';
     const { error } = await supabase.auth.signInWithOtp({
       email,
