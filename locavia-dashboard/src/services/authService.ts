@@ -1,7 +1,7 @@
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
 // URL do hub NEO (página de login única). Configurável por env; default = projeto Vercel do hub.
-const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || 'https://neo-hub-liart.vercel.app';
+const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || 'https://neo-lm.vercel.app';
 
 /**
  * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.

@@ -1,6 +1,6 @@
 import { type ReactNode } from "react";
 import { Link, useLocation, useParams } from "react-router-dom";
-import { BookOpen, Building2, Home, LogOut, Presentation, Settings, Users } from "lucide-react";
+import { BookOpen, Building2, Home, LayoutGrid, LogOut, Presentation, Settings, Users } from "lucide-react";
 import { VeniceLogo } from "@/components/mma/VeniceLogo";
 import { SquadSwitcher } from "@/components/mma/SquadSwitcher";
 import { AxisPills } from "@/components/mma/AxisPills";
@@ -41,7 +41,7 @@ function RailLink({ to, label, icon, badge }: { to: string; label: string; icon:
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const { teamId } = useParams<{ teamId: string }>();
-  const { user, signOut } = useAuth();
+  const { user, signOut, redirectToHub } = useAuth();
   const { data: squads = [] } = useMySquads();
   const isAMAnywhere = squads.some((s) => s.roles.includes("am"));
   const pendingCount = squads.filter((s) => s.pending).length;
@@ -53,6 +53,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="editorial-shell">
       <aside className="editorial-rail" aria-label="Navegação principal">
         <nav className="editorial-rail-nav">
+          <Tooltip delayDuration={120}>
+            <TooltipTrigger asChild>
+              <button className="editorial-rail-link" onClick={redirectToHub} aria-label="Voltar ao NEO">
+                <LayoutGrid />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Trocar aplicação · NEO</TooltipContent>
+          </Tooltip>
           <RailLink to="/" label="Início" icon={<Home />} badge={pendingCount} />
           <RailLink to="/torre" label="Torre de squads" icon={<Building2 />} />
           {squads[0] && <RailLink to={`/s/${squads[0].team_id}`} label="Meu squad" icon={<Users />} />}

@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { Building2, Car, Home, LogOut, Users } from 'lucide-react';
+import { Building2, Car, Home, LayoutGrid, LogOut, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SM_CONFIGS } from '../config/sm-config';
 import { deriveTeams } from '../config/teams';
 import { teamLabel } from '../config/teamLabels';
-import { logout } from '../services/authService';
+import { logout, redirectToHub } from '../services/authService';
 import { fetchData } from '../services/dataService';
 import Button from './ui/Button';
 import VeniceBadge from './VeniceBadge';
@@ -82,6 +82,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   return <div style={{ minHeight: '100vh', display: 'flex', background: 'transparent', fontFamily: 'Inter, system-ui, sans-serif' }}>
     <aside aria-label="Navegação global" style={{ width: 76, background: '#111412', borderRight: '1px solid #1e231f', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem', padding: '1.1rem 0', position: 'sticky', top: 0, height: '100vh', flexShrink: 0, zIndex: 200 }}>
       <div style={{ height: '0.6rem' }} />
+      <GlobalNavItem label="Trocar aplicação · NEO" icon={LayoutGrid} onClick={redirectToHub} />
+      <div style={{ width: 28, height: 1, background: 'var(--border-default)', margin: '2px 0' }} aria-hidden="true" />
       <GlobalNavItem label="Início" icon={Home} active={location.pathname === '/'} onClick={() => navigate('/')} />
       <GlobalNavItem label="Torre" icon={Building2} active={location.pathname.startsWith('/sm/') || location.pathname.startsWith('/time/')} onClick={() => navigate('/')} />
       <ContextNavItem label="Agilistas" icon={Users} active={!!activeSm} items={SM_CONFIGS.map(sm => ({ id: sm.id, label: sm.name, active: activeSm === sm.id, onSelect: () => navigate(`/sm/${sm.id}`) }))} />

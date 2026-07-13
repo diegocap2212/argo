@@ -3,7 +3,7 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
 // Hub NEO: página de login única (Magic Link). O Portal MMA não tem tela de login própria.
-const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || "https://neo-hub-liart.vercel.app";
+const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || "https://neo-lm.vercel.app";
 
 /**
  * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.
