@@ -7,9 +7,9 @@
 //   CRON_SECRET           — segredo que o cron externo envia (?key=... ou header x-cron-key)
 //   GITHUB_DISPATCH_TOKEN — PAT fine-grained com permissão Actions: Read and write neste repo
 //
-// repo e workflow são fixos (não são segredos).
+// repo e workflow são fixos (não são segredos). GITHUB_REPO pode ser sobrescrito por env.
 
-const GITHUB_REPO = 'diegocap2212/locavia-dashboard';
+const GITHUB_REPO = process.env.GITHUB_REPO || 'diegocap2212/argo';
 const GITHUB_WORKFLOW = 'hourly-sync.yml';
 
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).

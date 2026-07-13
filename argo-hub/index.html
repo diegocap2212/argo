@@ -53,19 +53,40 @@
     .performance .arrow{background:var(--green);color:#151916}.maturity .arrow{background:#151916;color:var(--green)}
     .glow{position:absolute;width:300px;height:300px;border-radius:50%;background:var(--green);filter:blur(90px);opacity:.1;right:-110px;top:100px}
     .footer{margin-top:auto;padding:24px 6vw;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
+    /* ── Gate de acesso (login Microsoft) ── */
+    .auth-loading{margin:0 auto 72px;color:var(--muted);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2.4px}
+    .gate{width:min(560px,90vw);margin:0 auto 72px}
+    .gate-card{position:relative;overflow:hidden;background:rgba(255,255,255,.76);border:1px solid rgba(255,255,255,.92);border-radius:30px;padding:46px 42px;box-shadow:0 16px 52px rgba(25,32,27,.07);text-align:center}
+    .gate-kicker{font-size:8px;text-transform:uppercase;letter-spacing:1.5px;border:1px solid currentColor;border-radius:99px;padding:7px 10px;opacity:.65}
+    .gate-card h2{font:400 35px/1.05 Georgia,serif;letter-spacing:-1px;margin:22px 0 12px}
+    .gate-card h2 em{font-weight:400;color:#4d554e}
+    .gate-card>p{max-width:360px;margin:0 auto 30px;line-height:1.55;font-size:12px;color:var(--muted)}
+    .ms-btn{display:inline-flex;align-items:center;gap:12px;background:#151916;color:#fff;border:0;border-radius:99px;padding:17px 30px;font:600 11px Inter,Arial,sans-serif;text-transform:uppercase;letter-spacing:1.6px;cursor:pointer;transition:transform .35s ease,box-shadow .35s ease}
+    .ms-btn:hover{transform:translateY(-2px);box-shadow:0 14px 34px rgba(25,32,27,.22)}
+    .ms-btn:focus-visible{outline:3px solid var(--green);outline-offset:4px}
+    .ms-btn:disabled{opacity:.55;cursor:wait;transform:none}
+    .gate-hint{display:block;margin-top:18px;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
+    .gate-status{margin:22px auto 0;max-width:380px;color:#b23b2e;font-size:12px;line-height:1.5}
+    .gate-glow{position:absolute;width:260px;height:260px;border-radius:50%;background:var(--green);filter:blur(90px);opacity:.14;left:-90px;bottom:-120px;pointer-events:none}
+    /* ── Sessão ativa ── */
+    .session-bar{margin:-14px auto 34px;display:flex;align-items:center;gap:14px;color:#666e67;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px}
+    .session-bar:before,.session-bar:after{content:"";width:34px;height:1px;background:#cfd5ce}
+    .btn-logout{background:none;border:0;padding:0;color:#666e67;font:inherit;letter-spacing:inherit;text-transform:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+    .btn-logout:hover{color:var(--ink)}
     @media(max-width:760px){
       .brandbar{min-height:96px;padding:18px 24px}.brand{width:110px}.venice{width:95px}.lm{width:70px}.partnership{font-size:0;gap:8px}.partnership:before,.partnership:after{width:14px}.partnership:after{display:none}.partnership:before{content:"×";width:auto;height:auto;background:none;font-size:14px;color:#909790}
       .hero{padding-top:44px}.argo-lockup{gap:12px}.argo-mark{width:48px;height:44px}.argo-mark:after{width:16px;height:20px}.argo-word{font-size:44px;letter-spacing:2px}.argo-tagline{letter-spacing:2.2px}.hero h1{margin-top:34px;letter-spacing:-2.5px}
       .doors{grid-template-columns:1fr;width:calc(100% - 32px)}.door{min-height:420px;padding:28px}.footer{gap:20px;line-height:1.5;flex-direction:column}
+      .gate{width:calc(100% - 32px)}.gate-card{padding:36px 26px}
     }
   </style>
 </head>
 <body>
   <main class="page">
     <header class="brandbar">
-      <div class="brand"><img class="venice" src="venice-by-blite.svg" alt="Venice by Blite"></div>
+      <div class="brand"><img class="venice" src="/venice-by-blite.svg" alt="Venice by Blite"></div>
       <div class="partnership">Experiências digitais</div>
-      <div class="brand"><img class="lm" src="lm-mobilidade.png" alt="LM Mobilidade"></div>
+      <div class="brand"><img class="lm" src="/lm-mobilidade.png" alt="LM Mobilidade"></div>
     </header>
     <section class="hero">
       <div class="argo-lockup" aria-label="ARGO"><span class="argo-mark" aria-hidden="true"></span><span class="argo-word">ARGO</span></div>
@@ -73,7 +94,30 @@
       <h1>Escolha onde<br><em>quer evoluir.</em></h1>
       <p>Um único ponto de partida para acompanhar a performance da operação e desenvolver a maturidade dos nossos times.</p>
     </section>
-    <section class="doors" aria-label="Aplicações ARGO">
+
+    <div class="auth-loading" id="auth-loading" role="status">Verificando acesso…</div>
+
+    <section class="gate" id="gate" hidden aria-label="Acesso ARGO">
+      <div class="gate-card">
+        <div class="gate-glow" aria-hidden="true"></div>
+        <span class="gate-kicker">Acesso restrito</span>
+        <h2>Entre para<br><em>continuar.</em></h2>
+        <p>O ARGO é exclusivo para o time LM Mobilidade. Autentique-se com sua conta corporativa para acessar as aplicações.</p>
+        <button class="ms-btn" id="btn-microsoft" type="button">
+          <svg width="15" height="15" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+          Entrar com Microsoft
+        </button>
+        <span class="gate-hint">Use sua conta @lmmobilidade.com.br</span>
+        <p class="gate-status" id="gate-status" role="alert" hidden></p>
+      </div>
+    </section>
+
+    <div class="session-bar" id="session-bar" hidden>
+      <span id="session-user"></span>
+      <button class="btn-logout" id="btn-logout" type="button">Sair</button>
+    </div>
+
+    <section class="doors" id="doors" hidden aria-label="Aplicações ARGO">
       <a class="door performance" href="https://locavia-dashboard.vercel.app/">
         <div class="glow"></div><div class="door-top"><span class="number">01</span><span class="tag">Operação</span></div>
         <div class="app-logo"><div class="performance-logo"><span class="symbol"><i></i><i></i><i></i></span><strong>PERFORMANCE</strong><b>DASH</b></div></div>
@@ -82,12 +126,13 @@
       </a>
       <a class="door maturity" href="https://maturitymodel-ashen.vercel.app/">
         <div class="door-top"><span class="number">02</span><span class="tag">Evolução</span></div>
-        <div class="app-logo"><img class="maturity-logo" src="maturity-model-logo.png" alt="Maturity Model"></div>
+        <div class="app-logo"><img class="maturity-logo" src="/maturity-model-logo.png" alt="Maturity Model"></div>
         <h2>Evolua práticas<br>com propósito.</h2><p>Diagnóstico, jornada e planos de ação para apoiar a evolução contínua de cada squad.</p>
         <div class="door-foot"><span>Acessar Maturity Model</span><b class="arrow">→</b></div>
       </a>
     </section>
     <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>ARGO · Performance · Maturidade · Evolução</span></footer>
   </main>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 </html>
