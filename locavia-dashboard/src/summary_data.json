@@ -1,0 +1,19 @@
+[
+  { "week": "24/11/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "01/12/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "08/12/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "15/12/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "22/12/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "29/12/25", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "05/01/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "12/01/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "19/01/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "26/01/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "02/02/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "09/02/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "16/02/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "23/02/26", "scope": 24, "realized": 0, "bestCase": 24, "worstCase": 24 },
+  { "week": "02/03/26", "scope": 24, "realized": 2, "bestCase": 24, "worstCase": 24 },
+  { "week": "09/03/26", "scope": 22, "realized": 4, "bestCase": 22, "worstCase": 22 },
+  { "week": "16/03/26", "scope": 20, "realized": 4, "bestCase": 20, "worstCase": 20 }
+]

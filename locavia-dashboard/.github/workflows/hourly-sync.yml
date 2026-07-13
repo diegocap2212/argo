@@ -1,0 +1,71 @@
+name: Hourly Data Sync
+
+on:
+  # A cadência de 30 min é garantida por um cron EXTERNO confiável (cron-job.org) que chama
+  # /api/trigger-sync, que dispara este workflow via workflow_dispatch. O schedule nativo do
+  # GitHub foi removido porque é best-effort (atrasa/pula) e geraria syncs redundantes.
+  workflow_dispatch: # disparo manual e via /api/trigger-sync (cron externo)
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Important for pushing data.json back
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Clear Node 20 deprecation warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Full history for pushing
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22' # Latest LTS
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pre-sync Health Check
+        run: |
+          echo "Verificando variáveis de ambiente Jira..."
+          if [ -z "${{ secrets.JIRA_BASE_URL }}" ]; then echo "❌ JIRA_BASE_URL is MISSING"; exit 1; fi
+          if [ -z "${{ secrets.JIRA_USER_EMAIL }}" ]; then echo "❌ JIRA_USER_EMAIL is MISSING"; exit 1; fi
+          if [ -z "${{ secrets.JIRA_API_TOKEN }}" ]; then echo "❌ JIRA_API_TOKEN is MISSING"; exit 1; fi
+          echo "✅ Todos os Secrets do Jira estão presentes."
+
+      - name: Run Jira Sync
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          # Nível 3: o dataset principal é gravado no Vercel Blob (privado), não no git.
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
+        run: |
+          # sync:jira valida (zod) e grava o dataset no Blob; falha não-zero aborta o job.
+          npm run sync:jira
+          npm run sync:sfmkt
+
+          SFMKT_SIZE=$(wc -c < sfmkt_data.json)
+          echo "Tamanho do sfmkt_data.json: $SFMKT_SIZE bytes"
+          if [ "$SFMKT_SIZE" -lt 1000 ]; then
+            echo "❌ ERRO: sfmkt_data.json é muito pequeno ($SFMKT_SIZE bytes). Sincronização SFMKT possivelmente falhou."
+            exit 1
+          fi
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          # data.json NÃO é mais commitado (vive no Blob). Só metadados (timestamp) + SFMKT.
+          git add sfmkt_data.json src/data-meta.json
+
+          if git diff --quiet && git diff --staged --quiet; then
+            echo "Sem alterações. Ignorando commit."
+          else
+            git commit -m "chore: automated hourly sync (meta + sfmkt)"
+            git push origin main
+          fi

@@ -1,0 +1,18 @@
+# Dependências e builds (defesa em profundidade — cada app tem seu próprio .gitignore)
+node_modules/
+dist/
+.vercel
+
+# Segredos — nunca commitar
+.env
+.env.local
+.env.private
+!.env.example
+
+# Saídas de teste
+playwright-report/
+test-results/
+
+# SO / editor
+.DS_Store
+Thumbs.db

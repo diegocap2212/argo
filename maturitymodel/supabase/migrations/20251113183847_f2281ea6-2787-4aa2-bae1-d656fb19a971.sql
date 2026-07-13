@@ -1,0 +1,2 @@
+-- Force types regeneration
+-- No schema changes needed

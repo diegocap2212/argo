@@ -1,0 +1,131 @@
+import { useState } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { type DashboardTab } from '../components/DashboardTabs';
+import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, LeadTimeTrendChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
+import { teamLabel } from '../config/teamLabels';
+import { useTeamPerformance } from '../hooks/useTeamPerformance';
+import '../styles/redesign.css';
+
+const PERIODS = [4, 8, 12, 16, 24];
+
+function ChartCard({ title, subtitle, tall, children }: { title: string; subtitle?: string; tall?: boolean; children: React.ReactNode }) {
+  return (
+    <article className="chart-card">
+      <div className="card-heading"><div><h2>{title}</h2></div></div>
+      {subtitle && <p className="sub">{subtitle}</p>}
+      <div className={`chart-host${tall ? ' tall' : ''}`}>{children}</div>
+    </article>
+  );
+}
+
+export default function TeamDetail() {
+  const { teamId = '' } = useParams<{ teamId: string }>();
+  const teamName = decodeURIComponent(teamId);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const embedded = new URLSearchParams(location.search).get('embed') === '1';
+  const [weeks, setWeeks] = useState(8);
+  const [tab, setTab] = useState<DashboardTab>('overview');
+  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, loading, error } = useTeamPerformance(teamName, weeks * 7);
+  const throughputDelta = previousSnapshot.delivery.throughput
+    ? Math.round(((snapshot.delivery.throughput - previousSnapshot.delivery.throughput) / previousSnapshot.delivery.throughput) * 100)
+    : null;
+  const pointsCoverage = Math.round(trend.filter(p => p.throughput > 0).reduce((s, p) => s + p.pointsCoverage, 0) / Math.max(trend.filter(p => p.throughput > 0).length, 1));
+
+  return (
+    <div className="rd">
+      <div className="rd-main" style={embedded ? { padding: '24px 24px 60px' } : undefined}>
+        {!embedded && (
+          <section className="page-head">
+            <div className="ph-title">
+              <button className="back-btn" onClick={() => navigate('/')} aria-label="Voltar"><ArrowLeft size={16} /></button>
+              <div>
+                <span className="eyebrow">Performance · Time</span>
+                <h1>{teamLabel(teamName)}</h1>
+                <p>Fluxo, entrega, previsibilidade e qualidade dos dados.</p>
+              </div>
+            </div>
+            <div className="head-actions">
+              <select className="rd-select" value={weeks} onChange={e => setWeeks(Number(e.target.value))} aria-label="Período em semanas">
+                {PERIODS.map(w => <option key={w} value={w}>Últimas {w} semanas</option>)}
+              </select>
+            </div>
+          </section>
+        )}
+
+        {loading ? <div className="rd-state">Carregando performance…</div>
+          : error ? <div className="rd-state" style={{ color: 'var(--red)' }}>{error}</div>
+          : items.length === 0 ? <div className="rd-state">Nenhum dado encontrado para este time.</div>
+          : (
+            <>
+              <section className="snapshot" style={{ marginTop: embedded ? 0 : 36 }}>
+                <div className="metric-grid six">
+                  <article className="metric primary">
+                    <small>Vazão</small><strong>{snapshot.delivery.throughput}</strong>
+                    {throughputDelta !== null && <span className="trend">{throughputDelta >= 0 ? '↗' : '↘'} {Math.abs(throughputDelta)}%</span>}
+                    <p>entregas no período</p>
+                  </article>
+                  <article className="metric"><small>Lead Time P85</small><strong>{snapshot.delivery.leadTimeP85 === null ? '—' : `${snapshot.delivery.leadTimeP85}d`}</strong><p>criação → resolução</p></article>
+                  <article className="metric"><small>Cycle Time P85</small><strong>{snapshot.delivery.cycleTimeP85 === null ? '—' : `${snapshot.delivery.cycleTimeP85}d`}</strong><p>início → resolução</p></article>
+                  <article className="metric warning"><small>WIP</small><strong>{snapshot.flow.wip}</strong><p>{snapshot.flow.agingItems} envelhecidos</p></article>
+                  <article className="metric"><small>Previsibilidade</small><strong>{snapshot.predictability.rate === null ? '—' : `${snapshot.predictability.rate}%`}</strong><p>{snapshot.predictability.delivered}/{snapshot.predictability.committed} compromissos</p></article>
+                  <article className="metric"><small>Saldo de fluxo</small><strong>{snapshot.flow.flowBalance > 0 ? '+' : ''}{snapshot.flow.flowBalance}</strong><p>entradas − saídas</p></article>
+                </div>
+              </section>
+
+              <section>
+                <div className="tabs">
+                  {(['overview', 'flow', 'commitment', 'time'] as DashboardTab[]).map(id => (
+                    <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
+                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : 'Tempo'}
+                    </button>
+                  ))}
+                </div>
+
+                {tab === 'overview' && (
+                  <div className="chart-grid">
+                    <ChartCard title="O que entrou e o que saiu" subtitle="Itens novos na semana comparados às entregas."><WeeklyIntakeChart data={trend} /></ChartCard>
+                    <ChartCard title="Entradas × saídas" subtitle="Balanço semanal do fluxo do time."><FlowVolumeChart data={trend} /></ChartCard>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Leitura do período</h2></div></div>
+                      <div style={{ marginTop: 8 }}>
+                        {insights.map((insight, index) => (
+                          <div className={`priority sev-${insight.severity}`} key={insight.id} style={{ cursor: 'default' }}>
+                            <span>{String(index + 1).padStart(2, '0')}</span>
+                            <div><strong>{insight.title}</strong><em>{insight.description}</em></div>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+                )}
+
+                {tab === 'flow' && (
+                  <div className="chart-grid">
+                    <ChartCard title="CFD do time" subtitle="A fazer, em andamento e concluído ao longo do período." tall><CumulativeFlowChart data={cfd} /></ChartCard>
+                    <ChartCard title="Vazão por tipo" subtitle="Composição semanal das entregas por tipo."><ThroughputByTypeChart data={trend} /></ChartCard>
+                    <ChartCard title="Aging do WIP" subtitle="Distribuição atual dos itens em andamento por idade."><AgingDistributionChart data={aging} /></ChartCard>
+                  </div>
+                )}
+
+                {tab === 'commitment' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
+                    <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
+                  </div>
+                )}
+
+                {tab === 'time' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Evolução do Lead Time P85" subtitle="Tendência semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
+                    <ChartCard title="Evolução do Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+      </div>
+    </div>
+  );
+}

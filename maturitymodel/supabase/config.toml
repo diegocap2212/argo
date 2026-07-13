@@ -1,0 +1,27 @@
+project_id = "cvkcngrmnfwupstyrpsd"
+
+# ATENÇÃO: `supabase config push` reescreve a seção inteira de [auth]/[storage]
+# usando defaults do CLI para qualquer campo não declarado aqui — não é um
+# patch parcial. Por isso todo campo abaixo que já existia em produção com
+# valor diferente do default precisa estar EXPLICITAMENTE listado, senão ele
+# volta pro default do CLI. Valores restaurados a partir do diff observado em
+# 2026-07-06 (ver commit que corrigiu um push acidental).
+[auth]
+site_url = "https://maturitymodel-ashen.vercel.app"
+additional_redirect_urls = ["https://maturitymodel-ashen.vercel.app/reset-password"]
+# Login real obrigatório (Portal MMA) — atualizado manualmente no Dashboard
+# em vez de `supabase config push`, que reescreveria toda a seção [auth].
+enable_anonymous_sign_ins = false
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m0s"
+otp_length = 8
+
+[storage.vector]
+# Projeto não está no tier pago — manter desligado evita erro 402 a cada push.
+enabled = false
