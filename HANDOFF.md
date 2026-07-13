@@ -41,7 +41,7 @@ Commits existentes: `6cf820c` (monorepo+limpeza), `89c5afa` (hub inicial+workflo
 4. **Vercel**:
    - Criar projeto do hub (nome a confirmar: "neo"?), Root Directory `neo-hub`, envs `VITE_SUPABASE_*`. Anotar URL.
    - Reapontar `locavia-dashboard` e `maturitymodel` para o repo `neo`. Envs novas: locavia (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `VITE_SUPABASE_*`, `VITE_HUB_URL`, `GITHUB_REPO=diegocap2212/neo`), maturity (`VITE_HUB_URL`).
-   - Ajustar `HUB_URL` default (hoje `https://neo-hub.vercel.app`) em `locavia-dashboard/src/services/authService.ts` e `maturitymodel/src/hooks/useAuth.tsx` para a URL real, ou setar `VITE_HUB_URL`.
+   - Ajustar `HUB_URL` default (hoje `https://neo-lm.vercel.app`) em `locavia-dashboard/src/services/authService.ts` e `maturitymodel/src/hooks/useAuth.tsx` para a URL real, ou setar `VITE_HUB_URL`.
    - GitHub Actions secrets (JIRA_*, BLOB_READ_WRITE_TOKEN) no repo novo.
 5. **E2E**: hub → magic link (@lmmobilidade) → doors → Dash (Bearer) → Maturity → /s/:id/metricas (iframe) → logout. E-mail fora do domínio: bloqueado.
 6. **Pós-validação (Fase 3c)**: remover ramo cookie das 3 functions + envs `DASHBOARD_PASSWORD`/`SESSION_SECRET`; atualizar `openapi.ts`, `CLAUDE.md`, `ARCHITECTURE.md`. Apagar este HANDOFF.
