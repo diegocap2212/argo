@@ -5,6 +5,7 @@ import { generateTeamInsights } from '../src/performance/insights';
 import { assessTeamHealth } from '../src/performance/health';
 import { attachMaturity } from '../src/performance/maturity';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../src/performance/trends';
+import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations } from '../src/performance/analytics';
 import type { DashboardItem } from '../src/types/jira';
 
 function item(overrides: Partial<DashboardItem>): DashboardItem {
@@ -99,5 +100,41 @@ const aging = computeAgingDistribution([
   item({ Key: 'TEAM-31', StartDate: '2026-05-20T00:00:00Z' }),
 ], new Date('2026-07-01T00:00:00Z'));
 assert.deepEqual(aging.map(bucket => bucket.count), [1, 0, 0, 1]);
+
+// ── Analytics (aba "Análise de Fluxo") ──
+const analyticsPeriod = { start: '2026-06-01', end: '2026-06-30' };
+const analyticsNow = new Date('2026-07-01T00:00:00Z');
+
+// Cycle time por etapa: TimeInStatus em horas → dias por etapa.
+const stages = computeStageDurations([
+  item({ Key: 'ST-1', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-15T00:00:00Z', TimeInStatus: { Backlog: 24, Desenvolvimento: 48, QA: 12 } }),
+], analyticsPeriod);
+assert.equal(stages.find(s => s.stage === 'Backlog')?.avg, 1);          // 24h = 1d
+assert.equal(stages.find(s => s.stage === 'Desenvolvimento')?.avg, 2);  // 48h = 2d
+assert.equal(stages.find(s => s.stage === 'Homologação/Deploy')?.avg, 0);
+
+// Dispersão de lead time: outlier acima do P85.
+const scatter = computeLeadTimeScatter([
+  item({ Key: 'SC-1', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-10T00:00:00Z', LeadTime: 5 }),
+  item({ Key: 'SC-2', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-20T00:00:00Z', LeadTime: 40 }),
+], analyticsPeriod);
+assert.equal(scatter.points.length, 2);
+assert.ok(scatter.points.some(point => point.key === 'SC-2' && point.outlier));
+
+// Cards problemáticos: só WIP ≥ 15 dias, ordenado por idade.
+const attention = computeAttentionItems([
+  item({ Key: 'AT-1', StatusCategory: 'IN_PROGRESS', StartDate: '2026-05-25T00:00:00Z' }), // 37d → crítico
+  item({ Key: 'AT-2', StatusCategory: 'IN_PROGRESS', StartDate: '2026-06-28T00:00:00Z' }), // 3d → filtrado
+], analyticsNow, 5);
+assert.equal(attention.length, 1);
+assert.equal(attention[0].key, 'AT-1');
+assert.equal(attention[0].severity, 'critical');
+
+// Aging heatmap: WIP 31d+ cai na última faixa.
+const heat = computeAgingHeatmap([
+  item({ Key: 'HM-1', Team: 'ALFA', StatusCategory: 'IN_PROGRESS', StartDate: '2026-05-20T00:00:00Z' }),
+], ['ALFA'], analyticsNow);
+assert.equal(heat.length, 1);
+assert.deepEqual(heat[0].buckets, [0, 0, 0, 1]);
 
 console.log('Performance snapshot: testes passaram.');

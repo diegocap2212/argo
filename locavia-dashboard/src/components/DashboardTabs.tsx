@@ -1,10 +1,11 @@
-export type DashboardTab = 'overview' | 'flow' | 'commitment' | 'time';
+export type DashboardTab = 'overview' | 'flow' | 'commitment' | 'time' | 'analysis';
 
 const tabs: { id: DashboardTab; label: string }[] = [
   { id: 'overview', label: 'Visão geral' },
   { id: 'flow', label: 'Fluxo' },
   { id: 'commitment', label: 'Compromisso' },
   { id: 'time', label: 'Tempo' },
+  { id: 'analysis', label: 'Análise de Fluxo' },
 ];
 
 export default function DashboardTabs({ value, onChange }: { value: DashboardTab; onChange: (tab: DashboardTab) => void }) {

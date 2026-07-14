@@ -89,19 +89,27 @@ async function main() {
 
     const syncedAt = new Date().toISOString();
 
-    // ── Nível 3: o dataset (≈5MB) vive no Vercel Blob (privado), não mais no git. ──
-    // /api/data lê este blob server-side e entrega só com sessão. Sem churn de 5MB no repo.
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      console.error("❌ ERRO: BLOB_READ_WRITE_TOKEN ausente — não dá para gravar o dataset no Blob.");
-      process.exit(1);
+    // SYNC_LOCAL_ONLY=1 → grava o dataset no fallback local (src/data.json) e PULA o Blob.
+    // Usado em desenvolvimento para testar sem tocar o dataset de produção (nem colidir com o cron).
+    if (process.env.SYNC_LOCAL_ONLY === '1') {
+      const dataPath = path.resolve(process.cwd(), 'src/data.json');
+      await writeAtomic(dataPath, JSON.stringify(dashboardItems));
+      console.log(`💾 [LOCAL] Dataset gravado em src/data.json: ${dashboardItems.length} itens (Blob NÃO tocado).`);
+    } else {
+      // ── Nível 3: o dataset (≈5MB) vive no Vercel Blob (privado), não mais no git. ──
+      // /api/data lê este blob server-side e entrega só com sessão. Sem churn de 5MB no repo.
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        console.error("❌ ERRO: BLOB_READ_WRITE_TOKEN ausente — não dá para gravar o dataset no Blob.");
+        process.exit(1);
+      }
+      await put(BLOB_PATHNAME, JSON.stringify({ items: dashboardItems, syncedAt }), {
+        access: 'private',
+        addRandomSuffix: false,
+        allowOverwrite: true,
+        contentType: 'application/json',
+      });
+      console.log(`☁️  Dataset gravado no Blob (${BLOB_PATHNAME}): ${dashboardItems.length} itens.`);
     }
-    await put(BLOB_PATHNAME, JSON.stringify({ items: dashboardItems, syncedAt }), {
-      access: 'private',
-      addRandomSuffix: false,
-      allowOverwrite: true,
-      contentType: 'application/json',
-    });
-    console.log(`☁️  Dataset gravado no Blob (${BLOB_PATHNAME}): ${dashboardItems.length} itens.`);
 
     // Timestamp do sync (tiny) — mantém o header dos SMs e serve de heartbeat.
     const metaPath = path.resolve(process.cwd(), 'src/data-meta.json');

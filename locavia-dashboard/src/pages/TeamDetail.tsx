@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { type DashboardTab } from '../components/DashboardTabs';
 import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, LeadTimeTrendChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
+import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
 import { teamLabel } from '../config/teamLabels';
 import { useTeamPerformance } from '../hooks/useTeamPerformance';
 import '../styles/redesign.css';
@@ -27,7 +28,8 @@ export default function TeamDetail() {
   const embedded = new URLSearchParams(location.search).get('embed') === '1';
   const [weeks, setWeeks] = useState(8);
   const [tab, setTab] = useState<DashboardTab>('overview');
-  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, loading, error } = useTeamPerformance(teamName, weeks * 7);
+  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, loading, error } = useTeamPerformance(teamName, weeks * 7);
+  const goToTeam = (team: string) => navigate(`/time/${encodeURIComponent(team)}`);
   const throughputDelta = previousSnapshot.delivery.throughput
     ? Math.round(((snapshot.delivery.throughput - previousSnapshot.delivery.throughput) / previousSnapshot.delivery.throughput) * 100)
     : null;
@@ -76,9 +78,9 @@ export default function TeamDetail() {
 
               <section>
                 <div className="tabs">
-                  {(['overview', 'flow', 'commitment', 'time'] as DashboardTab[]).map(id => (
+                  {(['overview', 'flow', 'commitment', 'time', 'analysis'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : 'Tempo'}
+                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : id === 'time' ? 'Tempo' : 'Análise de Fluxo'}
                     </button>
                   ))}
                 </div>
@@ -120,6 +122,30 @@ export default function TeamDetail() {
                   <div className="chart-grid">
                     <ChartCard title="Evolução do Lead Time P85" subtitle="Tendência semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
                     <ChartCard title="Evolução do Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
+                  </div>
+                )}
+
+                {tab === 'analysis' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Cycle time por etapa" subtitle="Tempo médio em cada fase do fluxo — a barra âmbar é o gargalo.">
+                      <StageBreakdownChart data={analysis.stages} />
+                    </ChartCard>
+                    <ChartCard title="Dispersão do Lead Time" subtitle="Cada ponto é um item entregue; as linhas são P50 e P85. Vermelho = acima do P85.">
+                      <LeadTimeScatterChart data={analysis.scatter} />
+                    </ChartCard>
+                    <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
+                      <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
+                    </ChartCard>
+                    <article className="chart-card">
+                      <div className="card-heading"><div><span className="eyebrow">WIP por idade</span><h2>Aging heatmap</h2></div></div>
+                      <p className="sub">Itens em andamento por faixa de idade — quanto mais quente, mais trabalho envelhecendo.</p>
+                      <div style={{ marginTop: 8 }}><AgingHeatmap rows={analysis.heatmap} onSelectTeam={goToTeam} /></div>
+                    </article>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Cards mais problemáticos</h2></div></div>
+                      <p className="sub">Itens em andamento há mais tempo — clique para abrir o time.</p>
+                      <div style={{ marginTop: 8 }}><AttentionItemsList items={analysis.attention} onSelectTeam={goToTeam} /></div>
+                    </article>
                   </div>
                 )}
               </section>

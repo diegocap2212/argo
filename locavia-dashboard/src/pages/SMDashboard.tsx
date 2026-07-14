@@ -5,8 +5,10 @@ import { teamLabel } from '../config/teamLabels';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
 import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
+import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { type DashboardTab } from '../components/DashboardTabs';
 import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, LeadTimeTrendChart, StoryPointsChart, TeamPerformanceComparisonChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
+import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
 import '../styles/redesign.css';
 
 interface Props { smConfig: SMConfig }
@@ -50,6 +52,13 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
   const trend = useMemo(() => computeWeeklyPerformanceTrend(scopedItems, period, now, smConfig.id), [scopedItems, period, now, smConfig.id]);
   const cfd = useMemo(() => computeCumulativeFlow(scopedItems, period), [scopedItems, period]);
   const aging = useMemo(() => computeAgingDistribution(scopedItems, now), [scopedItems, now]);
+  const analysis = useMemo(() => ({
+    scatter: computeLeadTimeScatter(scopedItems, period),
+    throughputVsLead: computeThroughputVsLeadTime(trend),
+    stages: computeStageDurations(scopedItems, period),
+    heatmap: computeAgingHeatmap(scopedItems, [...teamIds], now),
+    attention: computeAttentionItems(scopedItems, now, 10),
+  }), [scopedItems, period, trend, teamIds, now]);
   const scopedInsights = insights.filter(insight => teamIds.has(insight.teamId));
   const pointsCoverage = Math.round(trend.filter(p => p.throughput > 0).reduce((s, p) => s + p.pointsCoverage, 0) / Math.max(trend.filter(p => p.throughput > 0).length, 1));
   const totals = teams.reduce((acc, team) => ({
@@ -98,9 +107,9 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
 
               <section>
                 <div className="tabs">
-                  {(['overview', 'flow', 'commitment', 'time'] as DashboardTab[]).map(id => (
+                  {(['overview', 'flow', 'commitment', 'time', 'analysis'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : 'Tempo'}
+                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : id === 'time' ? 'Tempo' : 'Análise de Fluxo'}
                     </button>
                   ))}
                 </div>
@@ -129,6 +138,29 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
                   <div className="chart-grid">
                     <ChartCard title="Lead Time P85" subtitle="Evolução semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
                     <ChartCard title="Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
+                  </div>
+                )}
+                {tab === 'analysis' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Cycle time por etapa" subtitle="Tempo médio em cada fase do fluxo — a barra âmbar é o gargalo.">
+                      <StageBreakdownChart data={analysis.stages} />
+                    </ChartCard>
+                    <ChartCard title="Dispersão do Lead Time" subtitle="Cada ponto é um item entregue; as linhas são P50 e P85. Vermelho = acima do P85.">
+                      <LeadTimeScatterChart data={analysis.scatter} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} />
+                    </ChartCard>
+                    <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
+                      <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
+                    </ChartCard>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">WIP por idade</span><h2>Aging heatmap</h2></div></div>
+                      <p className="sub">Itens em andamento por time e faixa de idade — clique num time para abrir o detalhe.</p>
+                      <div style={{ marginTop: 8 }}><AgingHeatmap rows={analysis.heatmap} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} /></div>
+                    </article>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Cards mais problemáticos</h2></div></div>
+                      <p className="sub">Itens em andamento há mais tempo no portfólio — clique para abrir o time.</p>
+                      <div style={{ marginTop: 8 }}><AttentionItemsList items={analysis.attention} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} /></div>
+                    </article>
                   </div>
                 )}
               </section>

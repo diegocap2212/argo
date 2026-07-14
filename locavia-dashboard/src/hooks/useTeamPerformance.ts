@@ -5,6 +5,7 @@ import { generateTeamInsights } from '../performance/insights';
 import { fetchData } from '../services/dataService';
 import type { DashboardItem } from '../types/jira';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
+import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 
 export function useTeamPerformance(teamId: string, days = 56) {
   const [allItems, setAllItems] = useState<DashboardItem[]>([]);
@@ -34,6 +35,13 @@ export function useTeamPerformance(teamId: string, days = 56) {
   const trend = useMemo(() => computeWeeklyPerformanceTrend(items, period, now, teamId), [items, period, now, teamId]);
   const cfd = useMemo(() => computeCumulativeFlow(items, period), [items, period]);
   const aging = useMemo(() => computeAgingDistribution(items, now), [items, now]);
+  const analysis = useMemo(() => ({
+    scatter: computeLeadTimeScatter(items, period),
+    throughputVsLead: computeThroughputVsLeadTime(trend),
+    stages: computeStageDurations(items, period),
+    heatmap: computeAgingHeatmap(items, [teamId], now),
+    attention: computeAttentionItems(items, now, 8),
+  }), [items, period, trend, teamId, now]);
 
-  return { items, period, snapshot, previousSnapshot, insights, trend, cfd, aging, loading, error };
+  return { items, period, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, loading, error };
 }

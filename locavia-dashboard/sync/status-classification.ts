@@ -32,6 +32,63 @@ export const DEV_STARTED_STATUS_NAMES = [
   'code review em progresso', 'aguardando code review',
 ];
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ETAPAS DO FLUXO (dimensão nova e paralela ao StatusCategory) — usada só para o
+// "cycle time por etapa" (tempo em cada fase do changelog). NÃO altera a classificação
+// TODO/IN_PROGRESS/DONE, que continua sendo a fonte única de entrega.
+export type Stage = 'Backlog' | 'Desenvolvimento' | 'QA' | 'Homologação/Deploy' | 'Concluído';
+
+// Ordem canônica do fluxo (para montar o waterfall na ordem certa).
+export const STAGE_ORDER: readonly Stage[] = [
+  'Backlog', 'Desenvolvimento', 'QA', 'Homologação/Deploy', 'Concluído',
+];
+
+// Range dos acentos combinantes (U+0300–U+036F). Via RegExp por string p/ não depender de
+// caracteres combinantes literais no arquivo-fonte.
+const COMBINING_MARKS = new RegExp('[\\u0300-\\u036f]', 'g');
+
+/** Remove acentos, emojis e prefixos de numeração ("1. ", "6. ") do nome do status. */
+function normalizeStatusName(statusName: string): string {
+  return (statusName || '')
+    .normalize('NFD')                    // decompõe acentos (Ç → C + cedilha combinante)
+    .replace(COMBINING_MARKS, '')        // remove os acentos → junto (CONCLUÍDO → CONCLUIDO)
+    .replace(/[^\x00-\x7F]/g, ' ')       // emojis/símbolos restantes → espaço
+    .replace(/^\s*\d+\.\s*/, '')         // "1. BACKLOG" → "BACKLOG"
+    .toUpperCase().replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Mapeia o nome de um status do Jira para uma etapa canônica do fluxo (dev→QA→homolog→deploy).
+ * Checagens ordenadas (a 1ª que casar vence) para evitar ambiguidade entre QA/Homolog/Deploy.
+ * Retorna null quando não reconhece — o chamador decide o que fazer (ignorar o intervalo).
+ */
+export function classifyStage(statusName: string): Stage | null {
+  const n = normalizeStatusName(statusName);
+  if (!n) return null;
+
+  // Especiais primeiro (o nome engana o mapa genérico):
+  if (n === 'DESENV CONCLUIDO') return 'Desenvolvimento';            // dev concluído, não fechamento
+  if (/PRONTO (PRA|PARA) DESENVOLVER/.test(n)) return 'Backlog';     // aguardando início, não "DESENV"
+  if (/PRONTO PARA PRODUCAO|AGUARDANDO DEPLOY PROD/.test(n)) return 'Homologação/Deploy';
+
+  // Estados finais (têm resolução no Jira):
+  if (/\bDONE\b|CONCLUID|EM PRODUCAO|\bPRODUCAO\b|FINALIZAD/.test(n)) return 'Concluído';
+
+  // Homologação / Deploy (deploy PROD já tratado acima):
+  if (/HOMOLOG|DEPLOY|PRE.?PROD|STAGING|LIBERAD/.test(n)) return 'Homologação/Deploy';
+
+  // QA / Testes:
+  if (/\bQA\b|TESTE|\bUX\b/.test(n)) return 'QA';
+
+  // Desenvolvimento:
+  if (/DESENV|DEVELOP|EM ANDAMENTO|EM EXECU|DOING|EM PROGRESSO|CODE REVIEW/.test(n)) return 'Desenvolvimento';
+
+  // Backlog / preparação (refinamento é preparação, não desenvolvimento ativo):
+  if (/BACKLOG|PRIORIZAD|IDEIA|DESEJO|ABERTO|NOVAS ATIVIDADES|PRONTO (PRA|PARA) DESENVOLVER|DESCOBERTA|PENDING|SPRINT|REFINAMENTO/.test(n)) return 'Backlog';
+
+  return null;
+}
+
 /**
  * Classifica o estado atual de uma issue.
  * Regra: DONE sse tem resolução (resolutiondate) OU o statusCategory do Jira é "concluído";
