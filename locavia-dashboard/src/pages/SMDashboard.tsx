@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { SMConfig, TeamConfig } from '../config/sm-config';
+import { matchesTeam, type SMConfig } from '../config/sm-config';
 import { teamLabel } from '../config/teamLabels';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
 import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
@@ -20,15 +20,6 @@ interface Props { smConfig: SMConfig }
 const PERIODS = [4, 8, 12, 16, 24];
 const healthLabel: Record<TeamHealthStatus, string> = { healthy: 'Saudável', attention: 'Atenção', critical: 'Crítico' };
 const healthClass: Record<TeamHealthStatus, string> = { healthy: 'saudavel', attention: 'atencao', critical: 'critico' };
-
-function matchesTeam(teamId: string, config: TeamConfig): boolean {
-  const value = teamId.toUpperCase();
-  return value === config.carCode.toUpperCase()
-    || config.teamFieldValues.some(candidate => {
-      const normalized = candidate.toUpperCase();
-      return value.includes(normalized) || normalized.includes(value);
-    });
-}
 
 function ChartCard({ title, subtitle, wide, tall, children }: { title: string; subtitle?: string; wide?: boolean; tall?: boolean; children: React.ReactNode }) {
   return (

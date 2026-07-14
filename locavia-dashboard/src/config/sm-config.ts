@@ -12,6 +12,16 @@ export interface SMConfig {
   teams: TeamConfig[];
 }
 
+/** Um time (valor do campo Time do Jira) pertence a este config de time? */
+export function matchesTeam(teamId: string, config: TeamConfig): boolean {
+  const value = teamId.toUpperCase();
+  return value === config.carCode.toUpperCase()
+    || config.teamFieldValues.some(candidate => {
+      const normalized = candidate.toUpperCase();
+      return value.includes(normalized) || normalized.includes(value);
+    });
+}
+
 export const SM_CONFIGS: SMConfig[] = [
   {
     id: 'gabriela',

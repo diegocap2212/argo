@@ -9,6 +9,8 @@ Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **
 - **Saúde & Prioridades** — riscos e ação: **cards mais problemáticos** (itens em andamento há mais tempo, com Key/etapa/dias), **aging heatmap** (WIP por time e faixa de idade), aging do WIP, planejado × realizado, Story Points e insights.
 - **Épicos** — iniciativas: **progresso por épico** (concluídos × restantes), **cobertura** (% do trabalho sob um épico vs avulso, em donut) e a **tabela de épicos** (status, progresso, volume, idade). Ver `src/performance/epics.ts` e `src/components/EpicsCharts.tsx`.
 
+A home (`/`) traz, acima da matriz de saúde, um **comparativo da torre**: cartões-resumo por agilista e um ranking em barras que alterna entre **SM × SM** (cada agilista agregado) e **time × time** (coloridos por agilista), com métrica selecionável (vazão, lead/cycle time, WIP, saldo, previsibilidade, envelhecidos, cobertura de SP). Lógica em `src/performance/smComparison.ts` (`computeSMComparison`/`rankByMetric`), UI em `src/components/TowerComparison.tsx`; o dono de cada time é resolvido por `matchesTeam` em `src/config/sm-config.ts`.
+
 As funções de análise são puras, em `src/performance/analytics.ts` e `epics.ts`. Dois campos derivados do changelog/hierarquia do Jira sustentam essas abas, preenchidos pelo sync: **`TimeInStatus`** (horas por etapa, via `sync/status-classification.ts` `classifyStage` + `sync/metrics-calculator.ts`) e **`Epic`/`EpicName`/`EpicStatus`** (épico pai, via `parent` no `sync/field-mapper.ts`).
 
 O charter visual e de vocabulário vive em [`DESIGN.md`](DESIGN.md) e deve ser lido antes de qualquer mudança de interface.
@@ -17,7 +19,7 @@ O charter visual e de vocabulário vive em [`DESIGN.md`](DESIGN.md) e deve ser l
 
 | Rota | Conteúdo |
 |---|---|
-| `/` | Resumo executivo e matriz de saúde dos times |
+| `/` | Resumo executivo, **comparativo por agilista** (ranking SM×SM e time×time) e matriz de saúde dos times |
 | `/time/:teamId` | Performance detalhada de um time |
 | `/sm/:smId` | Portfólio de times por agilista |
 | `/api-docs` | Swagger UI da API autenticada |

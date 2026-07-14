@@ -164,3 +164,37 @@
   .rd .intro h1 { font-size: 44px; }
   .rd .page-head h1 { font-size: 38px; }
 }
+
+/* ── Comparativo da torre (Home): cards por agilista + ranking ── */
+.rd .tower-comparison { margin-top: 64px; }
+.rd .sm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin: 22px 0 28px; }
+.rd .sm-card { text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 20px 22px; cursor: pointer; transition: transform .2s ease, box-shadow .2s ease; }
+.rd .sm-card:hover { transform: translateY(-3px); box-shadow: 0 18px 44px rgba(24,31,25,.10); }
+.rd .sm-card-head { display: flex; align-items: center; gap: 12px; }
+.rd .sm-avatar { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: #05130a; font-weight: 800; font-size: 14px; flex-shrink: 0; }
+.rd .sm-card-head > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.rd .sm-card-head strong { font-size: 16px; }
+.rd .sm-card-head small { color: var(--muted); font-size: 12px; }
+.rd .sm-card-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line); }
+.rd .sm-card-metrics b { font: 400 20px Newsreader, Georgia, serif; display: block; line-height: 1; }
+.rd .sm-card-metrics span { color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .6px; }
+.rd .rank-card { padding: 24px 26px; }
+.rd .rank-controls { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.rd .rank-metric { display: flex; align-items: center; gap: 12px; }
+.rd .rank-hint { color: var(--muted); font-size: 11px; font-style: italic; }
+.rd .rank-list { display: flex; flex-direction: column; }
+.rd .rank-row { display: flex; align-items: center; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.rd .rank-row:last-child { border-bottom: 0; }
+.rd .rank-row.clickable { cursor: pointer; }
+.rd .rank-row.clickable:hover .rank-name { color: var(--green); }
+.rd .rank-pos { color: var(--muted); font: 400 14px Newsreader, Georgia, serif; width: 22px; flex-shrink: 0; }
+.rd .rank-body { flex: 1; min-width: 0; }
+.rd .rank-line { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 7px; }
+.rd .rank-name { font-size: 13px; font-weight: 600; }
+.rd .rank-sub { font-size: 11px; font-weight: 600; margin-left: 8px; }
+.rd .rank-value { font: 400 17px Newsreader, Georgia, serif; }
+.rd .rank-track { height: 8px; border-radius: 6px; background: var(--rd-chip); overflow: hidden; }
+.rd .rank-fill { display: block; height: 100%; border-radius: 6px; transition: width .35s ease; min-width: 3px; }
+@media (max-width: 680px) {
+  .rd .sm-card-metrics { grid-template-columns: 1fr 1fr; }
+}

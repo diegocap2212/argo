@@ -7,6 +7,8 @@ import { attachMaturity } from '../src/performance/maturity';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../src/performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations } from '../src/performance/analytics';
 import { forecastHowMany, forecastWhen } from '../src/performance/montecarlo';
+import { computeSMComparison, rankByMetric, COMPARISON_METRICS } from '../src/performance/smComparison';
+import type { SMConfig } from '../src/config/sm-config';
 import type { DashboardItem } from '../src/types/jira';
 
 function item(overrides: Partial<DashboardItem>): DashboardItem {
@@ -154,5 +156,47 @@ const mcVar = forecastWhen([2, 6, 10], 20, 3000);
 assert.ok(mcVar.p95 >= mcVar.p50);
 const mcVarMany = forecastHowMany([2, 6, 10], 4, 3000);
 assert.ok(mcVarMany.p95 <= mcVarMany.p50);
+
+// ── Comparativo da torre (Home): SM × SM e time × time ──
+const cmpPeriod = { start: '2026-06-01', end: '2026-06-30' };
+const cmpNow = new Date('2026-07-01T00:00:00Z');
+const done = (key: string, team: string, resolved: string, lead: number) =>
+  item({ Key: key, Team: team, Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: resolved, LeadTime: lead });
+const cmpItems = [
+  // ANA: 2 times, 3 entregas
+  done('ALFA-1', 'ALFA', '2026-06-10T00:00:00Z', 5),
+  done('ALFA-2', 'ALFA', '2026-06-12T00:00:00Z', 7),
+  done('BETA-1', 'BETA', '2026-06-15T00:00:00Z', 20),
+  // BRUNO: 1 time, 1 entrega
+  done('GAMA-1', 'GAMA', '2026-06-11T00:00:00Z', 3),
+  // sem agilista
+  done('ZETA-1', 'ZETA', '2026-06-11T00:00:00Z', 4),
+];
+const cmpConfigs: SMConfig[] = [
+  { id: 'ana', name: 'Ana', avatar: 'AN', teams: [
+    { carCode: 'ALFA', displayName: 'Alfa', teamFieldValues: ['ALFA'], keyPrefixes: ['ALFA'] },
+    { carCode: 'BETA', displayName: 'Beta', teamFieldValues: ['BETA'], keyPrefixes: ['BETA'] },
+  ] },
+  { id: 'bruno', name: 'Bruno', avatar: 'BR', teams: [
+    { carCode: 'GAMA', displayName: 'Gama', teamFieldValues: ['GAMA'], keyPrefixes: ['GAMA'] },
+  ] },
+];
+const cmpPortfolio = computePerformancePortfolio(cmpItems, cmpPeriod, cmpNow);
+const cmp = computeSMComparison(cmpItems, cmpPortfolio.teams, cmpConfigs, cmpPeriod, cmpNow);
+// Dois agilistas com dados; Ana soma 3 entregas (2 times), Bruno 1 (1 time).
+assert.equal(cmp.sms.length, 2);
+const ana = cmp.sms.find(s => s.id === 'ana');
+assert.equal(ana?.snapshot.delivery.throughput, 3);
+assert.equal(ana?.teamCount, 2);
+assert.equal(cmp.sms.find(s => s.id === 'bruno')?.snapshot.delivery.throughput, 1);
+// Cada time recebe o dono correto; ZETA fica sem agilista.
+assert.equal(cmp.teams.find(t => t.teamId === 'ALFA')?.smId, 'ana');
+assert.equal(cmp.teams.find(t => t.teamId === 'ZETA')?.smId, null);
+// Ranking de vazão (maior é melhor): Ana na frente de Bruno.
+const throughput = COMPARISON_METRICS.find(m => m.key === 'throughput')!;
+assert.deepEqual(rankByMetric(cmp.sms, throughput).map(s => s.id), ['ana', 'bruno']);
+// Ranking de lead time (menor é melhor): Bruno (3) antes de Ana (P85 mais alto por causa do BETA-1=20).
+const lead = COMPARISON_METRICS.find(m => m.key === 'leadTimeP85')!;
+assert.equal(rankByMetric(cmp.sms, lead)[0].id, 'bruno');
 
 console.log('Performance snapshot: testes passaram.');
