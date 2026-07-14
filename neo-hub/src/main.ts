@@ -25,8 +25,10 @@ const codeForm = $<HTMLFormElement>('code-form');
 const otpCode = $<HTMLInputElement>('otp-code');
 const btnVerify = $<HTMLButtonElement>('btn-verify');
 const codeStatus = $('code-status');
+const btnResendCode = $<HTMLButtonElement>('btn-resend-code');
 
 let pendingEmail = '';
+let resendTimer: ReturnType<typeof setInterval> | null = null;
 
 const ALLOWED_DOMAIN = '@lmmobilidade.com.br';
 
@@ -69,6 +71,27 @@ function showDoors(session: Session) {
 function showError(message: string) {
   gateStatus.textContent = message;
   gateStatus.hidden = false;
+}
+
+// Cooldown de 60s no "Reenviar código" — é o intervalo mínimo que o Supabase aceita entre
+// dois envios de OTP; segurar o botão evita erro e deixa o tempo de espera explícito.
+function startResendCooldown() {
+  if (resendTimer) clearInterval(resendTimer);
+  let left = 60;
+  const tick = () => {
+    if (left <= 0) {
+      if (resendTimer) clearInterval(resendTimer);
+      resendTimer = null;
+      btnResendCode.disabled = false;
+      btnResendCode.textContent = 'Reenviar código';
+      return;
+    }
+    btnResendCode.disabled = true;
+    btnResendCode.textContent = `Reenviar em ${left}s`;
+    left -= 1;
+  };
+  tick();
+  resendTimer = setInterval(tick, 1000);
 }
 
 // Decide o que mostrar a partir da sessão: autorizado → doors; logado-mas-não-autorizado → erro; sem sessão → form.
@@ -128,7 +151,23 @@ async function init() {
     showGate('sent');
     otpCode.value = '';
     codeStatus.hidden = true;
+    startResendCooldown();
     otpCode.focus();
+  });
+
+  // Reenvia o código para o mesmo e-mail (a allowlist já foi validada no 1º envio).
+  btnResendCode.addEventListener('click', async () => {
+    if (!pendingEmail || btnResendCode.disabled) return;
+    startResendCooldown();
+    const { error } = await supabase.auth.signInWithOtp({
+      email: pendingEmail,
+      options: { shouldCreateUser: true },
+    });
+    codeStatus.classList.toggle('ok', !error);
+    codeStatus.textContent = error
+      ? 'Não foi possível reenviar agora. Aguarde um instante e tente de novo.'
+      : 'Enviamos um novo código. Use sempre o do e-mail mais recente.';
+    codeStatus.hidden = false;
   });
 
   // Verifica o código digitado (6 dígitos do e-mail) → cria a sessão.
@@ -148,6 +187,7 @@ async function init() {
     btnVerify.disabled = false;
     btnVerify.textContent = 'Entrar';
     if (error) {
+      codeStatus.classList.remove('ok');
       codeStatus.textContent = 'Código inválido ou expirado. Peça um código novo e use o do e-mail mais recente.';
       codeStatus.hidden = false;
       return;
@@ -170,6 +210,9 @@ async function init() {
   doorMaturity.addEventListener('click', (e) => void openApp(e, doorMaturity.href));
 
   btnResend.addEventListener('click', () => {
+    if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
+    codeStatus.classList.remove('ok');
+    codeStatus.hidden = true;
     showGate('form');
     otpEmail.focus();
   });

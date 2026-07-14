@@ -77,6 +77,12 @@
     .gate-sent strong{color:var(--ink)}
     .gate-resend{margin-top:16px;background:none;border:0;padding:0;color:#666e67;font:600 9px Inter,Arial,sans-serif;text-transform:uppercase;letter-spacing:1.4px;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
     .gate-resend:hover{color:var(--ink)}
+    .gate-resend:disabled{opacity:.5;cursor:default;text-decoration:none}
+    .gate-tip{margin:20px auto 0;max-width:360px;color:#858c86;font-size:11px;line-height:1.55}
+    .gate-tip strong{color:#666e67}
+    .gate-actions{margin-top:18px;display:flex;gap:22px;justify-content:center;flex-wrap:wrap}
+    .gate-actions .gate-resend{margin-top:0}
+    .gate-status.ok{color:#3d6b4a}
     .gate-glow{position:absolute;width:260px;height:260px;border-radius:50%;background:var(--green);filter:blur(90px);opacity:.14;left:-90px;bottom:-120px;pointer-events:none}
     /* ── Sessão ativa ── */
     .session-bar{margin:-14px auto 34px;display:flex;align-items:center;gap:14px;color:#666e67;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2px}
@@ -132,7 +138,11 @@
             <button class="ms-btn" id="btn-verify" type="submit">Entrar</button>
           </form>
           <p class="gate-status" id="code-status" role="alert" hidden></p>
-          <button class="gate-resend" id="btn-resend" type="button">Usar outro e-mail</button>
+          <p class="gate-tip">O e-mail pode levar alguns minutos. Não encontrou? Confira o <strong>Lixo Eletrônico / Spam</strong> — o código também aparece no assunto da mensagem.</p>
+          <div class="gate-actions">
+            <button class="gate-resend" id="btn-resend-code" type="button">Reenviar código</button>
+            <button class="gate-resend" id="btn-resend" type="button">Usar outro e-mail</button>
+          </div>
         </div>
       </div>
     </section>
