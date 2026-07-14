@@ -2,9 +2,14 @@
 
 Central de performance das equipes de software da Locavia. O produto consolida fluxo, throughput, lead/cycle time, previsibilidade, qualidade dos dados e insights auditáveis por **time + período**.
 
-Os dashboards de Agilista e Time seguem a jornada **Visão geral → Fluxo → Compromisso → Tempo → Análise de Fluxo**. A leitura semanal inclui itens novos, vazão por tipo, planejado versus realizado, demanda descoberta e Story Points comprometidos versus entregues. O gráfico de pontos sinaliza baixa confiança quando menos de 40% das entregas possuem estimativa.
+Os dashboards de Agilista e Time são organizados em **4 abas**: **Entrega**, **Tempo & Gargalos**, **Saúde & Prioridades** e **Épicos**. Subtarefas e épicos-item são excluídos do dataset pelo JQL do sync (só histórias/bugs/tarefas/etc. contam nas métricas de fluxo).
 
-A aba **Análise de Fluxo** aprofunda o diagnóstico com visualizações complementares: **cycle time por etapa** (tempo médio em Backlog → Desenvolvimento → QA → Homologação/Deploy, destacando o gargalo), **dispersão de Lead Time** (control chart com P50/P85 e outliers), **Vazão × Lead Time** (correlação semanal) e **aging heatmap** (WIP por time e faixa de idade), além da lista **Cards mais problemáticos** — itens em andamento há mais tempo, com Key, etapa atual e dias parados, para ação direta. As funções puras vivem em `src/performance/analytics.ts`. O cycle time por etapa depende do campo `TimeInStatus` (horas por etapa) preenchido pelo sync a partir do changelog do Jira — ver `sync/status-classification.ts` (`classifyStage`) e `sync/metrics-calculator.ts`.
+- **Entrega** — vazão e fluxo: itens novos × entregues, entradas × saídas, CFD, vazão por tipo (e, no agilista, o comparativo dos times).
+- **Tempo & Gargalos** — velocidade e onde trava: **cycle time por etapa** (Backlog → Desenvolvimento → QA → Homologação/Deploy, destacando o gargalo), **dispersão de Lead Time** (control chart com P50/P85 e outliers), **Vazão × Lead Time** (série temporal: entregas em barras + Lead Time P85 na linha) e evolução do Cycle Time P85.
+- **Saúde & Prioridades** — riscos e ação: **cards mais problemáticos** (itens em andamento há mais tempo, com Key/etapa/dias), **aging heatmap** (WIP por time e faixa de idade), aging do WIP, planejado × realizado, Story Points e insights.
+- **Épicos** — iniciativas: **progresso por épico** (concluídos × restantes), **cobertura** (% do trabalho sob um épico vs avulso, em donut) e a **tabela de épicos** (status, progresso, volume, idade). Ver `src/performance/epics.ts` e `src/components/EpicsCharts.tsx`.
+
+As funções de análise são puras, em `src/performance/analytics.ts` e `epics.ts`. Dois campos derivados do changelog/hierarquia do Jira sustentam essas abas, preenchidos pelo sync: **`TimeInStatus`** (horas por etapa, via `sync/status-classification.ts` `classifyStage` + `sync/metrics-calculator.ts`) e **`Epic`/`EpicName`/`EpicStatus`** (épico pai, via `parent` no `sync/field-mapper.ts`).
 
 O charter visual e de vocabulário vive em [`DESIGN.md`](DESIGN.md) e deve ser lido antes de qualquer mudança de interface.
 
