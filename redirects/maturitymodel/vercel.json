@@ -1,0 +1,5 @@
+{
+  "redirects": [
+    { "source": "/:path*", "destination": "https://neo-lm.vercel.app/maturity/:path*", "permanent": true }
+  ]
+}
