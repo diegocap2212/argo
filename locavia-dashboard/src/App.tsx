@@ -8,6 +8,7 @@ import './App.css';
 
 const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'));
 const TeamDetail = lazy(() => import('./pages/TeamDetail'));
+const TowerView = lazy(() => import('./pages/TowerView'));
 const ApiDocs = lazy(() => import('./pages/ApiDocs'));
 
 const Loading = () => (
@@ -28,6 +29,7 @@ const App = () => (
   <AppShell>
     <Routes>
       <Route path="/" element={<Suspense fallback={<Loading />}><PerformanceDashboard /></Suspense>} />
+      <Route path="/torre" element={<Suspense fallback={<Loading />}><TowerView /></Suspense>} />
       <Route path="/sm/:smId" element={<SMDashboardWrapper />} />
       <Route path="/time/:teamId" element={<Suspense fallback={<Loading />}><TeamDetail /></Suspense>} />
       <Route path="/api-docs" element={<Suspense fallback={<Loading />}><ApiDocs /></Suspense>} />

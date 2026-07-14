@@ -4,8 +4,8 @@
 // congelado (último commitado) caso o blob falhe/ainda não exista.
 import crypto from 'crypto';
 import { get } from '@vercel/blob';
-import fallbackData from '../src/data.json' with { type: 'json' };
-import fallbackMeta from '../src/data-meta.json' with { type: 'json' };
+import fallbackData from '../locavia-dashboard/src/data.json' with { type: 'json' };
+import fallbackMeta from '../locavia-dashboard/src/data-meta.json' with { type: 'json' };
 
 const BLOB_PATHNAME = 'jira-data.json';
 

@@ -9,7 +9,8 @@ import { ThemeProvider } from './theme/ThemeProvider'
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>
-      <BrowserRouter>
+      {/* basename segue o base do build: '/' em dev/standalone, '/dash' no portal NEO. */}
+      <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/'}>
         <AuthGate>
           <App />
         </AuthGate>

@@ -1,25 +1,7 @@
 import { supabase, supabaseConfigured } from '../lib/supabase';
 
-// URL do hub NEO (página de login única). Configurável por env; default = projeto Vercel do hub.
-const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || 'https://neo-lm.vercel.app';
-
-/**
- * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.
- * Necessário porque hub e Dash são origens distintas (localStorage não é compartilhado).
- * Limpa o fragment em seguida para não deixar tokens na barra de endereços/histórico.
- */
-export async function consumeNeoSession(): Promise<void> {
-  if (!supabaseConfigured) return;
-  const hash = window.location.hash;
-  if (!hash.includes('neo_at=')) return;
-  const p = new URLSearchParams(hash.slice(1));
-  const access_token = p.get('neo_at');
-  const refresh_token = p.get('neo_rt');
-  if (access_token && refresh_token) {
-    await supabase.auth.setSession({ access_token, refresh_token });
-  }
-  history.replaceState(null, '', window.location.pathname + window.location.search);
-}
+// Portal NEO de origem única: o hub (login) vive em `/` na mesma origem — a sessão Supabase
+// é compartilhada pelo localStorage, sem handoff por fragment.
 
 /** Access token da sessão Supabase, para enviar como Bearer às functions autenticadas. */
 export async function getAccessToken(): Promise<string | null> {
@@ -41,13 +23,14 @@ export async function hasSession(): Promise<boolean> {
   return !!data.session;
 }
 
-/** Manda o usuário ao hub para autenticar (o Dash não tem tela de login própria). */
+/** Manda o usuário ao hub (raiz da origem) para autenticar — o Dash não tem login próprio. */
 export function redirectToHub(): void {
-  window.location.href = HUB_URL;
+  window.location.href = '/';
 }
 
-/** Encerra a sessão e volta ao hub. */
+/** Encerra a sessão NEO (cookie do middleware + Supabase) e volta ao hub. */
 export async function logout(): Promise<void> {
+  await fetch('/api/session', { method: 'DELETE' }).catch(() => {});
   if (supabaseConfigured) await supabase.auth.signOut();
   redirectToHub();
 }

@@ -4,10 +4,7 @@ import { subDays } from 'date-fns';
 import { teamLabel } from '../config/teamLabels';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
 import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
-import { computeSMComparison } from '../performance/smComparison';
-import { SM_CONFIGS } from '../config/sm-config';
 import { FlowVolumeChart } from '../components/PerformanceCharts';
-import { TowerComparison } from '../components/TowerComparison';
 import '../styles/redesign.css';
 
 const healthLabel: Record<TeamHealthStatus, string> = { healthy: 'Saudável', attention: 'Atenção', critical: 'Crítico' };
@@ -28,12 +25,7 @@ export default function PerformanceDashboard() {
   const [weeks, setWeeks] = useState(8);
   const [filter, setFilter] = useState<'Todos' | TeamHealthStatus>('Todos');
   const [search, setSearch] = useState('');
-  const { items, period, portfolio, previousPortfolio, insights, trend, loading, error, now } = usePerformancePortfolio(weeks * 7);
-
-  const comparison = useMemo(
-    () => computeSMComparison(items, portfolio.teams, SM_CONFIGS, period, now),
-    [items, portfolio.teams, period, now],
-  );
+  const { portfolio, previousPortfolio, insights, trend, loading, error, now } = usePerformancePortfolio(weeks * 7);
 
   const rows = useMemo(() => portfolio.teams
     .map(team => ({ team, health: assessTeamHealth(team).status }))
@@ -137,8 +129,6 @@ export default function PerformanceDashboard() {
                 </article>
               </div>
             </section>
-
-            <TowerComparison comparison={comparison} />
 
             <section className="analysis-grid">
               <article className="chart-card">

@@ -2,24 +2,8 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-// Hub NEO: página de login única (Magic Link). O Portal MMA não tem tela de login própria.
-const HUB_URL = (import.meta.env.VITE_HUB_URL as string | undefined) || "https://neo-lm.vercel.app";
-
-/**
- * Consome a sessão passada pelo hub no fragment da URL (#neo_at=…&neo_rt=…) e a aplica.
- * Hub e Portal são origens distintas (localStorage não é compartilhado). Limpa o fragment depois.
- */
-async function consumeNeoSession(): Promise<void> {
-  const hash = window.location.hash;
-  if (!hash.includes("neo_at=")) return;
-  const p = new URLSearchParams(hash.slice(1));
-  const access_token = p.get("neo_at");
-  const refresh_token = p.get("neo_rt");
-  if (access_token && refresh_token) {
-    await supabase.auth.setSession({ access_token, refresh_token });
-  }
-  history.replaceState(null, "", window.location.pathname + window.location.search);
-}
+// Portal NEO de origem única: o hub (login Magic Link) vive em `/` na mesma origem — a sessão
+// Supabase é compartilhada pelo localStorage. O Portal MMA não tem tela de login própria.
 
 interface AuthContextValue {
   user: User | null;
@@ -51,8 +35,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (mounted) setAllowed(!error && data === true);
     };
 
-    // Aplica a sessão vinda do hub (fragment) antes de ler a sessão persistida.
-    consumeNeoSession().then(() => supabase.auth.getSession()).then(async ({ data }) => {
+    // Sessão persistida no localStorage da origem (o hub em `/` fez o login).
+    supabase.auth.getSession().then(async ({ data }) => {
       if (!mounted) return;
       setSession(data.session);
       await checkAllowed(data.session);
@@ -67,9 +51,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => { mounted = false; subscription.subscription.unsubscribe(); };
   }, []);
 
-  const redirectToHub = () => { window.location.href = HUB_URL; };
+  const redirectToHub = () => { window.location.href = "/"; };
 
   const signOut = async () => {
+    // Encerra a sessão NEO (cookie do middleware) além da sessão Supabase.
+    await fetch("/api/session", { method: "DELETE" }).catch(() => {});
     await supabase.auth.signOut();
     redirectToHub();
   };

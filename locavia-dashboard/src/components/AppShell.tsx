@@ -85,7 +85,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <GlobalNavItem label="Trocar aplicação · NEO" icon={LayoutGrid} onClick={redirectToHub} />
       <div style={{ width: 28, height: 1, background: 'var(--border-default)', margin: '2px 0' }} aria-hidden="true" />
       <GlobalNavItem label="Início" icon={Home} active={location.pathname === '/'} onClick={() => navigate('/')} />
-      <GlobalNavItem label="Torre" icon={Building2} active={location.pathname.startsWith('/sm/') || location.pathname.startsWith('/time/')} onClick={() => navigate('/')} />
+      <GlobalNavItem label="Torre · comparativo restrito" icon={Building2} active={location.pathname === '/torre'} onClick={() => navigate('/torre')} />
       <ContextNavItem label="Agilistas" icon={Users} active={!!activeSm} items={SM_CONFIGS.map(sm => ({ id: sm.id, label: sm.name, active: activeSm === sm.id, onSelect: () => navigate(`/sm/${sm.id}`) }))} />
       <ContextNavItem label="Times" icon={Car} active={!!activeTeam} items={teams.map(team => ({ id: team, label: teamLabel(team), active: activeTeam === team, onSelect: () => navigate(`/time/${encodeURIComponent(team)}`) }))} />
     </aside>
@@ -95,7 +95,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         <button onClick={() => navigate('/')} style={{ background: 'none', border: 0, cursor: 'pointer', padding: 0, display: 'flex' }} aria-label="Início · Venice"><VeniceBadge height={22} /></button>
         <div style={{ flex: 1, display: 'flex', justifyContent: 'center' }}><PerformanceDashMark /></div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1.1rem' }}>
-          <img src="/lm-mobilidade.png" alt="LM Mobilidade" style={{ height: 26, width: 'auto', display: 'block' }} />
+          <img src={`${import.meta.env.BASE_URL}lm-mobilidade.png`} alt="LM Mobilidade" style={{ height: 26, width: 'auto', display: 'block' }} />
           <Button variant="secondary" size="sm" onClick={handleLogout} title="Sair" icon={<LogOut size={15} />}>Sair</Button>
         </div>
       </header>

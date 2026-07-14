@@ -83,12 +83,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             <VeniceLogo height={18} />
           </Link>
           <img
-            src="/maturity-model-logo.png"
+            src={`${import.meta.env.BASE_URL}maturity-model-logo.png`}
             alt="Maturity Model"
             className="editorial-product-logo"
           />
           <div className="editorial-top-actions">
-            {inSquadContext ? <SquadSwitcher /> : <img src="/lm-mobilidade.png" alt="LM Mobilidade" className="editorial-lm-logo" />}
+            {inSquadContext ? <SquadSwitcher /> : <img src={`${import.meta.env.BASE_URL}lm-mobilidade.png`} alt="LM Mobilidade" className="editorial-lm-logo" />}
             {inSquadContext && <AxisPills teamId={teamId!} />}
             {inSquadContext && (
               <Button asChild variant="outline" size="sm" className="rounded-full">

@@ -52,7 +52,8 @@ function App() {
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <BrowserRouter>
+            {/* basename segue o base do build: '/' em dev/standalone, '/maturity' no portal NEO. */}
+            <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '') || '/'}>
               <Suspense fallback={<PageFallback />}>
                 <Routes>
                   <Route path="/" element={<Shell><Inicio /></Shell>} />

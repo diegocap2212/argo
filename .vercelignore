@@ -1,0 +1,10 @@
+# Reduz o upload do deploy: builds locais, deps e artefatos de teste ficam fora.
+# NÃO ignorar public/ dos apps — o build composto acontece na Vercel e precisa deles.
+node_modules
+neo-hub/dist
+locavia-dashboard/dist
+maturitymodel/dist
+locavia-dashboard/playwright-report
+locavia-dashboard/test-results
+/hub-login.png
+/metricas-iframe.jpeg

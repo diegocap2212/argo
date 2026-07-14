@@ -9,8 +9,6 @@ const doors = $('doors');
 const sessionBar = $('session-bar');
 const sessionUser = $('session-user');
 const btnLogout = $<HTMLButtonElement>('btn-logout');
-const doorPerformance = $<HTMLAnchorElement>('door-performance');
-const doorMaturity = $<HTMLAnchorElement>('door-maturity');
 
 // Login (código OTP por e-mail — mais robusto que o link, que scanners de spam consomem)
 const formView = $('gate-form-view');
@@ -94,6 +92,24 @@ function startResendCooldown() {
   resendTimer = setInterval(tick, 1000);
 }
 
+// Emite o cookie neo_session (HttpOnly) que o Edge Middleware exige para servir /dash e
+// /maturity. Melhor-esforço: sem ele o middleware devolve o usuário ao hub com ?next=.
+async function establishNeoSession(session: Session): Promise<void> {
+  try {
+    await fetch('/api/session', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+  } catch { /* dev local sem functions — o gate client-side segue valendo */ }
+}
+
+// Destino pós-login vindo do middleware (?next=/dash/...). Só caminhos internos das apps —
+// nunca URL absoluta (anti open-redirect).
+function pendingNext(): string | null {
+  const next = new URLSearchParams(window.location.search).get('next');
+  return next && /^\/(dash|maturity)(\/|$)/.test(next) ? next : null;
+}
+
 // Decide o que mostrar a partir da sessão: autorizado → doors; logado-mas-não-autorizado → erro; sem sessão → form.
 async function reconcile(session: Session | null) {
   if (!session) {
@@ -101,6 +117,12 @@ async function reconcile(session: Session | null) {
     return;
   }
   if (await isAllowed(session)) {
+    await establishNeoSession(session);
+    const next = pendingNext();
+    if (next) {
+      window.location.replace(next);
+      return;
+    }
     showDoors(session);
   } else {
     await supabase.auth.signOut();
@@ -195,19 +217,8 @@ async function init() {
     // Sucesso: onAuthStateChange(SIGNED_IN) dispara reconcile → mostra as portas.
   });
 
-  // Handoff de sessão: hub e apps são origens diferentes (localStorage não é compartilhado),
-  // então ao abrir uma app levamos a sessão no fragment (#), que ela consome e limpa no boot.
-  // O fragment não é enviado ao servidor nem a logs; os tokens duram ~1h.
-  const openApp = async (e: Event, baseUrl: string) => {
-    e.preventDefault();
-    const { data } = await supabase.auth.getSession();
-    const s = data.session;
-    if (!s) { await reconcile(null); return; }
-    const frag = `neo_at=${encodeURIComponent(s.access_token)}&neo_rt=${encodeURIComponent(s.refresh_token)}`;
-    window.location.href = `${baseUrl.split('#')[0]}#${frag}`;
-  };
-  doorPerformance.addEventListener('click', (e) => void openApp(e, doorPerformance.href));
-  doorMaturity.addEventListener('click', (e) => void openApp(e, doorMaturity.href));
+  // Portal de origem única: as portas são links normais (/dash/, /maturity/) — a sessão
+  // Supabase vive no localStorage da mesma origem, sem handoff por fragment.
 
   btnResend.addEventListener('click', () => {
     if (resendTimer) { clearInterval(resendTimer); resendTimer = null; }
@@ -218,6 +229,8 @@ async function init() {
   });
 
   btnLogout.addEventListener('click', async () => {
+    // Remove o cookie do middleware junto com a sessão Supabase.
+    await fetch('/api/session', { method: 'DELETE' }).catch(() => {});
     await supabase.auth.signOut();
   });
 }

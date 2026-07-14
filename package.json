@@ -1,0 +1,22 @@
+{
+  "name": "neo-portal",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Portal NEO — hub (/), Performance Dash (/dash) e Maturity Model (/maturity) numa única origem.",
+  "type": "module",
+  "workspaces": [
+    "neo-hub",
+    "locavia-dashboard",
+    "maturitymodel"
+  ],
+  "scripts": {
+    "build:portal": "node scripts/build-portal.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.38.0",
+    "@vercel/blob": "^2.4.1"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

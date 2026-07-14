@@ -1,0 +1,25 @@
+{
+  "buildCommand": "npm run build:portal",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/dash/:path*", "destination": "/dash/index.html" },
+    { "source": "/maturity/:path*", "destination": "/maturity/index.html" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" }
+      ]
+    },
+    {
+      "source": "/dash/(.*)",
+      "headers": [
+        { "key": "Content-Security-Policy", "value": "frame-ancestors 'self'" }
+      ]
+    }
+  ]
+}

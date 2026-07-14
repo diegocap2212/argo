@@ -37,7 +37,7 @@ export const VeniceBadge: React.FC<VeniceBadgeProps> = ({ height = 24, framed = 
       }}
     >
       <img
-        src="/venice-by-blite.svg"
+        src={`${import.meta.env.BASE_URL}venice-by-blite.svg`}
         alt="Venice by blite"
         style={{ height, width: 'auto', display: 'block', filter }}
       />
