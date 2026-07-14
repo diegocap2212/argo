@@ -6,6 +6,7 @@ import { assessTeamHealth } from '../src/performance/health';
 import { attachMaturity } from '../src/performance/maturity';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../src/performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations } from '../src/performance/analytics';
+import { forecastHowMany, forecastWhen } from '../src/performance/montecarlo';
 import type { DashboardItem } from '../src/types/jira';
 
 function item(overrides: Partial<DashboardItem>): DashboardItem {
@@ -136,5 +137,22 @@ const heat = computeAgingHeatmap([
 ], ['ALFA'], analyticsNow);
 assert.equal(heat.length, 1);
 assert.deepEqual(heat[0].buckets, [0, 0, 0, 1]);
+
+// ── Monte Carlo (aba "Previsão") ──
+// Vazão constante de 5/semana: entregar 10 itens leva exatamente 2 semanas; em 3 semanas, 15 itens.
+const mcWhen = forecastWhen([5, 5, 5], 10, 2000);
+assert.equal(mcWhen.p50, 2);
+assert.equal(mcWhen.p85, 2);
+assert.equal(mcWhen.p95, 2);
+const mcMany = forecastHowMany([5, 5, 5], 3, 2000);
+assert.equal(mcMany.p50, 15);
+assert.equal(mcMany.p85, 15);
+// Sem histórico (tudo zero) não trava nem inventa: retorna vazio.
+assert.equal(forecastWhen([0, 0], 10, 100).trials, 0);
+// Vazão variável mantém a ordem de confiança: 95% conservador ≥ 50% no tempo; ≤ 50% na quantidade.
+const mcVar = forecastWhen([2, 6, 10], 20, 3000);
+assert.ok(mcVar.p95 >= mcVar.p50);
+const mcVarMany = forecastHowMany([2, 6, 10], 4, 3000);
+assert.ok(mcVarMany.p95 <= mcVarMany.p50);
 
 console.log('Performance snapshot: testes passaram.');

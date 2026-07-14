@@ -2,7 +2,7 @@
 
 Central de performance das equipes de software da Locavia. O produto consolida fluxo, throughput, lead/cycle time, previsibilidade, qualidade dos dados e insights auditáveis por **time + período**.
 
-Os dashboards de Agilista e Time são organizados em **4 abas**: **Entrega**, **Tempo & Gargalos**, **Saúde & Prioridades** e **Épicos**. Subtarefas e épicos-item são excluídos do dataset pelo JQL do sync (só histórias/bugs/tarefas/etc. contam nas métricas de fluxo).
+Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **Tempo & Gargalos**, **Saúde & Prioridades**, **Épicos** e **Previsão**. Subtarefas e épicos-item são excluídos do dataset pelo JQL do sync (só histórias/bugs/tarefas/etc. contam nas métricas de fluxo).
 
 - **Entrega** — vazão e fluxo: itens novos × entregues, entradas × saídas, CFD, vazão por tipo (e, no agilista, o comparativo dos times).
 - **Tempo & Gargalos** — velocidade e onde trava: **cycle time por etapa** (Backlog → Desenvolvimento → QA → Homologação/Deploy, destacando o gargalo), **dispersão de Lead Time** (control chart com P50/P85 e outliers), **Vazão × Lead Time** (série temporal: entregas em barras + Lead Time P85 na linha) e evolução do Cycle Time P85.

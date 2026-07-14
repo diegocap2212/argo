@@ -5,6 +5,8 @@ import { type DashboardTab } from '../components/DashboardTabs';
 import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
 import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
 import { EpicCoverageChart, EpicProgressChart, EpicsTable } from '../components/EpicsCharts';
+import { ForecastPanel } from '../components/ForecastPanel';
+import { remainingBacklog, weeklyThroughputSamples } from '../performance/montecarlo';
 import { teamLabel } from '../config/teamLabels';
 import { useTeamPerformance } from '../hooks/useTeamPerformance';
 import '../styles/redesign.css';
@@ -79,9 +81,9 @@ export default function TeamDetail() {
 
               <section>
                 <div className="tabs">
-                  {(['delivery', 'speed', 'health', 'epics'] as DashboardTab[]).map(id => (
+                  {(['delivery', 'speed', 'health', 'epics', 'forecast'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : id === 'health' ? 'Saúde & Prioridades' : 'Épicos'}
+                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : id === 'health' ? 'Saúde & Prioridades' : id === 'epics' ? 'Épicos' : 'Previsão'}
                     </button>
                   ))}
                 </div>
@@ -151,6 +153,18 @@ export default function TeamDetail() {
                       <div className="card-heading"><div><span className="eyebrow">Iniciativas</span><h2>Épicos do time</h2></div></div>
                       <p className="sub">Status, progresso, volume e idade. Idade em vermelho passa de 120 dias.</p>
                       <div style={{ marginTop: 8 }}><EpicsTable epics={epics.epics} /></div>
+                    </article>
+                  </div>
+                )}
+
+                {tab === 'forecast' && (
+                  <div className="chart-grid">
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Monte Carlo</span><h2>Previsão de entrega</h2></div></div>
+                      <p className="sub">Probabilidades a partir da vazão semanal histórica do time — {weeks} semanas reamostradas em milhares de cenários.</p>
+                      <div style={{ marginTop: 12 }}>
+                        <ForecastPanel weekly={weeklyThroughputSamples(trend)} backlog={remainingBacklog(items)} />
+                      </div>
                     </article>
                   </div>
                 )}
