@@ -158,6 +158,10 @@ export function mapJiraIssueToDashboardItem(issue: JiraApiIssue): DashboardItem 
     FuraFila: issue.fields.customfield_10165 || [],         // Fura Fila
     NaturezaDemanda: issue.fields.customfield_12683 || [],  // Natureza da Demanda
     Jornada: jornada,                                       // Jornada de negócio (dimensão)
+    // Épico pai (via parent) — só quando o pai é do tipo Epic (evita capturar hierarquias não-épico).
+    Epic: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? issue.fields.parent.key : null,
+    EpicName: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? (issue.fields.parent.fields.summary || null) : null,
+    EpicStatus: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? (issue.fields.parent.fields.status?.name || null) : null,
     CycleTime: null,
     TimeInTodo: null,
     LeadTime: null,

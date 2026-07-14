@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { type DashboardTab } from '../components/DashboardTabs';
 import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
 import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
+import { EpicCoverageChart, EpicProgressChart, EpicsTable } from '../components/EpicsCharts';
 import { teamLabel } from '../config/teamLabels';
 import { useTeamPerformance } from '../hooks/useTeamPerformance';
 import '../styles/redesign.css';
@@ -28,7 +29,7 @@ export default function TeamDetail() {
   const embedded = new URLSearchParams(location.search).get('embed') === '1';
   const [weeks, setWeeks] = useState(8);
   const [tab, setTab] = useState<DashboardTab>('delivery');
-  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, loading, error } = useTeamPerformance(teamName, weeks * 7);
+  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, epics, loading, error } = useTeamPerformance(teamName, weeks * 7);
   const goToTeam = (team: string) => navigate(`/time/${encodeURIComponent(team)}`);
   const throughputDelta = previousSnapshot.delivery.throughput
     ? Math.round(((snapshot.delivery.throughput - previousSnapshot.delivery.throughput) / previousSnapshot.delivery.throughput) * 100)
@@ -78,9 +79,9 @@ export default function TeamDetail() {
 
               <section>
                 <div className="tabs">
-                  {(['delivery', 'speed', 'health'] as DashboardTab[]).map(id => (
+                  {(['delivery', 'speed', 'health', 'epics'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : 'Saúde & Prioridades'}
+                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : id === 'health' ? 'Saúde & Prioridades' : 'Épicos'}
                     </button>
                   ))}
                 </div>
@@ -134,6 +135,22 @@ export default function TeamDetail() {
                           </div>
                         ))}
                       </div>
+                    </article>
+                  </div>
+                )}
+
+                {tab === 'epics' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Progresso por épico" subtitle="Concluídos (verde) × restantes por épico ativo. Top 12 por volume." tall>
+                      <EpicProgressChart epics={epics.epics} />
+                    </ChartCard>
+                    <ChartCard title="Trabalho sob épico" subtitle="Quanto do que o time toca está ligado a um épico (planejado) vs avulso.">
+                      <EpicCoverageChart view={epics} />
+                    </ChartCard>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Iniciativas</span><h2>Épicos do time</h2></div></div>
+                      <p className="sub">Status, progresso, volume e idade. Idade em vermelho passa de 120 dias.</p>
+                      <div style={{ marginTop: 8 }}><EpicsTable epics={epics.epics} /></div>
                     </article>
                   </div>
                 )}

@@ -12,6 +12,14 @@ export interface JiraApiIssue {
     labels: string[];
     priority: { name: string };
     assignee: { displayName: string } | null;
+    parent?: {
+      key: string;
+      fields: {
+        summary: string;
+        status?: { name: string };
+        issuetype: { name: string };
+      };
+    };
   };
   changelog?: {
     histories: StatusTransition[];
@@ -58,6 +66,9 @@ export interface DashboardItem {
   FuraFila: string[];                 // Labels fura-fila
   NaturezaDemanda: string[];          // Natureza da Demanda
   Jornada: string[];                  // Jornada(s) de negócio (cf12386) — dimensão, NÃO define o Team
+  Epic: string | null;                // Key do épico pai (via parent), quando o pai é do tipo Epic
+  EpicName: string | null;            // Summary do épico pai
+  EpicStatus: string | null;          // Status atual do épico pai
   TimeInTodo: number | null;          // Dias (Created → 1º In Progress)
   LeadTime: number | null;            // Dias (Created → Resolved)
   LeadTimeP85: number | null;         // Percentil 85

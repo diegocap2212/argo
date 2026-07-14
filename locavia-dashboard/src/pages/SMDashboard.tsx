@@ -9,6 +9,8 @@ import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, com
 import { type DashboardTab } from '../components/DashboardTabs';
 import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, StoryPointsChart, TeamPerformanceComparisonChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
 import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
+import { EpicCoverageChart, EpicProgressChart, EpicsTable } from '../components/EpicsCharts';
+import { computeEpics } from '../performance/epics';
 import '../styles/redesign.css';
 
 interface Props { smConfig: SMConfig }
@@ -59,6 +61,7 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
     heatmap: computeAgingHeatmap(scopedItems, [...teamIds], now),
     attention: computeAttentionItems(scopedItems, now, 10),
   }), [scopedItems, period, trend, teamIds, now]);
+  const epics = useMemo(() => computeEpics(scopedItems, now), [scopedItems, now]);
   const scopedInsights = insights.filter(insight => teamIds.has(insight.teamId));
   const pointsCoverage = Math.round(trend.filter(p => p.throughput > 0).reduce((s, p) => s + p.pointsCoverage, 0) / Math.max(trend.filter(p => p.throughput > 0).length, 1));
   const totals = teams.reduce((acc, team) => ({
@@ -107,9 +110,9 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
 
               <section>
                 <div className="tabs">
-                  {(['delivery', 'speed', 'health'] as DashboardTab[]).map(id => (
+                  {(['delivery', 'speed', 'health', 'epics'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : 'Saúde & Prioridades'}
+                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : id === 'health' ? 'Saúde & Prioridades' : 'Épicos'}
                     </button>
                   ))}
                 </div>
@@ -152,6 +155,21 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
                     <ChartCard title="Aging do WIP" subtitle="Itens em andamento por faixa de envelhecimento."><AgingDistributionChart data={aging} /></ChartCard>
                     <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
                     <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
+                  </div>
+                )}
+                {tab === 'epics' && (
+                  <div className="chart-grid">
+                    <ChartCard title="Progresso por épico" subtitle="Concluídos (verde) × restantes por épico ativo. Top 12 por volume." tall>
+                      <EpicProgressChart epics={epics.epics} />
+                    </ChartCard>
+                    <ChartCard title="Trabalho sob épico" subtitle="Quanto do portfólio está ligado a um épico (planejado) vs avulso.">
+                      <EpicCoverageChart view={epics} />
+                    </ChartCard>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Iniciativas</span><h2>Épicos do portfólio</h2></div></div>
+                      <p className="sub">Status, progresso, volume e idade. Idade em vermelho passa de 120 dias.</p>
+                      <div style={{ marginTop: 8 }}><EpicsTable epics={epics.epics} /></div>
+                    </article>
                   </div>
                 )}
               </section>

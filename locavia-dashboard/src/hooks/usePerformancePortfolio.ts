@@ -6,6 +6,7 @@ import { fetchData } from '../services/dataService';
 import type { DashboardItem } from '../types/jira';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
+import { computeEpics } from '../performance/epics';
 
 export function usePerformancePortfolio(days = 56) {
   const [items, setItems] = useState<DashboardItem[]>([]);
@@ -53,5 +54,7 @@ export function usePerformancePortfolio(days = 56) {
     attention: computeAttentionItems(items, now, 10),
   }), [items, period, trend, portfolio.teams, now]);
 
-  return { items, period, portfolio, previousPortfolio, insights, trend, cfd, aging, analysis, now, loading, error };
+  const epics = useMemo(() => computeEpics(items, now), [items, now]);
+
+  return { items, period, portfolio, previousPortfolio, insights, trend, cfd, aging, analysis, epics, now, loading, error };
 }

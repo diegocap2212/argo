@@ -54,14 +54,14 @@ async function main() {
 
   // Filtro dos times LM (labels/campos de time) + saneamentos específicos da LM.
   const teamClause = `(labels in (${teamsToFetch.join(',')}) or cf[11795] in (${teamsToFetch.join(',')}) or cf[12386] in (${teamsToFetch.join(',')}))`;
-  const commonExclusions = `type not in (Epic, subTaskIssueTypes()) and cf[13065] is EMPTY and (cf[12683] not in ("TESTES-LOCAVIA") or cf[12683] is EMPTY)`;
+  const commonExclusions = `type not in (Epic, "Épico", subTaskIssueTypes()) and cf[13065] is EMPTY and (cf[12683] not in ("TESTES-LOCAVIA") or cf[12683] is EMPTY)`;
   const lmFilter = `${teamClause} and ${commonExclusions}`;
   // SFMKT (Salesforce Marketplace) é projeto próprio: traz tudo do projeto, só excluindo épicos/subtarefas.
   // Não aplicar cf[13065]/cf[12683] (filtros específicos dos projetos LM) para não descartar issues do SFMKT.
-  const sfmktFilter = `project = SFMKT and type not in (Epic, subTaskIssueTypes())`;
+  const sfmktFilter = `project = SFMKT and type not in (Epic, "Épico", subTaskIssueTypes())`;
   // SFV (Salesforce Vendas) — projeto próprio (time da Gabriela): traz tudo do projeto,
   // sem os filtros específicos dos projetos LM, só excluindo épicos/subtarefas.
-  const sfvFilter = `project = SFV and type not in (Epic, subTaskIssueTypes())`;
+  const sfvFilter = `project = SFV and type not in (Epic, "Épico", subTaskIssueTypes())`;
   const simpleJql = `(${lmFilter}) OR (${sfmktFilter}) OR (${sfvFilter}) ORDER BY created DESC`;
 
   console.log(`Iniciando sincronização Jira... JQL: ${simpleJql}`);
