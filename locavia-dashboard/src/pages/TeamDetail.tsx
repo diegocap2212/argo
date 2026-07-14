@@ -27,7 +27,7 @@ export default function TeamDetail() {
   const location = useLocation();
   const embedded = new URLSearchParams(location.search).get('embed') === '1';
   const [weeks, setWeeks] = useState(8);
-  const [tab, setTab] = useState<DashboardTab>('overview');
+  const [tab, setTab] = useState<DashboardTab>('delivery');
   const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, loading, error } = useTeamPerformance(teamName, weeks * 7);
   const goToTeam = (team: string) => navigate(`/time/${encodeURIComponent(team)}`);
   const throughputDelta = previousSnapshot.delivery.throughput
@@ -78,54 +78,23 @@ export default function TeamDetail() {
 
               <section>
                 <div className="tabs">
-                  {(['overview', 'flow', 'commitment', 'time', 'analysis'] as DashboardTab[]).map(id => (
+                  {(['delivery', 'speed', 'health'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : id === 'time' ? 'Tempo' : 'Análise de Fluxo'}
+                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : 'Saúde & Prioridades'}
                     </button>
                   ))}
                 </div>
 
-                {tab === 'overview' && (
+                {tab === 'delivery' && (
                   <div className="chart-grid">
                     <ChartCard title="O que entrou e o que saiu" subtitle="Itens novos na semana comparados às entregas."><WeeklyIntakeChart data={trend} /></ChartCard>
                     <ChartCard title="Entradas × saídas" subtitle="Balanço semanal do fluxo do time."><FlowVolumeChart data={trend} /></ChartCard>
-                    <article className="chart-card wide">
-                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Leitura do período</h2></div></div>
-                      <div style={{ marginTop: 8 }}>
-                        {insights.map((insight, index) => (
-                          <div className={`priority sev-${insight.severity}`} key={insight.id} style={{ cursor: 'default' }}>
-                            <span>{String(index + 1).padStart(2, '0')}</span>
-                            <div><strong>{insight.title}</strong><em>{insight.description}</em></div>
-                          </div>
-                        ))}
-                      </div>
-                    </article>
-                  </div>
-                )}
-
-                {tab === 'flow' && (
-                  <div className="chart-grid">
                     <ChartCard title="CFD do time" subtitle="A fazer, em andamento e concluído ao longo do período." tall><CumulativeFlowChart data={cfd} /></ChartCard>
                     <ChartCard title="Vazão por tipo" subtitle="Composição semanal das entregas por tipo."><ThroughputByTypeChart data={trend} /></ChartCard>
-                    <ChartCard title="Aging do WIP" subtitle="Distribuição atual dos itens em andamento por idade."><AgingDistributionChart data={aging} /></ChartCard>
                   </div>
                 )}
 
-                {tab === 'commitment' && (
-                  <div className="chart-grid">
-                    <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
-                    <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
-                  </div>
-                )}
-
-                {tab === 'time' && (
-                  <div className="chart-grid">
-                    <ChartCard title="Evolução do Lead Time P85" subtitle="Tendência semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
-                    <ChartCard title="Evolução do Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
-                  </div>
-                )}
-
-                {tab === 'analysis' && (
+                {tab === 'speed' && (
                   <div className="chart-grid">
                     <ChartCard title="Cycle time por etapa" subtitle="Tempo médio em cada fase do fluxo — a barra âmbar é o gargalo.">
                       <StageBreakdownChart data={analysis.stages} />
@@ -136,15 +105,36 @@ export default function TeamDetail() {
                     <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
                       <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
                     </ChartCard>
+                    <ChartCard title="Evolução do Lead Time P85" subtitle="Tendência semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
+                    <ChartCard title="Evolução do Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
+                  </div>
+                )}
+
+                {tab === 'health' && (
+                  <div className="chart-grid">
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Cards mais problemáticos</h2></div></div>
+                      <p className="sub">Itens em andamento há mais tempo — clique para abrir o time.</p>
+                      <div style={{ marginTop: 8 }}><AttentionItemsList items={analysis.attention} onSelectTeam={goToTeam} /></div>
+                    </article>
                     <article className="chart-card">
                       <div className="card-heading"><div><span className="eyebrow">WIP por idade</span><h2>Aging heatmap</h2></div></div>
                       <p className="sub">Itens em andamento por faixa de idade — quanto mais quente, mais trabalho envelhecendo.</p>
                       <div style={{ marginTop: 8 }}><AgingHeatmap rows={analysis.heatmap} onSelectTeam={goToTeam} /></div>
                     </article>
+                    <ChartCard title="Aging do WIP" subtitle="Distribuição atual dos itens em andamento por idade."><AgingDistributionChart data={aging} /></ChartCard>
+                    <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
+                    <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
                     <article className="chart-card wide">
-                      <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Cards mais problemáticos</h2></div></div>
-                      <p className="sub">Itens em andamento há mais tempo — clique para abrir o time.</p>
-                      <div style={{ marginTop: 8 }}><AttentionItemsList items={analysis.attention} onSelectTeam={goToTeam} /></div>
+                      <div className="card-heading"><div><span className="eyebrow">Leitura do período</span><h2>Insights</h2></div></div>
+                      <div style={{ marginTop: 8 }}>
+                        {insights.map((insight, index) => (
+                          <div className={`priority sev-${insight.severity}`} key={insight.id} style={{ cursor: 'default' }}>
+                            <span>{String(index + 1).padStart(2, '0')}</span>
+                            <div><strong>{insight.title}</strong><em>{insight.description}</em></div>
+                          </div>
+                        ))}
+                      </div>
                     </article>
                   </div>
                 )}

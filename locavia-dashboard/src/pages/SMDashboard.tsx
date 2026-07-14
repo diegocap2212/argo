@@ -40,7 +40,7 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
   const navigate = useNavigate();
   const [weeks, setWeeks] = useState(8);
   const [selectedTeam, setSelectedTeam] = useState('ALL');
-  const [tab, setTab] = useState<DashboardTab>('overview');
+  const [tab, setTab] = useState<DashboardTab>('delivery');
   const { items, period, portfolio, insights, now, loading, error } = usePerformancePortfolio(weeks * 7);
 
   const teams = useMemo(() => portfolio.teams.filter(team => {
@@ -107,40 +107,23 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
 
               <section>
                 <div className="tabs">
-                  {(['overview', 'flow', 'commitment', 'time', 'analysis'] as DashboardTab[]).map(id => (
+                  {(['delivery', 'speed', 'health'] as DashboardTab[]).map(id => (
                     <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>
-                      {id === 'overview' ? 'Visão geral' : id === 'flow' ? 'Fluxo' : id === 'commitment' ? 'Compromisso' : id === 'time' ? 'Tempo' : 'Análise de Fluxo'}
+                      {id === 'delivery' ? 'Entrega' : id === 'speed' ? 'Tempo & Gargalos' : 'Saúde & Prioridades'}
                     </button>
                   ))}
                 </div>
 
-                {tab === 'overview' && (
+                {tab === 'delivery' && (
                   <div className="chart-grid">
+                    <ChartCard title="Comparativo dos times" subtitle="Vazão em barras; Lead Time P85 na linha âmbar." wide tall><TeamPerformanceComparisonChart teams={teams} /></ChartCard>
                     <ChartCard title="O que entrou e o que saiu" subtitle="Itens novos por semana comparados às entregas."><WeeklyIntakeChart data={trend} /></ChartCard>
                     <ChartCard title="Vazão e demanda" subtitle="Entradas × saídas por semana no contexto selecionado."><FlowVolumeChart data={trend} /></ChartCard>
-                    <ChartCard title="Comparativo dos times" subtitle="Vazão em barras; Lead Time P85 na linha âmbar." wide tall><TeamPerformanceComparisonChart teams={teams} /></ChartCard>
-                  </div>
-                )}
-                {tab === 'flow' && (
-                  <div className="chart-grid">
                     <ChartCard title="CFD do portfólio" subtitle="Acúmulo e velocidade do fluxo dos times selecionados." wide tall><CumulativeFlowChart data={cfd} /></ChartCard>
                     <ChartCard title="Vazão por tipo" subtitle="Composição semanal das entregas por tipo."><ThroughputByTypeChart data={trend} /></ChartCard>
-                    <ChartCard title="Aging do WIP" subtitle="Itens em andamento por faixa de envelhecimento."><AgingDistributionChart data={aging} /></ChartCard>
                   </div>
                 )}
-                {tab === 'commitment' && (
-                  <div className="chart-grid">
-                    <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
-                    <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
-                  </div>
-                )}
-                {tab === 'time' && (
-                  <div className="chart-grid">
-                    <ChartCard title="Lead Time P85" subtitle="Evolução semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
-                    <ChartCard title="Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
-                  </div>
-                )}
-                {tab === 'analysis' && (
+                {tab === 'speed' && (
                   <div className="chart-grid">
                     <ChartCard title="Cycle time por etapa" subtitle="Tempo médio em cada fase do fluxo — a barra âmbar é o gargalo.">
                       <StageBreakdownChart data={analysis.stages} />
@@ -151,16 +134,25 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
                     <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
                       <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
                     </ChartCard>
-                    <article className="chart-card wide">
-                      <div className="card-heading"><div><span className="eyebrow">WIP por idade</span><h2>Aging heatmap</h2></div></div>
-                      <p className="sub">Itens em andamento por time e faixa de idade — clique num time para abrir o detalhe.</p>
-                      <div style={{ marginTop: 8 }}><AgingHeatmap rows={analysis.heatmap} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} /></div>
-                    </article>
+                    <ChartCard title="Lead Time P85" subtitle="Evolução semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
+                    <ChartCard title="Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
+                  </div>
+                )}
+                {tab === 'health' && (
+                  <div className="chart-grid">
                     <article className="chart-card wide">
                       <div className="card-heading"><div><span className="eyebrow">Para agir agora</span><h2>Cards mais problemáticos</h2></div></div>
                       <p className="sub">Itens em andamento há mais tempo no portfólio — clique para abrir o time.</p>
                       <div style={{ marginTop: 8 }}><AttentionItemsList items={analysis.attention} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} /></div>
                     </article>
+                    <article className="chart-card wide">
+                      <div className="card-heading"><div><span className="eyebrow">WIP por idade</span><h2>Aging heatmap</h2></div></div>
+                      <p className="sub">Itens em andamento por time e faixa de idade — clique num time para abrir o detalhe.</p>
+                      <div style={{ marginTop: 8 }}><AgingHeatmap rows={analysis.heatmap} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} /></div>
+                    </article>
+                    <ChartCard title="Aging do WIP" subtitle="Itens em andamento por faixa de envelhecimento."><AgingDistributionChart data={aging} /></ChartCard>
+                    <ChartCard title="Planejado × realizado" subtitle="Plano, entrega planejada e demanda descoberta."><CommitmentChart data={trend} /></ChartCard>
+                    <ChartCard title="Story Points" subtitle={`Planejado × entregue. Cobertura nas semanas com entrega: ${pointsCoverage}%.`}><StoryPointsChart data={trend} /></ChartCard>
                   </div>
                 )}
               </section>

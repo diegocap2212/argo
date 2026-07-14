@@ -1,11 +1,9 @@
-export type DashboardTab = 'overview' | 'flow' | 'commitment' | 'time' | 'analysis';
+export type DashboardTab = 'delivery' | 'speed' | 'health';
 
 const tabs: { id: DashboardTab; label: string }[] = [
-  { id: 'overview', label: 'Visão geral' },
-  { id: 'flow', label: 'Fluxo' },
-  { id: 'commitment', label: 'Compromisso' },
-  { id: 'time', label: 'Tempo' },
-  { id: 'analysis', label: 'Análise de Fluxo' },
+  { id: 'delivery', label: 'Entrega' },
+  { id: 'speed', label: 'Tempo & Gargalos' },
+  { id: 'health', label: 'Saúde & Prioridades' },
 ];
 
 export default function DashboardTabs({ value, onChange }: { value: DashboardTab; onChange: (tab: DashboardTab) => void }) {
