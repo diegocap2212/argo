@@ -1,7 +1,7 @@
 import { Fragment } from 'react';
 import {
-  CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart,
-  Tooltip, XAxis, YAxis, ZAxis, BarChart, Bar,
+  CartesianGrid, Cell, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer,
+  Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis, BarChart, Bar,
 } from 'recharts';
 import { CHART } from '../lib/chartColors';
 import { teamLabel } from '../config/teamLabels';
@@ -40,25 +40,26 @@ export function LeadTimeScatterChart({ data, onSelectTeam }: { data: LeadTimeSca
   </ScatterChart></ResponsiveContainer>;
 }
 
-// ── 2. Throughput × Lead Time (correlação por semana) ────────────────────────
+// ── 2. Vazão × Lead Time (série temporal: entregas em barras, tempo na linha) ─
 export function ThroughputVsLeadTimeChart({ data }: { data: readonly ThroughputLeadPoint[] }) {
-  const points = data.map(p => ({ ...p, x: p.throughput, y: p.leadTimeP85 }));
-  return <ResponsiveContainer width="100%" height="100%"><ScatterChart margin={{ top: 8, right: 12, bottom: 16, left: -8 }}>
-    <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} />
-    <XAxis type="number" dataKey="x" tick={axis} name="Vazão" label={{ value: 'Vazão (itens/sem)', position: 'insideBottom', offset: -8, fill: CHART.axis, fontSize: 10 }} />
-    <YAxis type="number" dataKey="y" tick={axis} tickFormatter={(v: number) => `${v}d`} name="Lead Time P85" />
-    <ZAxis range={[60, 60]} />
-    <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: '3 3' }}
-      content={({ payload }) => {
-        const p = payload?.[0]?.payload as (typeof points)[number] | undefined;
+  return <ResponsiveContainer width="100%" height="100%"><ComposedChart data={[...data]} margin={{ top: 8, right: 8, bottom: 4, left: -8 }}>
+    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART.grid} />
+    <XAxis dataKey="label" tick={axis} />
+    <YAxis yAxisId="thr" tick={axis} allowDecimals={false} />
+    <YAxis yAxisId="lt" orientation="right" tick={axis} tickFormatter={(v: number) => `${v}d`} />
+    <Tooltip contentStyle={tooltipStyle}
+      content={({ payload, label }) => {
+        const p = payload?.[0]?.payload as ThroughputLeadPoint | undefined;
         if (!p) return null;
         return <div style={{ ...tooltipStyle, padding: '8px 10px', fontSize: 12 }}>
-          <strong>Semana {p.label}</strong>
-          <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Vazão {p.throughput} · Lead Time P85 {p.leadTimeP85}d</div>
+          <strong>Semana {label}</strong>
+          <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>Entregas: {p.throughput} · Lead Time P85: {p.leadTimeP85 === null ? '—' : `${p.leadTimeP85}d`}</div>
         </div>;
       }} />
-    <Scatter data={points} fill={CHART.violet} fillOpacity={0.7} />
-  </ScatterChart></ResponsiveContainer>;
+    <Legend />
+    <Bar yAxisId="thr" dataKey="throughput" name="Entregas" fill={CHART.primary} radius={[4, 4, 0, 0]} maxBarSize={26} />
+    <Line yAxisId="lt" type="monotone" dataKey="leadTimeP85" name="Lead Time P85" stroke={CHART.amber} strokeWidth={2.5} dot={{ r: 2 }} connectNulls />
+  </ComposedChart></ResponsiveContainer>;
 }
 
 // ── 3. Cycle time por etapa (barras horizontais, gargalo destacado) ──────────

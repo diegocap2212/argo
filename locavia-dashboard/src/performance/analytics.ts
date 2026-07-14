@@ -70,17 +70,15 @@ export function computeLeadTimeScatter(items: readonly DashboardItem[], period: 
   return { points, p50: p50 === null ? null : Math.round(p50), p85: p85 === null ? null : Math.round(p85) };
 }
 
-// ── 2. Throughput × Lead Time (correlação por semana) ────────────────────────
+// ── 2. Vazão × Lead Time (série temporal: entregas vs tempo, semana a semana) ─
 export interface ThroughputLeadPoint {
   label: string;
   throughput: number;
-  leadTimeP85: number;
+  leadTimeP85: number | null;
 }
 
 export function computeThroughputVsLeadTime(trend: readonly PerformanceTrendPoint[]): ThroughputLeadPoint[] {
-  return trend
-    .filter(p => p.leadTimeP85 !== null && (p.throughput > 0 || p.leadTimeP85 !== null))
-    .map(p => ({ label: p.label, throughput: p.throughput, leadTimeP85: p.leadTimeP85 as number }));
+  return trend.map(p => ({ label: p.label, throughput: p.throughput, leadTimeP85: p.leadTimeP85 }));
 }
 
 // ── 3. Cycle time por etapa (waterfall) ──────────────────────────────────────

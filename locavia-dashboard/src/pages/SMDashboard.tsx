@@ -7,7 +7,7 @@ import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { type DashboardTab } from '../components/DashboardTabs';
-import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, LeadTimeTrendChart, StoryPointsChart, TeamPerformanceComparisonChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
+import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, StoryPointsChart, TeamPerformanceComparisonChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
 import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
 import '../styles/redesign.css';
 
@@ -131,10 +131,9 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
                     <ChartCard title="Dispersão do Lead Time" subtitle="Cada ponto é um item entregue; as linhas são P50 e P85. Vermelho = acima do P85.">
                       <LeadTimeScatterChart data={analysis.scatter} onSelectTeam={t => navigate(`/time/${encodeURIComponent(t)}`)} />
                     </ChartCard>
-                    <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
+                    <ChartCard title="Vazão × Lead Time" subtitle="Barras = entregas na semana; linha = Lead Time P85. As duas sobem juntas (trade-off)?">
                       <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
                     </ChartCard>
-                    <ChartCard title="Lead Time P85" subtitle="Evolução semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
                     <ChartCard title="Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
                   </div>
                 )}

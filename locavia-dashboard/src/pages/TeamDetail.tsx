@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { type DashboardTab } from '../components/DashboardTabs';
-import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, LeadTimeTrendChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
+import { AgingDistributionChart, CommitmentChart, CumulativeFlowChart, CycleTimeTrendChart, FlowVolumeChart, StoryPointsChart, ThroughputByTypeChart, WeeklyIntakeChart } from '../components/PerformanceCharts';
 import { AgingHeatmap, AttentionItemsList, LeadTimeScatterChart, StageBreakdownChart, ThroughputVsLeadTimeChart } from '../components/AnalysisCharts';
 import { teamLabel } from '../config/teamLabels';
 import { useTeamPerformance } from '../hooks/useTeamPerformance';
@@ -102,10 +102,9 @@ export default function TeamDetail() {
                     <ChartCard title="Dispersão do Lead Time" subtitle="Cada ponto é um item entregue; as linhas são P50 e P85. Vermelho = acima do P85.">
                       <LeadTimeScatterChart data={analysis.scatter} />
                     </ChartCard>
-                    <ChartCard title="Vazão × Lead Time" subtitle="Cada ponto é uma semana. Entregar mais está piorando o tempo?">
+                    <ChartCard title="Vazão × Lead Time" subtitle="Barras = entregas na semana; linha = Lead Time P85. As duas sobem juntas (trade-off)?">
                       <ThroughputVsLeadTimeChart data={analysis.throughputVsLead} />
                     </ChartCard>
-                    <ChartCard title="Evolução do Lead Time P85" subtitle="Tendência semanal do tempo de entrega."><LeadTimeTrendChart data={trend} /></ChartCard>
                     <ChartCard title="Evolução do Cycle Time P85" subtitle="Tempo semanal entre início e resolução."><CycleTimeTrendChart data={trend} /></ChartCard>
                   </div>
                 )}
