@@ -1,81 +1,73 @@
 # NEO — Núcleo de Evolução e Operação · Venice by Blite × LM Mobilidade
 
-Monorepo do **NEO**, o ponto único de entrada para as aplicações digitais da parceria Venice/LM Mobilidade:
+Monorepo do **Portal NEO**: as três aplicações da parceria Venice/LM Mobilidade servidas numa **única origem** (`https://neo-lm.vercel.app`), com login único e acesso garantido só pelo hub.
 
-| App | Pasta | O que é | Produção |
+| App | Pasta | Rota em produção | O que é |
 |---|---|---|---|
-| **NEO Hub** | [`neo-hub/`](neo-hub/) | Landing page de entrada. Faz o login (Magic Link) e dá acesso às aplicações. | projeto Vercel do hub |
-| **Performance Dash** | [`locavia-dashboard/`](locavia-dashboard/) | Dashboard de performance da operação: fluxo, entrega e previsibilidade por time/período, com dados do Jira e Salesforce Marketplace. | https://locavia-dashboard.vercel.app |
-| **Maturity Model (Portal MMA)** | [`maturitymodel/`](maturitymodel/) | Modelo de Maturidade Ágil: ciclos trimestrais de avaliação por squad (sessão → homologação → oficialização → plano de kaizens). | https://maturitymodel-ashen.vercel.app |
+| **NEO Hub** | [`neo-hub/`](neo-hub/) | `/` | Login (Magic Link/OTP) + portas para as aplicações. |
+| **Performance Dash** | [`locavia-dashboard/`](locavia-dashboard/) | `/dash/**` | Fluxo, entrega e previsibilidade por time/período (Jira + SFMKT). |
+| **Maturity Model (Portal MMA)** | [`maturitymodel/`](maturitymodel/) | `/maturity/**` | Ciclos de avaliação de maturidade por squad. |
 
-## Arquitetura
+As functions serverless vivem em [`api/`](api/) na raiz (`/api/**`) e o [`middleware.ts`](middleware.ts) protege as rotas das apps na borda.
+
+## Arquitetura (portal de origem única)
 
 ```
-                        ┌─────────────────────────────┐
-  usuário ───────────►  │  NEO Hub (Vite estático)    │
-  @lmmobilidade.com.br  │  login "Magic Link" (e-mail) │
-                        └──────────┬──────────────────┘
-                                   │ Supabase Auth (e-mail OTP) + allowlist NEO
-                                   │ handoff de sessão via fragment (#neo_at/#neo_rt)
-                 ┌─────────────────┴──────────────────┐
-                 ▼                                    ▼
-  ┌───────────────────────────┐        ┌──────────────────────────────┐
-  │ Performance Dash          │        │ Portal MMA                   │
-  │ React 19 + Vite + Vercel  │        │ React 18 + Vite + Supabase   │
-  │ Functions (api/*)         │◄─embed─│ (Postgres + RLS + Edge Fn)   │
-  │ validam JWT + allowlist   │ iframe │ /s/:id/metricas              │
-  └───────────┬───────────────┘ (post- └───────────┬──────────────────┘
-              │                 Message)            │
-   Jira + SFMKT ──► sync/ ──► Vercel Blob           │ Jira ──► Edge Function
-   (GitHub Action + cron)     └► GET /api/data      │ sync-anchors ──► anchor_readings
-                                                    └► Postgres (Supabase)
+                    neo-lm.vercel.app (1 projeto Vercel)
+  usuário ──► /            NEO Hub — login OTP + portas (público)
+              /dash/**     Performance Dash ─┐  bloqueados na borda pelo
+              /maturity/** Portal MMA       ─┤  middleware.ts sem o cookie
+              /api/**      functions (Bearer + allowlist; fora do middleware)
+                                             │
+  login no hub ──► POST /api/session ──► cookie neo_session (HMAC 12h, HttpOnly)
 ```
 
-### Autenticação e autorização
-
-- **Identidade:** projeto Supabase compartilhado (`cvkcngrmnfwupstyrpsd`). O login é **Magic Link (e-mail OTP)** e acontece **só no hub**.
-- **Autorização (allowlist NEO):** a função Postgres `is_neo_allowed()` é a fonte da verdade — libera qualquer e-mail **@lmmobilidade.com.br** e as exceções aprovadas na tabela `neo_access` (gerenciadas pelo admin no dashboard Supabase). Migração: `maturitymodel/supabase/migrations/20260713120000_neo_access_allowlist.sql`.
-- **Apps sem tela de login:** sem sessão, o Dash e o Portal **redirecionam ao hub**. Como hub e apps são origens Vercel distintas (localStorage não é compartilhado), o hub faz **handoff da sessão** ao abrir uma app: passa os tokens no fragment da URL (`#neo_at=…&neo_rt=…`), que a app consome via `setSession()` e limpa em seguida.
-- **Backend do Performance Dash:** as functions (`api/data`, `api/refresh`, `api/comments`) exigem `Authorization: Bearer <access_token>` e validam **autenticação + allowlist** numa só chamada ao RPC `is_neo_allowed`. Durante a transição também aceitam o cookie HMAC legado.
-- **Portal MMA:** autorização fina por papel (`po/tl/sm/am/team`) via `squad_members` + RLS. **Papéis são atribuídos manualmente** pelo AM em `/admin` (por e-mail). Usuário novo sem squad vê o onboarding e o Guia.
-- **Iframe de métricas (MMA → Dash):** o MMA envia a própria sessão ao iframe via `postMessage` (`type: 'neo:session'`, origin validado) e o Dash em modo embed (`?embed=1`) chama `supabase.auth.setSession()`.
+- **Build composto** (`scripts/build-portal.mjs`): cada app é um Vite independente; o hub builda com base `/`, o Dash com `--base=/dash/`, o MMA com `--base=/maturity/`, e os três `dist/` são compostos em um só. **Sem npm workspaces de propósito** (hoisting aninhava o rollup e o npm derrubava o binário linux — npm#4828); na Vercel cada app roda `npm ci` com o próprio lockfile.
+- **Sessão única:** mesma origem ⇒ mesmo `localStorage` ⇒ a sessão Supabase criada no hub vale nas três apps. O antigo handoff por fragment (`#neo_at`) e o `postMessage` do iframe **não existem mais**.
+- **Acesso só pelo NEO (server-side):** após o login o hub chama `POST /api/session` (valida Bearer + RPC `is_neo_allowed`) que emite o cookie **`neo_session`** (HMAC-SHA256, 12h). O `middleware.ts` (Edge, Web Crypto) exige esse cookie para servir **qualquer coisa** sob `/dash` e `/maturity` — HTML e assets; sem ele, 302 para `/?next=<destino>` e o hub retoma o destino após o login. Logout (hub e apps) faz `DELETE /api/session`.
+- **Torre restrita:** o comparativo entre agilistas (`/dash/torre`) tem trava adicional por senha — `api/tower.ts` valida a env `TOWER_PASSWORD` server-side e emite o cookie `neo_tower` (12h). Nada de segredo no bundle.
+- **Autorização:** allowlist NEO no Postgres — `is_neo_allowed()` libera `@lmmobilidade.com.br` + exceções em `neo_access` (migração em `maturitymodel/supabase/migrations/20260713120000_neo_access_allowlist.sql`). Papéis do MMA (`po/tl/sm/am/team`) via `squad_members` + RLS.
+- **Iframe de métricas (MMA → Dash):** same-origin (`/dash/time/:id?embed=1`) — compartilha a sessão pelo localStorage; `?embed=1` é só flag de layout. CSP `frame-ancestors 'self'`.
 
 ### Fluxo de dados
 
-- **Performance Dash:** scripts em `locavia-dashboard/sync/` coletam Jira Grupo LM + SFMKT → gravam dataset no **Vercel Blob** privado → `GET /api/data` serve ao front (cache + ETag; fallback em `src/data.json`). Cadência: cron externo chama `/api/trigger-sync` → dispara a GitHub Action `hourly-sync.yml`. Comentários em Redis (Upstash).
-- **Portal MMA:** todo o estado vive no Postgres do Supabase (via `supabase-js` + RLS). Métricas objetivas do Jira entram pela Edge Function `sync-anchors`.
+- **Performance Dash:** `locavia-dashboard/sync/` coleta Jira + SFMKT → **Vercel Blob** privado → `GET /api/data` (Bearer; fallback versionado em `locavia-dashboard/src/data.json`). Comentários em Redis (Upstash). Cron externo chama `/api/trigger-sync` (secret próprio `CRON_SECRET`).
+- **Portal MMA:** Postgres do Supabase via RLS; âncoras do Jira pela Edge Function `sync-anchors`.
 
 ## Rodando localmente
 
+Cada app continua standalone (base `/`, sem middleware):
+
 ```bash
-# Performance Dash (porta 5173) — sem envs roda com dados do fallback e auth fail-open
-cd locavia-dashboard && npm install && npm run dev
-
-# Portal MMA (porta 8080) — requer .env com VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
-cd maturitymodel && npm install && npm run dev
-
-# NEO Hub (porta 5173) — mesmas envs VITE_SUPABASE_*
-cd neo-hub && npm install && npm run dev
+cd locavia-dashboard && npm install && npm run dev   # porta 5173; sem envs = fallback + auth aberto
+cd maturitymodel     && npm install && npm run dev   # porta 8080; requer VITE_SUPABASE_*
+cd neo-hub           && npm install && npm run dev   # requer VITE_SUPABASE_*
 ```
+
+O portal composto valida-se com `npm run build:portal` (raiz). O teste funcional de middleware+functions é feito em deployment da Vercel (staging via `vercel deploy --target=production --skip-domain`), nunca com `vercel dev`.
 
 ## Deploy
 
-Três projetos na **Vercel** apontando para este repositório com *Root Directory* distinto (`neo-hub`, `locavia-dashboard`, `maturitymodel`). Push na `main` faz deploy.
+**Um único projeto Vercel (`neo-lm`)**, deployado da **raiz** do monorepo via CLI (`vercel deploy`); Git desconectado. `vercel.json` define `buildCommand`, rewrites por prefixo e headers.
 
-| Projeto | Variáveis |
+Variáveis (Production e Preview):
+
+| Grupo | Variáveis |
 |---|---|
-| neo-hub | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
-| locavia-dashboard | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_HUB_URL`, `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `BLOB_READ_WRITE_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO`, `CRON_SECRET` |
-| maturitymodel | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_HUB_URL` |
+| Build dos apps | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
+| Functions (auth) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
+| Middleware/Torre | `SESSION_SECRET` (obrigatória em produção — sem ela o gate abre), `TOWER_PASSWORD` |
+| Dados | `BLOB_READ_WRITE_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
+| Sync | `CRON_SECRET`, `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO`, `GITHUB_WORKFLOW`, `GITHUB_REF` |
+| CORS | `ALLOWED_ORIGIN=https://neo-lm.vercel.app` |
 
-`VITE_HUB_URL` = URL do hub (default no código: `https://neo-hub.vercel.app`). Ajustar para a URL real do projeto do hub.
+**Não** configurar `DASHBOARD_PASSWORD` (ramo legado de cookie, propositalmente inerte). Os projetos Vercel antigos (`locavia-dashboard`, `maturitymodel`) servem apenas redirects 308 para `/dash` e `/maturity`.
 
-Pré-requisito do deploy das apps: **aplicar a migração `neo_access` no Supabase antes** de configurar `SUPABASE_URL`/`SUPABASE_ANON_KEY` no locavia (senão o RPC `is_neo_allowed` retorna 404 e o gate nega).
-
-Infra externa: **Supabase** (banco, auth e Edge Function do MMA), **Vercel Blob + Upstash Redis** (dados do Dash), **cron-job.org** (gatilho do sync).
+Infra externa: **Supabase** (auth + Postgres + Edge Function), **Vercel Blob + Upstash Redis**, **GitHub Actions** (sync agendado no repo `diegocap2212/locavia-dashboard`, grava direto no Blob).
 
 ## Documentação por app
 
 - `locavia-dashboard/README.md` · `CLAUDE.md` · `DESIGN.md`
 - `maturitymodel/ARCHITECTURE.md` · `docs/`
 - `neo-hub/` — landing (identidade no próprio `index.html`)
+- `HANDOFF.md` — estado operacional corrente (ler antes de trabalhar)

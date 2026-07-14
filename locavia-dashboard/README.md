@@ -2,6 +2,8 @@
 
 Central de performance das equipes de software da Locavia. O produto consolida fluxo, throughput, lead/cycle time, previsibilidade, qualidade dos dados e insights auditáveis por **time + período**.
 
+> **Portal NEO:** em produção este app é servido em `https://neo-lm.vercel.app/dash/**` (build com `--base=/dash/`, `BrowserRouter` com `basename` de `import.meta.env.BASE_URL`). As functions (`api/`) vivem na **raiz do monorepo** e o acesso é bloqueado na borda pelo `middleware.ts` do portal. Deploy e envs: ver `README.md` da raiz. Em dev standalone nada muda (`npm run dev`, base `/`).
+
 Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **Tempo & Gargalos**, **Saúde & Prioridades**, **Épicos** e **Previsão**. Subtarefas e épicos-item são excluídos do dataset pelo JQL do sync (só histórias/bugs/tarefas/etc. contam nas métricas de fluxo).
 
 - **Entrega** — vazão e fluxo: itens novos × entregues, entradas × saídas, CFD, vazão por tipo (e, no agilista, o comparativo dos times).
@@ -9,7 +11,7 @@ Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **
 - **Saúde & Prioridades** — riscos e ação: **cards mais problemáticos** (itens em andamento há mais tempo, com Key/etapa/dias), **aging heatmap** (WIP por time e faixa de idade), aging do WIP, planejado × realizado, Story Points e insights.
 - **Épicos** — iniciativas: **progresso por épico** (concluídos × restantes), **cobertura** (% do trabalho sob um épico vs avulso, em donut) e a **tabela de épicos** (status, progresso, volume, idade). Ver `src/performance/epics.ts` e `src/components/EpicsCharts.tsx`.
 
-A home (`/`) traz, acima da matriz de saúde, um **comparativo da torre**: cartões-resumo por agilista e um ranking em barras que alterna entre **SM × SM** (cada agilista agregado) e **time × time** (coloridos por agilista), com métrica selecionável (vazão, lead/cycle time, WIP, saldo, previsibilidade, envelhecidos, cobertura de SP). Lógica em `src/performance/smComparison.ts` (`computeSMComparison`/`rankByMetric`), UI em `src/components/TowerComparison.tsx`; o dono de cada time é resolvido por `matchesTeam` em `src/config/sm-config.ts`.
+A rota **`/torre`** (ícone próprio na sidebar) é a visão restrita de gestão: cartões-resumo por agilista e um ranking em barras que alterna entre **SM × SM** (cada agilista agregado) e **time × time** (coloridos por agilista), com métrica selecionável (vazão, lead/cycle time, WIP, saldo, previsibilidade, envelhecidos, cobertura de SP). O acesso exige senha validada server-side (`api/tower.ts` na raiz do monorepo, env `TOWER_PASSWORD`, cookie `neo_tower` de 12h). Lógica em `src/performance/smComparison.ts` (`computeSMComparison`/`rankByMetric`), UI em `src/components/TowerComparison.tsx` + `src/pages/TowerView.tsx`; o dono de cada time é resolvido por `matchesTeam` em `src/config/sm-config.ts`.
 
 As funções de análise são puras, em `src/performance/analytics.ts` e `epics.ts`. Dois campos derivados do changelog/hierarquia do Jira sustentam essas abas, preenchidos pelo sync: **`TimeInStatus`** (horas por etapa, via `sync/status-classification.ts` `classifyStage` + `sync/metrics-calculator.ts`) e **`Epic`/`EpicName`/`EpicStatus`** (épico pai, via `parent` no `sync/field-mapper.ts`).
 
@@ -19,7 +21,8 @@ O charter visual e de vocabulário vive em [`DESIGN.md`](DESIGN.md) e deve ser l
 
 | Rota | Conteúdo |
 |---|---|
-| `/` | Resumo executivo, **comparativo por agilista** (ranking SM×SM e time×time) e matriz de saúde dos times |
+| `/` | Resumo executivo e matriz de saúde dos times |
+| `/torre` | **Visão restrita (senha)**: comparativo por agilista — ranking SM×SM e time×time |
 | `/time/:teamId` | Performance detalhada de um time |
 | `/sm/:smId` | Portfólio de times por agilista |
 | `/api-docs` | Swagger UI da API autenticada |
@@ -85,7 +88,7 @@ locavia-dashboard/
 │   ├── types/                        # Tipos do Jira/dataset
 │   ├── data.json                     # Fallback versionado do Jira
 │   └── data-meta.json                # Horário do último sync
-├── api/                              # Funções serverless Vercel
+├── (api/ movida para a RAIZ do monorepo — portal NEO)
 ├── sync/                             # Jira e Salesforce Marketplace
 ├── scripts/                          # Processamento e verificações
 ├── tests/                            # Playwright E2E
