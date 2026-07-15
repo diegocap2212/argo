@@ -29,7 +29,6 @@
     "react-router-dom": "^7.14.2",
     "recharts": "^3.8.0",
     "swagger-ui-dist": "^5.32.8",
-    "xlsx": "^0.18.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

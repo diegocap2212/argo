@@ -90,6 +90,21 @@ async function consumeAttempt(req: ApiRequest, secret: string): Promise<{ allowe
   return { allowed: attempts <= RATE_LIMIT_MAX, key };
 }
 
+/** Extrai o e-mail do payload do JWT só para fins de log de auditoria (SECURITY-PLAN §6) —
+ * a assinatura já foi validada por verifyBearer via RPC; aqui é decodificação, não verificação. */
+function decodeJwtEmail(token: string): string | null {
+  try {
+    const payloadPart = token.split('.')[1];
+    if (!payloadPart) return null;
+    const b64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const email = JSON.parse(Buffer.from(padded, 'base64').toString('utf8'))?.email;
+    return typeof email === 'string' ? email : null;
+  } catch {
+    return null;
+  }
+}
+
 // Autentica (JWT do Supabase) + autoriza (allowlist NEO) — mesmo padrão de api/data.ts.
 async function verifyBearer(req: ApiRequest): Promise<boolean> {
   const url = process.env.SUPABASE_URL;
@@ -171,6 +186,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
     await redisClient()?.del(limit.key).catch(() => undefined);
+
+    // Log de auditoria: quem abriu o comparativo (SECURITY-PLAN §6). Vai para os logs da
+    // Vercel, nunca para uma resposta HTTP — não expõe nada a quem chama a API.
+    const bearerToken = (req.headers?.authorization || '').replace(/^Bearer\s+/i, '');
+    console.log(`[tower] acesso concedido: ${decodeJwtEmail(bearerToken) ?? 'e-mail desconhecido'} em ${new Date().toISOString()}`);
+
     const payload = Buffer.from(JSON.stringify({ exp: Date.now() + TTL_SECONDS * 1000 })).toString('base64url');
     res.setHeader(
       'Set-Cookie',
