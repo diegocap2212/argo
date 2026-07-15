@@ -57,11 +57,48 @@ da sessão apartada de QA (headers globais, rate-limit Torre via KV, no-store, r
 legado das functions, cache em memória no /api/data) + fix do 302 imutável do middleware.
 Detalhes: `maturitymodel/docs/ROLES-REDESIGN.md`.
 
+## QA profundo — correções aplicadas (2026-07-15)
+
+Rodada de fixes a partir do relatório do QA externo (`docs/QA-PLAN.md`). **Código no repo; falta
+aplicar a migration no banco, deployar e validar os fluxos logados (ver "Pendências").**
+
+- **Escalada SM→AM (CRÍTICO):** migration `20260715150000_fix_sm_am_privilege_escalation.sql` —
+  `sqm_write` passa a exigir admin global OU AM existente do squad para gravar `role='am'`; SM
+  não se auto-promove. UI (`AdminMMA`) esconde o papel `am` de quem não é admin global.
+- **Fail-open → fail-closed em produção:** middleware, `api/data`, `api/comments` e `api/tower`
+  agora NEGAM quando a env some (`VERCEL_ENV==='production'`); dev/preview seguem abertos (paridade).
+- **/api/comments:** validação de tipo/tamanho (ids ≤200, gap/action ≤4000). Autz segue por sessão
+  NEO (qualquer @lmmobilidade escreve — ferramenta interna; sem membership por squad no Dash).
+- **Cookie malformado:** `decodeURIComponent` com try/catch no middleware e no tower (fim do 500).
+- **Rate-limit da Torre:** `EXPIRE` em toda tentativa (elimina lockout permanente se o INCR criasse
+  a chave e o EXPIRE falhasse). Ainda é por-IP (NAT corporativo pode agrupar tentativas — aceito).
+- **trigger-sync:** valida método antes da auth (PUT→405, não 401).
+- **CSP completa** no `vercel.json` (`default-src 'self'`, `connect-src` só self+supabase, `object-src none`,
+  `frame-ancestors 'self'` já cobria todas as rotas). `script/style-src` mantêm `'unsafe-inline'` (SPA Vite
+  tem script inline de tema + Google Fonts) — endurecer via hash/externalização é hardening futuro.
+- **OpenAPI** (`locavia-dashboard/src/api-docs/openapi.ts`): reflete Bearer (JWT Supabase) + `neo_session`;
+  removidos `/api/login`/`dash_session`/senha-HMAC.
+- **E2E do Dash:** 5/5 verdes de novo (headings/labels desatualizados corrigidos; `ContextJourney` era
+  componente morto). `browserslist`/caniuse-lite atualizado nos 4 apps. ApiDocs (1.39MB) e recharts já
+  eram chunks lazy — só carregam sob demanda.
+- **CI:** `.github/workflows/ci.yml` — typecheck/lint/build/test por app em push/PR.
+- **Matriz de RLS:** `maturitymodel/tests/rls/rls-matrix.ts` (4 identidades; regressão da escalada).
+  Precisa de branch Supabase + service_role para rodar (`npx tsx tests/rls/rls-matrix.ts`).
+- **Monorepo sem backup:** o remoto `diegocap2212/argo` existe mas está VAZIO (nunca recebeu push) —
+  por isso `origin/main [gone]`. Push do main resolve o backup.
+
+Achados avaliados como NÃO-vulnerabilidade (design): senha da Torre protege a VISUALIZAÇÃO, não o
+`/api/data` (mesmo dataset que qualquer usuário NEO já acessa — Torre é reorganização, não segredo novo).
+Se o comparativo SM×SM virar sensível, mover o cálculo server-side atrás do cookie `neo_tower`.
+
 ## Pendências pós-cutover
 2. **E-mail OTP:** mitigado (código no assunto, remetente "NEO — LM Mobilidade", OTP 1h, reenvio com cooldown no hub). Definitivo = Resend: 3 registros DNS em lmmobilidade.com.br pendentes + trocar SMTP (hoje Gmail pessoal).
 3. **Rotacionar segredos que passaram pelo chat:** token Supabase `sbp_a5f2...` (2026-07-14), senha de app do Gmail, API key antiga do Resend.
 4. Fase 3c: remover ramo cookie legado (`dash_session`/`DASHBOARD_PASSWORD`) das functions + `openapi.ts`.
-5. `.env.example` dos apps ainda citam `VITE_HUB_URL`/`VITE_MMA_ORIGIN` (não usados mais) — limpar.
+5. ~~`.env.example` dos apps citam `VITE_HUB_URL`/`VITE_MMA_ORIGIN`~~ — limpo em 2026-07-15.
+6. **Aplicar `20260715150000` no banco** (Management API/CLI) — o fix da escalada só vale após aplicado.
+7. **Deployar as mudanças** (portal + functions + vercel.json) e validar os fluxos logados (Torre, matriz RLS real, logout, iframe, perf do dataset).
+8. **Push do monorepo para `origin`** (backup) — remoto está vazio hoje.
 
 ## Pegadinhas
 

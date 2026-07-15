@@ -12,7 +12,14 @@ export function parseCookie(header: string | null, name: string): string | null 
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
     if (i === -1) continue;
-    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+    if (part.slice(0, i).trim() === name) {
+      // Cookie malformado (ex.: `neo_session=%`) não deve virar 500 no Edge.
+      try {
+        return decodeURIComponent(part.slice(i + 1).trim());
+      } catch {
+        return null;
+      }
+    }
   }
   return null;
 }
@@ -53,10 +60,19 @@ export async function verifyToken(token: string, secret: string): Promise<boolea
 }
 
 export default async function middleware(request: Request): Promise<Response | undefined> {
-  // Fail-open sem SESSION_SECRET (paridade com o gate das functions em dev/preview sem env).
-  // Em produção a env é obrigatória — ver README.
+  // Sem SESSION_SECRET: em dev/preview abre (paridade com o gate das functions);
+  // em PRODUÇÃO é misconfiguração e o gate fecha (fail-closed) — nunca libera /dash
+  // e /maturity por env sumida. Ver HANDOFF.
   const secret = process.env.SESSION_SECRET;
-  if (!secret) return undefined;
+  if (!secret) {
+    if (process.env.VERCEL_ENV === 'production') {
+      return new Response('Serviço temporariamente indisponível (configuração ausente).', {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    }
+    return undefined;
+  }
 
   const token = parseCookie(request.headers.get('cookie'), COOKIE);
   if (token && (await verifyToken(token, secret))) return undefined;

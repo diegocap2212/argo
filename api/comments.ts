@@ -39,11 +39,12 @@ async function verifyBearer(req: ApiRequest): Promise<boolean> {
   }
 }
 
-// Aceita a sessão nova (JWT do Supabase) OU a antiga (cookie HMAC) durante a migração.
-// Fail-open quando nenhum mecanismo está configurado (paridade com o dev local).
+// Autoriza pelo JWT do Supabase. Sem env configurada: aberto em dev/preview (paridade
+// com o dev local), mas FECHADO em produção — uma regressão de env não deve virar bypass.
 async function isAuthed(req: ApiRequest): Promise<boolean> {
   const supabaseConfigured = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
-  return supabaseConfigured ? verifyBearer(req) : true;
+  if (supabaseConfigured) return verifyBearer(req);
+  return process.env.VERCEL_ENV !== 'production';
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,20 @@ function hashKeyFor(cadence: unknown): string {
 
 function encodeField(squadId: string, releaseId: string, quinzenaId: string, metricId: string): string {
   return [squadId, releaseId, quinzenaId, metricId].map(encodeURIComponent).join(SEP);
+}
+
+// Limites de input. Autz é por sessão NEO (qualquer @lmmobilidade logado escreve — ferramenta
+// interna, não há modelo de membership por squad no Dash). Aqui barramos abuso: tipos errados,
+// identificadores gigantes (chave do Redis) e textos que estourariam o hash.
+const MAX_ID_LEN = 200;
+const MAX_TEXT_LEN = 4000;
+function isValidId(v: unknown): v is string {
+  return typeof v === 'string' && v.length > 0 && v.length <= MAX_ID_LEN;
+}
+function normalizeText(v: unknown): string | null {
+  if (v === undefined || v === null) return '';
+  if (typeof v !== 'string') return null;
+  return v.length <= MAX_TEXT_LEN ? v : null;
 }
 
 // Reconstrói a árvore aninhada que o frontend espera a partir dos campos planos do hash.
@@ -129,10 +144,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       const body = req.body;
       const { squadId, releaseId, quinzenaId, metricId, gap, action, cadence } = body || {};
 
-      if (!squadId || !releaseId || !quinzenaId || !metricId) {
+      if (!isValidId(squadId) || !isValidId(releaseId) || !isValidId(quinzenaId) || !isValidId(metricId)) {
         return res.status(400).json({
-          error: 'Missing required fields: squadId, releaseId, quinzenaId, metricId',
+          error: 'Invalid or missing identifiers (squadId, releaseId, quinzenaId, metricId): esperado string não-vazia até 200 chars',
         });
+      }
+      const gapText = normalizeText(gap);
+      const actionText = normalizeText(action);
+      if (gapText === null || actionText === null) {
+        return res.status(400).json({ error: `gap/action devem ser texto de até ${MAX_TEXT_LEN} caracteres` });
       }
 
       const hashKey = hashKeyFor(cadence);
@@ -140,7 +160,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       // Timestamp da edição gerado no servidor (fonte autoritativa, evita relógio do cliente).
       const updatedAt = new Date().toISOString();
       // Escrita atômica e isolada: só este campo é tocado. Sem clobber entre editores.
-      await redis.hset(hashKey, { [field]: { gap: gap || '', action: action || '', updatedAt } });
+      await redis.hset(hashKey, { [field]: { gap: gapText, action: actionText, updatedAt } });
 
       return res.status(200).json({ success: true, message: 'Comment saved successfully', updatedAt });
     }

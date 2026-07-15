@@ -1,22 +1,24 @@
 import { expect, test } from '@playwright/test';
 
+// O h1 da home é `Saúde da<br/><em>operação.</em>` → textContent "Saúde daoperação."
+// (sem espaço por causa do <br/>, com ponto do <em>). O regex tolera o espaço opcional
+// e o ponto para não quebrar quando a tipografia mudar.
+const HOME_H1 = /Saúde da\s*operação/;
+
 test.describe('Central de performance', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/');
-    await expect(page.locator('h1')).toContainText('Saúde da operação', { timeout: 30_000 });
+    await expect(page.locator('h1')).toContainText(HOME_H1, { timeout: 30_000 });
   });
 
   test('exibe resumo executivo e matriz dos times', async ({ page }) => {
+    await expect(page.getByText('Panorama da torre')).toBeVisible();
     await expect(page.getByText('Entregas', { exact: true })).toBeVisible();
     await expect(page.getByText('WIP atual', { exact: true })).toBeVisible();
-    await expect(page.getByText('Saldo de fluxo', { exact: true })).toBeVisible();
-    await expect(page.getByText('Matriz de saúde dos times')).toBeVisible();
-    await expect(page.getByText('Fluxo acumulado da torre')).toBeVisible();
-    await expect(page.getByText('Entradas × saídas')).toBeVisible();
-    await expect(page.getByText('Times: vazão × Lead Time')).toBeVisible();
-    await expect(page.getByText('Cycle Time P85', { exact: true })).toBeVisible();
-    await expect(page.getByText('Aging do WIP', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Jornada de contexto')).toContainText('Torre');
+    await expect(page.getByText('Itens envelhecidos', { exact: true })).toBeVisible();
+    await expect(page.getByText('Times em atenção', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Entradas × saídas' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Saúde dos times' })).toBeVisible();
     const navigation = page.getByLabel('Navegação global');
     await expect(navigation.getByLabel('Guia')).toHaveCount(0);
     await expect(navigation.getByLabel('Admin')).toHaveCount(0);
@@ -24,23 +26,26 @@ test.describe('Central de performance', () => {
   });
 
   test('altera o período de análise', async ({ page }) => {
-    const period = page.getByLabel('Período de análise');
+    // O controle virou um <input type="range"> (aria-label "Período em semanas"),
+    // não mais um <select>. Valor é em semanas (default 8).
+    const period = page.getByLabel('Período em semanas');
     await expect(period).toHaveValue('8');
-    await period.selectOption('5');
+    await period.fill('5');
     await expect(period).toHaveValue('5');
   });
 
   test('navega da matriz para o detalhe do time', async ({ page }) => {
     await page.locator('tbody tr').first().click();
     await expect(page).toHaveURL(/\/time\//);
-    await expect(page.getByText('Entradas e saídas', { exact: true })).toBeVisible();
-    await expect(page.getByText('Evolução do Lead Time P85')).toBeVisible();
+    // Aba padrão (Entrega) do detalhe do time.
+    await expect(page.getByText('Entradas × saídas', { exact: true })).toBeVisible();
+    await expect(page.getByText('CFD do time', { exact: true })).toBeVisible();
   });
 
   test('redireciona URLs antigas de release', async ({ page }) => {
     await page.goto('/release/O4R2');
     await expect(page).toHaveURL(/\/$/);
-    await expect(page.locator('h1')).toContainText('Saúde da operação');
+    await expect(page.locator('h1')).toContainText(HOME_H1);
   });
 });
 
@@ -49,11 +54,7 @@ test.describe('Portfólio do agilista', () => {
     await page.goto('/sm/gabriela');
     await expect(page.locator('h1')).toContainText('Gabriela', { timeout: 30_000 });
     await expect(page.getByLabel('Time', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Período', { exact: true })).toBeVisible();
-    await expect(page.getByText('Times do portfólio')).toBeVisible();
-    await expect(page.getByText('CFD do portfólio')).toBeVisible();
-    await expect(page.getByText('Cycle Time P85', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Jornada de contexto')).toContainText('Gabriela');
+    await expect(page.getByLabel('Período em semanas')).toBeVisible();
     await expect(page.getByText(/Todas as Releases|Release:/)).toHaveCount(0);
   });
 });

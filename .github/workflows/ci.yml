@@ -1,0 +1,83 @@
+name: CI
+
+# Gate de qualidade em push/PR. Cada app tem seu próprio package-lock (sem npm workspaces —
+# ver HANDOFF), então rodamos `npm ci` dentro de cada pasta. NUNCA `npm run build` do Dash no
+# CI: ele roda `sync:sfmkt` e exige credenciais do Jira/Salesforce; usamos `tsc -b && vite build`.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dash:
+    name: Dash (locavia-dashboard)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: locavia-dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: locavia-dashboard/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npx tsc -b
+      - name: Lint
+        run: npm run lint
+      - name: Testes de performance (lógica pura)
+        run: npm run test:performance
+      - name: Build (sem sync:sfmkt)
+        run: npx vite build
+      - name: Instala navegador do Playwright
+        run: npx playwright install --with-deps chromium
+      - name: E2E (fallback local de dados)
+        run: npx playwright test --project=chromium
+        env:
+          VITE_API_TARGET: ""
+
+  mma:
+    name: MMA (maturitymodel)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: maturitymodel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: maturitymodel/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Build
+        run: npx vite build
+
+  hub:
+    name: Hub (neo-hub)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: neo-hub
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: neo-hub/package-lock.json
+      - run: npm ci
+      - name: Typecheck + build
+        run: npm run build

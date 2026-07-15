@@ -34,7 +34,14 @@ export function parseCookie(header: string | undefined, name: string): string | 
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
     if (i === -1) continue;
-    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+    if (part.slice(0, i).trim() === name) {
+      // Cookie malformado (ex.: `neo_tower=%`) não deve derrubar a função com 500.
+      try {
+        return decodeURIComponent(part.slice(i + 1).trim());
+      } catch {
+        return null;
+      }
+    }
   }
   return null;
 }
@@ -76,7 +83,10 @@ async function consumeAttempt(req: ApiRequest, secret: string): Promise<{ allowe
   if (!redis) throw new Error('Rate limit da Torre não configurado');
   const key = rateLimitKey(req, secret);
   const attempts = await redis.incr(key);
-  if (attempts === 1) await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
+  // EXPIRE em toda tentativa: se o INCR criasse a chave mas o EXPIRE falhasse (duas
+  // operações separadas), a chave ficaria SEM TTL e travaria o IP para sempre. Renovar
+  // a janela a cada tentativa é aceitável para força-bruta e garante que a chave expira.
+  await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
   return { allowed: attempts <= RATE_LIMIT_MAX, key };
 }
 
@@ -105,9 +115,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const password = process.env.TOWER_PASSWORD;
   const secret = process.env.SESSION_SECRET;
 
+  const prod = process.env.VERCEL_ENV === 'production';
+
   if (req.method === 'GET') {
-    // Trava não configurada (dev local): aberto — paridade com os demais gates.
+    // Trava não configurada: aberto em dev/preview; em produção fecha (fail-closed).
     if (!password || !secret) {
+      if (prod) {
+        res.status(503).json({ error: 'Torre não configurada' });
+        return;
+      }
       res.status(204).end();
       return;
     }
@@ -122,6 +138,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   if (req.method === 'POST') {
     if (!password || !secret) {
+      if (prod) {
+        res.status(503).json({ error: 'Torre não configurada' });
+        return;
+      }
       res.status(204).end();
       return;
     }

@@ -10,13 +10,17 @@ import { errMessage } from "@/lib/utils";
 import { RotateCcw, Trash2, X } from "lucide-react";
 import type { Role } from "@/types/mma";
 
-const ROLES: Role[] = ["team", "po", "tl", "sm", "am"];
+// Papel 'am' só aparece para o admin global: conceder AM é onboarding de admin
+// (Diego/Tiago). A RLS (sqm_write) também barra SM de gravar role='am' — isto é
+// só a defesa em profundidade na UI para não oferecer uma ação que seria negada.
+const BASE_ROLES: Role[] = ["team", "po", "tl", "sm"];
 
 export default function AdminMMA() {
   const { user, isAnonymous } = useAuth();
   // Dois modos: admin global (tudo) × gestor SM/AM (só os squads dele — a RLS já
   // escopa a lista de teams; aqui escondemos as ações que a RLS negaria).
   const { data: isPortalAdmin = false } = useIsPortalAdmin();
+  const roles: Role[] = isPortalAdmin ? [...BASE_ROLES, "am"] : BASE_ROLES;
   const { data: teams = [], isLoading } = useAdminTeams();
   const createTeam = useCreateTeam();
   const [newTeamName, setNewTeamName] = useState("");
@@ -188,7 +192,7 @@ export default function AdminMMA() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                {roles.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
               </SelectContent>
             </Select>
             <Input

@@ -14,15 +14,24 @@ const GITHUB_WORKFLOW = 'hourly-sync.yml';
 
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).
 interface ApiRequest {
+  method?: string;
   query?: Record<string, string | undefined>;
   headers?: Record<string, string | undefined>;
 }
 interface ApiResponse {
+  setHeader(name: string, value: string): void;
   status(code: number): ApiResponse;
   json(body: unknown): void;
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  // Método antes da auth: um PUT/DELETE deve receber 405 (não 401). O cron dispara
+  // via GET (?key=) ou POST (x-cron-key).
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST');
+    return res.status(405).json({ ok: false, error: 'Method not allowed' });
+  }
+
   const secret = process.env.CRON_SECRET || '';
   const provided =
     req.query?.key ||

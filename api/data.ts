@@ -42,11 +42,12 @@ async function verifyBearer(req: ApiRequest): Promise<boolean> {
   }
 }
 
-// Aceita a sessão nova (JWT do Supabase) OU a antiga (cookie HMAC) durante a migração.
-// Fail-open quando nenhum mecanismo está configurado (paridade com o dev local).
+// Autoriza pelo JWT do Supabase. Sem env configurada: aberto em dev/preview (paridade
+// com o dev local), mas FECHADO em produção — uma regressão de env não deve virar bypass.
 async function isAuthed(req: ApiRequest): Promise<boolean> {
   const supabaseConfigured = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
-  return supabaseConfigured ? verifyBearer(req) : true;
+  if (supabaseConfigured) return verifyBearer(req);
+  return process.env.VERCEL_ENV !== 'production';
 }
 // ─────────────────────────────────────────────────────────────────────────────
 

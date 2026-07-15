@@ -5,27 +5,29 @@
 export const openApiSpec = {
   openapi: '3.1.0',
   info: {
-    title: 'Locavia Dashboard API',
-    version: '1.0.0',
+    title: 'NEO — API do Dash',
+    version: '2.0.0',
     description:
-      'Endpoints serverless do dashboard (Vercel Functions em `/api`). A maioria exige sessão '
-      + '(cookie HttpOnly `dash_session`, HMAC, 12h) obtida em `POST /api/login`. As chamadas same-origin '
-      + 'da própria SPA enviam o cookie automaticamente — use "Try it out" já autenticado no painel.',
+      'Endpoints serverless do portal NEO (Vercel Functions em `/api`). O login acontece no hub '
+      + '(OTP Supabase) → cookie `neo_session` (HMAC, 12h) emitido por `POST /api/session` na raiz; '
+      + 'o middleware Edge exige esse cookie para o HTML/assets de `/dash` e `/maturity`. Já as functions '
+      + 'sob `/api` autorizam pelo **JWT do Supabase** (`Authorization: Bearer <access_token>`) validado '
+      + 'contra a allowlist NEO (`is_neo_allowed`). A SPA envia o Bearer automaticamente — use "Try it out" '
+      + 'já logado no painel.',
   },
   servers: [{ url: '/', description: 'Mesma origem (SPA + funções)' }],
   tags: [
-    { name: 'Auth', description: 'Login / sessão' },
     { name: 'Dados', description: 'Dataset do Jira' },
     { name: 'Análises', description: 'Comentários qualitativos (gaps/ações)' },
     { name: 'Sync', description: 'Sincronização do Jira (GitHub Actions)' },
   ],
   components: {
     securitySchemes: {
-      sessionCookie: {
-        type: 'apiKey',
-        in: 'cookie',
-        name: 'dash_session',
-        description: 'Cookie de sessão HttpOnly assinado por HMAC (obtido em POST /api/login).',
+      bearerAuth: {
+        type: 'http',
+        scheme: 'bearer',
+        bearerFormat: 'JWT',
+        description: 'Access token do Supabase (sessão do usuário logado no hub), validado contra a allowlist NEO.',
       },
     },
     schemas: {
@@ -55,37 +57,9 @@ export const openApiSpec = {
       },
     },
   },
-  // Por padrão, tudo exige sessão; endpoints públicos sobrescrevem com `security: []`.
-  security: [{ sessionCookie: [] }],
+  // Por padrão, tudo exige o Bearer do Supabase; endpoints públicos sobrescrevem com `security: []`.
+  security: [{ bearerAuth: [] }],
   paths: {
-    '/api/login': {
-      get: {
-        tags: ['Auth'], summary: 'Estado da sessão', security: [],
-        responses: {
-          200: {
-            description: 'Estado atual',
-            content: { 'application/json': { schema: { type: 'object', properties: { authenticated: { type: 'boolean' }, configured: { type: 'boolean' } } } } },
-          },
-        },
-      },
-      post: {
-        tags: ['Auth'], summary: 'Login com senha única', security: [],
-        requestBody: {
-          required: true,
-          content: { 'application/json': { schema: { type: 'object', required: ['password'], properties: { password: { type: 'string' } } } } },
-        },
-        responses: {
-          200: { description: 'Autenticado — seta cookie dash_session', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } } } },
-          401: { description: 'Senha incorreta', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          429: { description: 'Rate-limit (8 tentativas / 15 min por IP)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          503: { description: 'Login não configurado', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-        },
-      },
-      delete: {
-        tags: ['Auth'], summary: 'Logout (limpa o cookie)', security: [],
-        responses: { 200: { description: 'Sessão encerrada', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' } } } } } } },
-      },
-    },
     '/api/data': {
       get: {
         tags: ['Dados'], summary: 'Dataset do Jira (itens + syncedAt)',
@@ -122,7 +96,7 @@ export const openApiSpec = {
         },
         responses: {
           200: { description: 'Salvo', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, updatedAt: { type: 'string', format: 'date-time' } } } } } },
-          400: { description: 'Campos obrigatórios faltando', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          400: { description: 'Identificadores inválidos/faltando (string ≤200) ou gap/action >4000 chars', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           401: { description: 'Não autenticado', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
@@ -153,6 +127,7 @@ export const openApiSpec = {
         responses: {
           200: { description: 'Disparado', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' }, dispatched: { type: 'boolean' }, at: { type: 'string', format: 'date-time' } } } } } },
           401: { description: 'Unauthorized (CRON_SECRET inválido)', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' }, error: { type: 'string' } } } } } },
+          405: { description: 'Método não suportado (só GET/POST)' },
           500: { description: 'Falta GITHUB_DISPATCH_TOKEN' },
           502: { description: 'Falha no dispatch ao GitHub' },
         },
