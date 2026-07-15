@@ -1,7 +1,7 @@
 # HANDOFF — NEO (Núcleo de Evolução e Operação)
 
 > Plano corrente: `C:\Users\Usuario\.claude\plans\fable-precisamos-sincronizar-essas-frolicking-rainbow.md` (Portal unificado).
-> **Estado (2026-07-14): PORTAL UNIFICADO em staging validado — aguardando cutover.**
+> **Estado (2026-07-14): PORTAL UNIFICADO NO AR — cutover concluído.** `https://neo-lm.vercel.app` serve hub (`/`), Dash (`/dash`) e MMA (`/maturity`); domínios antigos respondem 308 para as rotas novas.
 
 ## Portal único (arquitetura nova)
 
@@ -11,14 +11,13 @@
 - **Gate server-side:** login no hub → `POST /api/session` → cookie `neo_session` (HMAC, 12h, HttpOnly). `middleware.ts` exige o cookie para TUDO sob `/dash`/`/maturity` (HTML+assets); sem ele → 302 `/?next=`. Hub segue `?next` interno após login. Logout = `DELETE /api/session` (hub, dash e MMA).
 - **Torre restrita:** `/dash/torre` (comparativo SM×SM/time×time, saiu da home) — senha na env `TOWER_PASSWORD` validada em `api/tower.ts` → cookie `neo_tower` 12h. Senha de produção gerada em 2026-07-14 (mostrada 1x ao Diego).
 
-## Cutover — o que FALTA (na ordem)
+## Cutover — CONCLUÍDO (2026-07-14)
 
-1. **Copiar envs de produção do projeto locavia-dashboard → neo-lm** (Production): `BLOB_READ_WRITE_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `CRON_SECRET`, `GITHUB_DISPATCH_TOKEN`, `GITHUB_REPO`, `GITHUB_WORKFLOW`, `GITHUB_REF`. (Precisa autorização explícita do Diego para `vercel env pull` no projeto antigo.) Sem o Blob token o `/api/data` cai no fallback commitado.
-2. **Diego testa o staging logado**: `https://neo-esd0urp0t-diegocaporusso-2820s-projects.vercel.app` (SSO da Vercel deixa ele entrar). Roteiro: login OTP → doors → `/dash/` abre → `/maturity/` abre → iframe Metricas → Torre pede senha → logout re-bloqueia.
-3. **Redeploy com envs completas** (`vercel deploy --target=production --skip-domain`) + smoke → **`vercel promote <deployment>`** (vira o domínio neo-lm.vercel.app).
-4. **Projetos antigos → redirects 308** (os DOIS juntos): pastas `redirects/locavia-dashboard/` e `redirects/maturitymodel/` com vercel.json de redirect para `https://neo-lm.vercel.app/dash/:path*` e `/maturity/:path*`; `vercel --prod` em cada uma linkada ao projeto antigo.
-5. **Cron externo** que chama `/api/trigger-sync`: apontar para `https://neo-lm.vercel.app/api/trigger-sync` (mesmo `CRON_SECRET`). CONFIRMAR se existe — o sync agendado principal é GitHub Actions no repo `diegocap2212/locavia-dashboard` e grava direto no Blob (não é afetado pelo cutover).
-6. Supabase: remover origens antigas da redirect allowlist (OTP por código — impacto nulo).
+1. ✅ Envs copiadas do projeto antigo → neo-lm Production: `BLOB_READ_WRITE_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`. **`CRON_SECRET` e `GITHUB_*` estavam VAZIAS no projeto antigo** — trigger-sync/refresh-dispatch nunca estiveram ativos; não há cron externo a migrar (o sync é GitHub Actions no repo antigo, grava direto no Blob).
+2. ✅ Diego testou o staging logado (login OTP → doors → apps → Torre) e aprovou.
+3. ✅ `vercel deploy --target=production --skip-domain` (dpl neo-121l8d5u8) + smoke → `vercel promote` — domínio virado.
+4. ✅ Redirects 308 publicados nos 2 projetos antigos (pastas `redirects/*`; incluem regra explícita para `/` — o matcher `/:path*` não casa a raiz).
+5. Supabase: allowlist de redirect com origens antigas — inócua (OTP por código); limpar quando conveniente.
 
 ## Infra/envs já feitas no neo-lm
 

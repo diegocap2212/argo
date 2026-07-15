@@ -1,5 +1,17 @@
 {
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "framework": null,
   "redirects": [
-    { "source": "/:path*", "destination": "https://neo-lm.vercel.app/maturity/:path*", "permanent": true }
+    {
+      "source": "/",
+      "destination": "https://neo-lm.vercel.app/maturity/",
+      "permanent": true
+    },
+    {
+      "source": "/:path*",
+      "destination": "https://neo-lm.vercel.app/maturity/:path*",
+      "permanent": true
+    }
   ]
 }
