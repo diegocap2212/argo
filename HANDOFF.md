@@ -103,6 +103,32 @@ Limites/labels centralizados em `health.ts` (eram duplicados em 3 telas). **REAP
 operação normalizar** (voltar `HEALTH_THRESHOLDS`). Smoke test logado do board ficou pendente
 (sessão expirou; validado localmente por auditoria no dataset real + E2E).
 
+## Validação do SECURITY-PLAN.md (2026-07-15) — NO AR
+
+Checklist validado item a item contra o estado real (não só leitura de doc). Vários já
+estavam corrigidos (confirmado por query direta ao banco): `is_any_am()` morto em produção,
+views com `security_invoker`, clickjacking global, CSP, rate-limit da Torre. Achado novo e
+grave fora do radar do plano original: **`diegocap2212/locavia-dashboard` estava PÚBLICO**
+e continha `sfmkt_data.json` com dados reais do Jira (nomes de assignee, sumários de card) —
+vazamento de dado, não só de código. Ações aplicadas (dpl `neo-qmsixjhdd` + `neo-5wv4d7tpt`):
+
+- Repo tornado **privado**.
+- `xlsx` removido (Dash + MMA) — vuln alta sem fix no npm, nunca importada em código.
+- `npm audit fix` (sem `--force`) → **0 vulnerabilidades em deps de produção** nos 2 apps.
+- GitHub Actions pinadas por SHA (`actions/checkout`, `actions/setup-node`) no monorepo
+  **e** no repo externo que roda o cron de verdade.
+- Dependabot (npm + github-actions) nos 2 repos.
+- Torre loga e-mail de quem acessa (logs da Vercel, nunca em resposta HTTP).
+- **`TOWER_PASSWORD` rotacionada** (a antiga havia passado pelo chat) — valor novo gerado e
+  injetado direto na Vercel, nunca impresso; envs de Production já vêm *Sensitive* por
+  padrão neste CLI. **Pegar o valor novo em**: dashboard Vercel (neo-lm → Settings →
+  Environment Variables → Production) ou `vercel env pull` local.
+
+Pendente (só você pode fazer): revogar os tokens Supabase `sbp_a5f2...` (2026-07-14) e
+`sbp_6ac9...` (2026-07-15, usado nesta sessão) em supabase.com/dashboard/account/tokens;
+rotacionar senha de app do Gmail e API key do Resend. 2FA nas contas (Vercel/GitHub/
+Supabase/cron-job.org) e escopo do `GITHUB_DISPATCH_TOKEN` seguem só verificáveis manualmente.
+
 ## Pendências pós-cutover
 2. **E-mail OTP:** mitigado (código no assunto, remetente "NEO — LM Mobilidade", OTP 1h, reenvio com cooldown no hub). Definitivo = Resend: 3 registros DNS em lmmobilidade.com.br pendentes + trocar SMTP (hoje Gmail pessoal).
 3. **Rotacionar segredos que passaram pelo chat:** token Supabase `sbp_a5f2...` (2026-07-14), senha de app do Gmail, API key antiga do Resend.
