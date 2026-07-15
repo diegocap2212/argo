@@ -29,6 +29,22 @@
 
 `GET /` 200 (hub) · `/dash/`, `/maturity/`, rotas profundas e ASSETS → 302 `/?next=` · `/api/data` 401 sem Bearer · `POST /api/session` 401 · `GET /api/tower` 401 · HMAC Node↔WebCrypto testado (válido/expirado/adulterado/secret errado). Falta só o leg logado (item 2 acima).
 
+## Incidente do hourly-sync (2026-07-14/15) — RESOLVIDO
+
+O cutover matou o gatilho do sync: cron-job.org chamava `locavia-dashboard.vercel.app/api/trigger-sync`,
+que virou redirect 308 (function não existe mais lá). **Fix aplicado:** `schedule: */30 * * * *` nativo
+restaurado no workflow do repo `diegocap2212/locavia-dashboard` (commit `7692648`) — sync autossuficiente,
+sem cron externo. Run manual de validação: success (2026-07-15T00:23Z). O job do cron-job.org pode ser
+DESATIVADO na conta do Diego (hoje só recebe 308). `/api/trigger-sync` no portal segue fail-closed sem
+`CRON_SECRET` — sem função ativa; remover na Fase 3c se ninguém for usá-lo.
+
+## Planos para execução apartada (2026-07-14)
+
+- `docs/QA-PLAN.md` — code review profundo + matriz de testes + debug/observabilidade + aceite.
+- `docs/SECURITY-PLAN.md` — cybersecurity (insider/offboarding/segredos/headers/supply chain).
+- `maturitymodel/docs/ROLES-REDESIGN.md` — SM por squad + admin global; tem 4 QUESTÕES ABERTAS para o Diego (§5) antes de implementar.
+- Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), Torre sem rate-limit de senha, policies legadas de `teams` no MMA, monorepo sem espelho remoto (backup!).
+
 ## Pendências pós-cutover
 
 1. **Roles do MMA (decisão do Diego):** SM enxerga/gerencia SÓ os próprios squads; Diego = admin global. Exige RLS novas + ajustes no AdminMMA. (Novos SMs chegando.)
