@@ -9,10 +9,7 @@ import {
   type SMComparisonEntry,
   type TeamComparisonEntry,
 } from '../performance/smComparison';
-import type { TeamHealthStatus } from '../performance/health';
-
-const healthLabel: Record<TeamHealthStatus, string> = { healthy: 'Saudável', attention: 'Atenção', critical: 'Crítico' };
-const healthClass: Record<TeamHealthStatus, string> = { healthy: 'saudavel', attention: 'atencao', critical: 'critico' };
+import { HEALTH_LABELS as healthLabel, HEALTH_CLASSES as healthClass } from '../performance/health';
 
 function fmt(value: number | null, unit: string): string {
   if (value === null) return '—';

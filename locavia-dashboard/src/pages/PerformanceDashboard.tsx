@@ -3,18 +3,28 @@ import { useNavigate } from 'react-router-dom';
 import { subDays } from 'date-fns';
 import { teamLabel } from '../config/teamLabels';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
-import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
+import {
+  assessTeamHealth,
+  isUnhealthy,
+  HEALTH_LABELS as healthLabel,
+  HEALTH_CLASSES as healthClass,
+  HEALTH_ORDER as healthOrder,
+  RISK_LABELS,
+  type TeamHealthStatus,
+  type TeamHealthRisk,
+} from '../performance/health';
 import { FlowVolumeChart } from '../components/PerformanceCharts';
 import '../styles/redesign.css';
 
-const healthLabel: Record<TeamHealthStatus, string> = { healthy: 'Saudável', attention: 'Atenção', critical: 'Crítico' };
-const healthClass: Record<TeamHealthStatus, string> = { healthy: 'saudavel', attention: 'atencao', critical: 'critico' };
-const healthOrder: Record<TeamHealthStatus, number> = { critical: 0, attention: 1, healthy: 2 };
+const riskReasons = (risks: TeamHealthRisk[]) =>
+  risks.length ? risks.map(r => RISK_LABELS[r]).join(' · ') : 'Sem sinais de risco no período.';
+
 const FILTERS: Array<{ key: 'Todos' | TeamHealthStatus; label: string }> = [
   { key: 'Todos', label: 'Todos' },
   { key: 'critical', label: 'Crítico' },
   { key: 'attention', label: 'Atenção' },
   { key: 'healthy', label: 'Saudável' },
+  { key: 'inactive', label: 'Sem dados' },
 ];
 
 const fmt = (value: number) => value.toLocaleString('pt-BR');
@@ -28,11 +38,11 @@ export default function PerformanceDashboard() {
   const { portfolio, previousPortfolio, insights, trend, loading, error, now } = usePerformancePortfolio(weeks * 7);
 
   const rows = useMemo(() => portfolio.teams
-    .map(team => ({ team, health: assessTeamHealth(team).status }))
+    .map(team => { const a = assessTeamHealth(team); return { team, health: a.status, risks: a.risks }; })
     .sort((a, b) => healthOrder[a.health] - healthOrder[b.health] || b.team.flow.flowBalance - a.team.flow.flowBalance),
     [portfolio.teams]);
 
-  const teamsInAttention = rows.filter(row => row.health !== 'healthy').length;
+  const teamsInAttention = rows.filter(row => isUnhealthy(row.health)).length;
   const totals = portfolio.totals;
   const throughputDelta = previousPortfolio.totals.throughput > 0
     ? Math.round(((totals.throughput - previousPortfolio.totals.throughput) / previousPortfolio.totals.throughput) * 100)
@@ -41,7 +51,7 @@ export default function PerformanceDashboard() {
   const attentionShare = totals.teams > 0 ? Math.round((teamsInAttention / totals.teams) * 100) : 0;
 
   // Time-foco: maior pressão de fluxo entre os não saudáveis.
-  const focus = rows.find(row => row.health !== 'healthy' && row.team.flow.flowBalance > 0)?.team ?? rows[0]?.team;
+  const focus = rows.find(row => isUnhealthy(row.health) && row.team.flow.flowBalance > 0)?.team ?? rows[0]?.team;
 
   // Top 3 prioridades por time distinto (insights já vêm ordenados por severidade).
   const priorities = useMemo(() => {
@@ -176,10 +186,10 @@ export default function PerformanceDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {visible.map(({ team, health }) => (
+                    {visible.map(({ team, health, risks }) => (
                       <tr key={team.teamId} onClick={() => navigate(`/time/${encodeURIComponent(team.teamId)}`)}>
                         <td><strong>{teamLabel(team.teamId)}</strong></td>
-                        <td><span className={`status ${healthClass[health]}`}>{healthLabel[health]}</span></td>
+                        <td><span className={`status ${healthClass[health]}`} title={riskReasons(risks)} style={{ cursor: 'help' }}>{healthLabel[health]}</span></td>
                         <td>{team.delivery.throughput}</td>
                         <td>{team.delivery.leadTimeP85 === null ? '—' : `${team.delivery.leadTimeP85}d`}</td>
                         <td>{team.flow.wip}</td>
@@ -195,6 +205,23 @@ export default function PerformanceDashboard() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              <div className="health-legend">
+                <p>
+                  <b>Como lemos a saúde:</b> cada time acumula sinais de risco.{' '}
+                  <span className="status critico">Crítico</span> = 3+ sinais ·{' '}
+                  <span className="status atencao">Atenção</span> = 1–2 sinais ·{' '}
+                  <span className="status saudavel">Saudável</span> = sem sinais ·{' '}
+                  <span className="status inativo">Sem dados</span> = sem entregas nem WIP no período.
+                </p>
+                <p>
+                  Sinais monitorados: envelhecimento do WIP (&gt;40% e ≥5 itens), Lead Time P85 &gt;45d,
+                  entrada muito acima da saída, e previsibilidade &lt;60%. Passe o mouse sobre o status de
+                  cada time para ver quais sinais ele acende.
+                </p>
+                <p className="health-legend-note">
+                  Limites temporariamente afrouxados (janela de release) — serão reapertados quando a operação normalizar.
+                </p>
               </div>
             </section>
           </>

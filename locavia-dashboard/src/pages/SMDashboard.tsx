@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { matchesTeam, type SMConfig } from '../config/sm-config';
 import { teamLabel } from '../config/teamLabels';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
-import { assessTeamHealth, type TeamHealthStatus } from '../performance/health';
+import {
+  assessTeamHealth,
+  isUnhealthy,
+  HEALTH_LABELS as healthLabel,
+  HEALTH_CLASSES as healthClass,
+  RISK_LABELS,
+} from '../performance/health';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { type DashboardTab } from '../components/DashboardTabs';
@@ -18,8 +24,6 @@ import '../styles/redesign.css';
 interface Props { smConfig: SMConfig }
 
 const PERIODS = [4, 8, 12, 16, 24];
-const healthLabel: Record<TeamHealthStatus, string> = { healthy: 'Saudável', attention: 'Atenção', critical: 'Crítico' };
-const healthClass: Record<TeamHealthStatus, string> = { healthy: 'saudavel', attention: 'atencao', critical: 'critico' };
 
 function ChartCard({ title, subtitle, wide, tall, children }: { title: string; subtitle?: string; wide?: boolean; tall?: boolean; children: React.ReactNode }) {
   return (
@@ -61,7 +65,7 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
     throughput: acc.throughput + team.delivery.throughput,
     wip: acc.wip + team.flow.wip,
     aging: acc.aging + team.flow.agingItems,
-    attention: acc.attention + Number(assessTeamHealth(team).status !== 'healthy'),
+    attention: acc.attention + Number(isUnhealthy(assessTeamHealth(team).status)),
   }), { throughput: 0, wip: 0, aging: 0, attention: 0 });
 
   return (
@@ -184,11 +188,13 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
                     <thead><tr><th>Time</th><th>Saúde</th><th>Vazão</th><th>Lead P85</th><th>WIP</th><th>Saldo</th><th>Previsibilidade</th></tr></thead>
                     <tbody>
                       {teams.map(team => {
-                        const health = assessTeamHealth(team).status;
+                        const assessment = assessTeamHealth(team);
+                        const health = assessment.status;
+                        const reasons = assessment.risks.length ? assessment.risks.map(r => RISK_LABELS[r]).join(' · ') : 'Sem sinais de risco no período.';
                         return (
                           <tr key={team.teamId} onClick={() => navigate(`/time/${encodeURIComponent(team.teamId)}`)}>
                             <td><strong>{teamLabel(team.teamId)}</strong></td>
-                            <td><span className={`status ${healthClass[health]}`}>{healthLabel[health]}</span></td>
+                            <td><span className={`status ${healthClass[health]}`} title={reasons} style={{ cursor: 'help' }}>{healthLabel[health]}</span></td>
                             <td>{team.delivery.throughput}</td>
                             <td>{team.delivery.leadTimeP85 === null ? '—' : `${team.delivery.leadTimeP85}d`}</td>
                             <td>{team.flow.wip}</td>

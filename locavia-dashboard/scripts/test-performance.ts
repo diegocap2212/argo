@@ -76,7 +76,9 @@ assert.equal(portfolio.totals.wip, 2);
 const insightIds = generateTeamInsights(snapshot).map(insight => insight.id);
 assert.ok(insightIds.includes('TEAM:aging'));
 assert.ok(insightIds.includes('TEAM:predictability'));
-assert.deepEqual(assessTeamHealth(snapshot).risks, ['aging', 'predictability']);
+// Critério afrouxado (2026-07-15): aging exige ≥5 itens e >40% do WIP, então este
+// fixture (1 item envelhecido) não acende mais 'aging' — só 'predictability' (50<60).
+assert.deepEqual(assessTeamHealth(snapshot).risks, ['predictability']);
 const matureSnapshot = attachMaturity(snapshot, { level: 2, score: 68, dimensions: { fluxo: 72 } });
 assert.equal(matureSnapshot.maturity?.dimensions.fluxo, 72);
 assert.equal(snapshot.maturity, undefined);
