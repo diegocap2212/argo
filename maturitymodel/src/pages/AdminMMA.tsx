@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useAdminTeams, useCreateTeam, useTeamMembers, useAddMember, useAddMemberById, useRemoveMember, useAdminTeamCycle, useRestartAssessment, useAdminProfiles, useDeleteSquad } from "@/hooks/useAdminData";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsPortalAdmin } from "@/hooks/useIsPortalAdmin";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -13,6 +14,9 @@ const ROLES: Role[] = ["team", "po", "tl", "sm", "am"];
 
 export default function AdminMMA() {
   const { user, isAnonymous } = useAuth();
+  // Dois modos: admin global (tudo) × gestor SM/AM (só os squads dele — a RLS já
+  // escopa a lista de teams; aqui escondemos as ações que a RLS negaria).
+  const { data: isPortalAdmin = false } = useIsPortalAdmin();
   const { data: teams = [], isLoading } = useAdminTeams();
   const createTeam = useCreateTeam();
   const [newTeamName, setNewTeamName] = useState("");
@@ -20,7 +24,7 @@ export default function AdminMMA() {
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const { data: members = [] } = useTeamMembers(selectedTeam ?? undefined);
-  const { data: profiles = [], isLoading: profilesLoading } = useAdminProfiles();
+  const { data: profiles = [], isLoading: profilesLoading } = useAdminProfiles(isPortalAdmin);
   const addMember = useAddMember(selectedTeam ?? "");
   const addMemberById = useAddMemberById(selectedTeam ?? "");
   const removeMember = useRemoveMember(selectedTeam ?? "");
@@ -36,26 +40,30 @@ export default function AdminMMA() {
     <div className="space-y-10">
       <div>
         <h2 className="font-serif text-3xl leading-tight tracking-[-0.015em]">Administração</h2>
-        <p className="mt-1 text-sm text-venice-textSecondary">Squads, membros e papéis do MMA.</p>
+        <p className="mt-1 text-sm text-venice-textSecondary">
+          {isPortalAdmin ? "Squads, membros e papéis do MMA — visão de admin do portal." : "Membros e papéis dos squads sob sua gestão."}
+        </p>
       </div>
 
       <section>
         <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">Squads</h3>
-        <div className="mb-4 flex gap-2">
-          <Input placeholder="Nome do squad" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="max-w-xs" />
-          <Input placeholder="Torre" value={newTeamTower} onChange={(e) => setNewTeamTower(e.target.value)} className="max-w-[120px]" />
-          <Button
-            size="sm"
-            disabled={!newTeamName.trim() || createTeam.isPending}
-            onClick={async () => {
-              await createTeam.mutateAsync({ name: newTeamName.trim(), tower: newTeamTower.trim() });
-              setNewTeamName("");
-              toast({ title: "Squad criado" });
-            }}
-          >
-            + Squad
-          </Button>
-        </div>
+        {isPortalAdmin && (
+          <div className="mb-4 flex gap-2">
+            <Input placeholder="Nome do squad" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="max-w-xs" />
+            <Input placeholder="Torre" value={newTeamTower} onChange={(e) => setNewTeamTower(e.target.value)} className="max-w-[120px]" />
+            <Button
+              size="sm"
+              disabled={!newTeamName.trim() || createTeam.isPending}
+              onClick={async () => {
+                await createTeam.mutateAsync({ name: newTeamName.trim(), tower: newTeamTower.trim() });
+                setNewTeamName("");
+                toast({ title: "Squad criado" });
+              }}
+            >
+              + Squad
+            </Button>
+          </div>
+        )}
 
         {isLoading && <p className="text-sm text-venice-textTertiary">Carregando…</p>}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -85,7 +93,7 @@ export default function AdminMMA() {
                 {cycle ? `${cycle.quarter} · ${cycle.status}` : "Nenhum assessment iniciado para este squad."}
               </p>
             </div>
-            <Button
+            {isPortalAdmin && <Button
               variant="outline"
               size="sm"
               disabled={!cycle || restartAssessment.isPending}
@@ -104,10 +112,10 @@ export default function AdminMMA() {
             >
               <RotateCcw className="h-3.5 w-3.5" />
               {restartAssessment.isPending ? "Reiniciando…" : "Reiniciar assessment"}
-            </Button>
+            </Button>}
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-venice-err/30 bg-venice-errBg p-4">
+          {isPortalAdmin && <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-venice-err/30 bg-venice-errBg p-4">
             <div>
               <h3 className="text-sm font-semibold text-venice-errFg">Excluir squad permanentemente</h3>
               <p className="mt-1 text-xs text-venice-errFg">Remove membros, assessments, métricas e planos vinculados. Esta ação não pode ser desfeita.</p>
@@ -134,26 +142,47 @@ export default function AdminMMA() {
               <Trash2 className="h-3.5 w-3.5" />
               {deleteSquad.isPending ? "Excluindo…" : "Excluir squad"}
             </Button>
-          </div>
+          </div>}
 
           <div>
           <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">
             Membros · {teams.find((t) => t.id === selectedTeam)?.name}
           </h3>
 
-          <div className="mb-3 flex flex-wrap gap-2">
-            <Select value={selectedProfile} onValueChange={setSelectedProfile}>
-              <SelectTrigger className="min-w-[280px] flex-1">
-                <SelectValue placeholder={profilesLoading ? "Carregando pessoas…" : "Selecionar pessoa cadastrada"} />
-              </SelectTrigger>
-              <SelectContent>
-                {profiles.map((profile) => (
-                  <SelectItem key={profile.id} value={profile.id}>
-                    {profile.is_am ? "AM · " : ""}{profile.full_name || profile.email || profile.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          {/* Diretório completo: só o admin do portal (a RLS fecha profiles para os demais). */}
+          {isPortalAdmin && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              <Select value={selectedProfile} onValueChange={setSelectedProfile}>
+                <SelectTrigger className="min-w-[280px] flex-1">
+                  <SelectValue placeholder={profilesLoading ? "Carregando pessoas…" : "Selecionar pessoa cadastrada"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {profiles.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.is_am ? "AM · " : ""}{profile.full_name || profile.email || profile.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                disabled={!selectedProfile || addMemberById.isPending}
+                onClick={async () => {
+                  try {
+                    await addMemberById.mutateAsync({ userId: selectedProfile, role: memberRole });
+                    setSelectedProfile("");
+                    toast({ title: "Membro adicionado" });
+                  } catch (e) {
+                    toast({ title: "Erro", description: errMessage(e), variant: "destructive" });
+                  }
+                }}
+              >
+                Adicionar pessoa
+              </Button>
+            </div>
+          )}
+
+          <div className="mb-4 flex flex-wrap gap-2 border-t border-border pt-3">
             <Select value={memberRole} onValueChange={(v) => setMemberRole(v as Role)}>
               <SelectTrigger className="w-32">
                 <SelectValue />
@@ -162,26 +191,8 @@ export default function AdminMMA() {
                 {ROLES.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
               </SelectContent>
             </Select>
-            <Button
-              size="sm"
-              disabled={!selectedProfile || addMemberById.isPending}
-              onClick={async () => {
-                try {
-                  await addMemberById.mutateAsync({ userId: selectedProfile, role: memberRole });
-                  setSelectedProfile("");
-                  toast({ title: "Membro adicionado" });
-                } catch (e) {
-                  toast({ title: "Erro", description: errMessage(e), variant: "destructive" });
-                }
-              }}
-            >
-              Adicionar pessoa
-            </Button>
-          </div>
-
-          <div className="mb-4 flex flex-wrap gap-2 border-t border-border pt-3">
             <Input
-              placeholder="Ou informe um e-mail exato"
+              placeholder={isPortalAdmin ? "Ou informe um e-mail exato" : "E-mail exato de quem já logou no portal"}
               value={memberEmail}
               onChange={(e) => setMemberEmail(e.target.value)}
               className="max-w-xs"
@@ -219,7 +230,9 @@ export default function AdminMMA() {
           <p className="mb-3 text-xs text-venice-textTertiary">
             {isAnonymous
               ? "Sua sessão é anônima (login ainda não definido) — use \"Adicionar a mim mesmo\" para testar como este papel, ou busque por email quem já tiver logado com conta real."
-              : "A lista mostra quem já acessou o portal. Pessoas marcadas com AM já exercem esse papel em outro squad."}
+              : isPortalAdmin
+              ? "A lista mostra quem já acessou o portal. Pessoas marcadas com AM já exercem esse papel em outro squad."
+              : "Adicione membros pelo e-mail corporativo exato — a pessoa precisa ter feito o primeiro login no portal."}
           </p>
 
           <div className="space-y-1.5">

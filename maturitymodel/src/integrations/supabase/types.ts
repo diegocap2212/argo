@@ -1240,11 +1240,16 @@ export type Database = {
         }
         Returns: boolean
       }
+      find_profile_by_email: {
+        Args: { p_email: string }
+        Returns: { id: string; email: string | null; full_name: string | null }[]
+      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_am: { Args: { t: string }; Returns: boolean }
       is_any_am: { Args: never; Returns: boolean }
       is_approved: { Args: { _user_id: string }; Returns: boolean }
       is_member: { Args: { t: string }; Returns: boolean }
+      is_portal_admin: { Args: never; Returns: boolean }
       is_sm: { Args: { t: string }; Returns: boolean }
       officialize_cycle: { Args: { p_cycle: string }; Returns: undefined }
     }

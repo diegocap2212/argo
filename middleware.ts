@@ -7,7 +7,7 @@ export const config = { matcher: ['/dash/:path*', '/maturity/:path*'] };
 
 const COOKIE = 'neo_session';
 
-function parseCookie(header: string | null, name: string): string | null {
+export function parseCookie(header: string | null, name: string): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const i = part.indexOf('=');
@@ -17,7 +17,7 @@ function parseCookie(header: string | null, name: string): string | null {
   return null;
 }
 
-function b64urlToBytes(value: string): Uint8Array {
+export function b64urlToBytes(value: string): Uint8Array {
   const b64 = value.replace(/-/g, '+').replace(/_/g, '/');
   const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
   const raw = atob(padded);
@@ -27,7 +27,7 @@ function b64urlToBytes(value: string): Uint8Array {
 }
 
 /** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de api/session.ts) + exp. */
-async function verifyToken(token: string, secret: string): Promise<boolean> {
+export async function verifyToken(token: string, secret: string): Promise<boolean> {
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return false;
   try {
@@ -62,7 +62,15 @@ export default async function middleware(request: Request): Promise<Response | u
   if (token && (await verifyToken(token, secret))) return undefined;
 
   // Sem sessão NEO: volta ao hub (login) preservando o destino para retomar após autenticar.
+  // Response construída na mão: Response.redirect() tem headers imutáveis e o
+  // `headers.set` posterior lançaria TypeError no runtime Edge.
   const url = new URL(request.url);
   const next = encodeURIComponent(url.pathname + url.search);
-  return Response.redirect(new URL(`/?next=${next}`, request.url), 302);
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: new URL(`/?next=${next}`, request.url).toString(),
+      'Cache-Control': 'no-store',
+    },
+  });
 }

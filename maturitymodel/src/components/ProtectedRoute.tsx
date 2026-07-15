@@ -2,6 +2,7 @@ import { Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useMySquads } from "@/hooks/useMySquads";
+import { useIsPortalAdmin } from "@/hooks/useIsPortalAdmin";
 
 function Interstitial({ message }: { message: string }) {
   return (
@@ -32,14 +33,18 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Só deixa passar quem é AM de pelo menos um squad — usa a mesma query da sidebar (cache compartilhado). */
-export function RequireAM({ children }: { children: React.ReactNode }) {
+/**
+ * Gate do /admin: admin global do portal OU gestor (SM/AM) de pelo menos um squad.
+ * O que cada um vê/gerencia lá dentro é decidido pela RLS + pelo modo da tela.
+ */
+export function RequireManager({ children }: { children: React.ReactNode }) {
   const { data: squads, isLoading } = useMySquads();
+  const { data: isAdmin, isLoading: adminLoading } = useIsPortalAdmin();
 
-  if (isLoading) return null;
+  if (isLoading || adminLoading) return null;
 
-  const isAMAnywhere = (squads ?? []).some((s) => s.roles.includes("am"));
-  if (!isAMAnywhere) {
+  const isManagerAnywhere = (squads ?? []).some((s) => s.roles.includes("am") || s.roles.includes("sm"));
+  if (!isAdmin && !isManagerAnywhere) {
     return <Navigate to="/" replace />;
   }
 

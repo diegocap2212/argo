@@ -1,8 +1,11 @@
 # Redesenho de papéis — Portal MMA
 
-> **Decisão do Diego (2026-07-14):** com a chegada de novos SMs (Tiago, Gabi, Rafa), cada **SM
-> enxerga e gerencia SOMENTE os próprios squads**; o **Diego é admin global** (vê e gerencia tudo).
-> Este documento é o desenho para implementação futura — NÃO executar sem aprovação do plano final.
+> **STATUS: IMPLEMENTADO em 2026-07-15** — migration `20260715120000_portal_admins_scoped_roles.sql`
+> aplicada em produção; front em `RequireManager`/`useIsPortalAdmin`/AdminMMA em dois modos.
+> Decisões finais do Diego: restart/exclusão = só admin global; SM edita metadados do próprio squad;
+> admins por E-MAIL de login = ext.diego.caporusso@ e ext.tiago.massaro@lmmobilidade.com.br (backup);
+> diretório de profiles fechado (busca por e-mail exato via RPC `find_profile_by_email`).
+> Bônus de segurança aplicado: views `v_*` com `security_invoker=true` (antes BYPASSAVAM a RLS).
 
 ## 1. Estado atual (mapa fiel — explorado em 2026-07-14)
 

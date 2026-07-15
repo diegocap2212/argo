@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
+import { safeNextPath } from './next';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -94,20 +95,23 @@ function startResendCooldown() {
 
 // Emite o cookie neo_session (HttpOnly) que o Edge Middleware exige para servir /dash e
 // /maturity. Melhor-esforço: sem ele o middleware devolve o usuário ao hub com ?next=.
-async function establishNeoSession(session: Session): Promise<void> {
+async function establishNeoSession(session: Session): Promise<boolean> {
   try {
-    await fetch('/api/session', {
+    const response = await fetch('/api/session', {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.access_token}` },
     });
-  } catch { /* dev local sem functions — o gate client-side segue valendo */ }
+    return response.ok;
+  } catch {
+    return window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  }
 }
 
 // Destino pós-login vindo do middleware (?next=/dash/...). Só caminhos internos das apps —
 // nunca URL absoluta (anti open-redirect).
 function pendingNext(): string | null {
   const next = new URLSearchParams(window.location.search).get('next');
-  return next && /^\/(dash|maturity)(\/|$)/.test(next) ? next : null;
+  return safeNextPath(next);
 }
 
 // Decide o que mostrar a partir da sessão: autorizado → doors; logado-mas-não-autorizado → erro; sem sessão → form.
@@ -117,7 +121,12 @@ async function reconcile(session: Session | null) {
     return;
   }
   if (await isAllowed(session)) {
-    await establishNeoSession(session);
+    const sessionReady = await establishNeoSession(session);
+    if (!sessionReady) {
+      showGate('form');
+      showError('Não foi possível estabelecer a sessão segura do NEO. Atualize a página e tente novamente.');
+      return;
+    }
     const next = pendingNext();
     if (next) {
       window.location.replace(next);

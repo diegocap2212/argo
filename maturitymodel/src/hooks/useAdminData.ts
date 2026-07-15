@@ -113,10 +113,15 @@ export interface AdminProfile {
   is_am: boolean;
 }
 
-/** Diretório de pessoas que já acessaram o portal; AMs aparecem destacados. */
-export function useAdminProfiles() {
+/**
+ * Diretório de pessoas que já acessaram o portal; AMs aparecem destacados.
+ * Só o admin do portal enxerga o diretório completo (RLS de profiles) — passe
+ * `enabled=false` para gestores de squad, que adicionam por e-mail exato via RPC.
+ */
+export function useAdminProfiles(enabled = true) {
   return useQuery({
     queryKey: ["admin-profiles"],
+    enabled,
     staleTime: 30_000,
     queryFn: async (): Promise<AdminProfile[]> => {
       const [{ data: profiles, error: profileError }, { data: amMemberships, error: memberError }] = await Promise.all([
@@ -182,12 +187,13 @@ export function useAddMember(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ email, role }: { email: string; role: Role }) => {
-      const { data: profile, error: pErr } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", email.trim().toLowerCase())
-        .maybeSingle();
+      // O diretório de profiles é fechado por RLS — a busca por e-mail exato passa pela
+      // RPC find_profile_by_email (permitida a gestores SM/AM e ao admin do portal).
+      const { data: found, error: pErr } = await supabase.rpc("find_profile_by_email", {
+        p_email: email.trim().toLowerCase(),
+      });
       if (pErr) throw pErr;
+      const profile = found?.[0];
       if (!profile) throw new Error("Nenhum usuário com esse email já fez login no portal ainda.");
       const { error } = await supabase.from("squad_members").insert({ team_id: teamId, user_id: profile.id, role });
       if (error) throw error;

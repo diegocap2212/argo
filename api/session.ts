@@ -54,6 +54,8 @@ function emailFromJwt(bearer: string): string {
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
+  res.setHeader('Cache-Control', 'no-store');
+
   if (req.method === 'POST') {
     const secret = process.env.SESSION_SECRET;
     if (!secret) {

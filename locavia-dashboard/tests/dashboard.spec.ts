@@ -48,8 +48,8 @@ test.describe('Portfólio do agilista', () => {
   test('não oferece dimensão de release', async ({ page }) => {
     await page.goto('/sm/gabriela');
     await expect(page.locator('h1')).toContainText('Gabriela', { timeout: 30_000 });
-    await expect(page.getByLabel('Time')).toBeVisible();
-    await expect(page.getByLabel('Período')).toBeVisible();
+    await expect(page.getByLabel('Time', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Período', { exact: true })).toBeVisible();
     await expect(page.getByText('Times do portfólio')).toBeVisible();
     await expect(page.getByText('CFD do portfólio')).toBeVisible();
     await expect(page.getByText('Cycle Time P85', { exact: true })).toBeVisible();

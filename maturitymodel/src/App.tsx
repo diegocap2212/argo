@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
-import { ProtectedRoute, RequireAM } from "@/components/ProtectedRoute";
+import { ProtectedRoute, RequireManager } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/layout/AppShell";
 
 const Inicio = lazy(() => import("@/pages/Inicio"));
@@ -63,9 +63,9 @@ function App() {
                     path="/admin"
                     element={
                       <Shell>
-                        <RequireAM>
+                        <RequireManager>
                           <AdminMMA />
-                        </RequireAM>
+                        </RequireManager>
                       </Shell>
                     }
                   />

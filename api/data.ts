@@ -2,7 +2,6 @@
 // Nível 3: o dataset (~5MB) vive no Vercel Blob (privado) — gravado pelo sync. Este endpoint
 // lê o blob server-side e entrega só com sessão. Mantém um fallback para o src/data.json
 // congelado (último commitado) caso o blob falhe/ainda não exista.
-import crypto from 'crypto';
 import { get } from '@vercel/blob';
 import fallbackData from '../locavia-dashboard/src/data.json' with { type: 'json' };
 import fallbackMeta from '../locavia-dashboard/src/data-meta.json' with { type: 'json' };
@@ -10,33 +9,6 @@ import fallbackMeta from '../locavia-dashboard/src/data-meta.json' with { type: 
 const BLOB_PATHNAME = 'jira-data.json';
 
 // ── Sessão (inline; a Vercel não empacota imports relativos entre functions) ──
-const SESSION_COOKIE = 'dash_session';
-function sign(payload: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
-}
-function verifyToken(token: string, secret: string): boolean {
-  const [payload, sig] = token.split('.');
-  if (!payload || !sig) return false;
-  const a = Buffer.from(sig);
-  const b = Buffer.from(sign(payload, secret));
-  if (a.length !== b.length) return false;
-  if (!crypto.timingSafeEqual(a, b)) return false;
-  try {
-    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return typeof exp === 'number' && exp > Date.now();
-  } catch {
-    return false;
-  }
-}
-function parseCookie(header: string | undefined, name: string): string | null {
-  if (!header) return null;
-  for (const part of header.split(';')) {
-    const i = part.indexOf('=');
-    if (i === -1) continue;
-    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
-  }
-  return null;
-}
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).
 interface ApiRequest {
   method?: string;
@@ -73,15 +45,8 @@ async function verifyBearer(req: ApiRequest): Promise<boolean> {
 // Aceita a sessão nova (JWT do Supabase) OU a antiga (cookie HMAC) durante a migração.
 // Fail-open quando nenhum mecanismo está configurado (paridade com o dev local).
 async function isAuthed(req: ApiRequest): Promise<boolean> {
-  const sessionConfigured = !!(process.env.SESSION_SECRET && process.env.DASHBOARD_PASSWORD);
   const supabaseConfigured = !!(process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY);
-  if (!sessionConfigured && !supabaseConfigured) return true;
-  if (sessionConfigured) {
-    const token = parseCookie(req?.headers?.cookie, SESSION_COOKIE);
-    if (token && verifyToken(token, process.env.SESSION_SECRET as string)) return true;
-  }
-  if (supabaseConfigured && (await verifyBearer(req))) return true;
-  return false;
+  return supabaseConfigured ? verifyBearer(req) : true;
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
