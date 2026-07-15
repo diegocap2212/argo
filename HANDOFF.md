@@ -96,9 +96,9 @@ Se o comparativo SM×SM virar sensível, mover o cálculo server-side atrás do 
 3. **Rotacionar segredos que passaram pelo chat:** token Supabase `sbp_a5f2...` (2026-07-14), senha de app do Gmail, API key antiga do Resend.
 4. Fase 3c: remover ramo cookie legado (`dash_session`/`DASHBOARD_PASSWORD`) das functions + `openapi.ts`.
 5. ~~`.env.example` dos apps citam `VITE_HUB_URL`/`VITE_MMA_ORIGIN`~~ — limpo em 2026-07-15.
-6. **Aplicar `20260715150000` no banco** (Management API/CLI) — o fix da escalada só vale após aplicado.
-7. **Deployar as mudanças** (portal + functions + vercel.json) e validar os fluxos logados (Torre, matriz RLS real, logout, iframe, perf do dataset).
-8. **Push do monorepo para `origin`** (backup) — remoto está vazio hoje.
+6. ~~Aplicar `20260715150000` no banco~~ — **aplicado em produção 2026-07-15** (Management API, 201); policy `sqm_write` verificada com `role<>'am'`.
+7. ~~Deployar as mudanças~~ — **deployado 2026-07-15** (dpl `neo-kfnpuc6h4`, aliased `neo-lm.vercel.app`). Fluxos logados validados: Dash+dados (`/api/data` 200, ~5,77 MB / ~579 KB gzip), detalhe do time (5 abas/16 gráficos), MMA+iframe same-origin (`/dash/time/GOL?embed=1`, 0 erros CSP), Torre (senha OK → comparativo), logout → `/dash/` re-bloqueado (302). Smoke não-auth: `/` 200, `/dash/` 302, `/api/data|tower` 401, `PUT /api/trigger-sync` 405, cookie malformado sem 500, CSP completa presente. **Falta só a matriz RLS automatizada** (`rls-matrix.ts`) — destrutiva, rodar em branch Supabase.
+8. ~~Push do monorepo para `origin`~~ — **feito 2026-07-15** (`origin/main` restabelecido).
 
 ## Pegadinhas
 
