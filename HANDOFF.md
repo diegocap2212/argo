@@ -45,9 +45,19 @@ DESATIVADO na conta do Diego (hoje só recebe 308). `/api/trigger-sync` no porta
 - `maturitymodel/docs/ROLES-REDESIGN.md` — SM por squad + admin global; tem 4 QUESTÕES ABERTAS para o Diego (§5) antes de implementar.
 - Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), Torre sem rate-limit de senha, policies legadas de `teams` no MMA, monorepo sem espelho remoto (backup!).
 
-## Pendências pós-cutover
+## Roles do MMA — IMPLEMENTADO E NO AR (2026-07-15)
 
-1. **Roles do MMA (decisão do Diego):** SM enxerga/gerencia SÓ os próprios squads; Diego = admin global. Exige RLS novas + ajustes no AdminMMA. (Novos SMs chegando.)
+Migration `20260715120000_portal_admins_scoped_roles.sql` aplicada em produção (Management API) e
+front promovido (dpl `neo-m03zmhx8t`). Admins globais por e-mail de login: `ext.diego.caporusso@`
+e `ext.tiago.massaro@lmmobilidade.com.br` (backup) — tabela `portal_admins`/`is_portal_admin()`.
+SM/AM só veem/gerenciam os próprios squads; restart/exclusão/conteúdo/criação = só admin;
+diretório de profiles fechado (RPC `find_profile_by_email`); views `v_*` com `security_invoker`
+(bypass de RLS corrigido). Front: `RequireManager`, AdminMMA em 2 modos. Junto foi o hardening
+da sessão apartada de QA (headers globais, rate-limit Torre via KV, no-store, remoção do cookie
+legado das functions, cache em memória no /api/data) + fix do 302 imutável do middleware.
+Detalhes: `maturitymodel/docs/ROLES-REDESIGN.md`.
+
+## Pendências pós-cutover
 2. **E-mail OTP:** mitigado (código no assunto, remetente "NEO — LM Mobilidade", OTP 1h, reenvio com cooldown no hub). Definitivo = Resend: 3 registros DNS em lmmobilidade.com.br pendentes + trocar SMTP (hoje Gmail pessoal).
 3. **Rotacionar segredos que passaram pelo chat:** token Supabase `sbp_a5f2...` (2026-07-14), senha de app do Gmail, API key antiga do Resend.
 4. Fase 3c: remover ramo cookie legado (`dash_session`/`DASHBOARD_PASSWORD`) das functions + `openapi.ts`.
