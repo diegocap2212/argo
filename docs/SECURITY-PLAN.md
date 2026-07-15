@@ -3,6 +3,50 @@
 > **Objetivo declarado (Diego):** garantir que outras pessoas COM acesso à aplicação não consigam
 > roubar nosso código ou nossos dados. Este plano é para execução apartada; cada item tem ação e verificação.
 
+## Status final (2026-07-15) — o que foi executado desta rodada
+
+> Detalhe completo das correções e evidências: `HANDOFF.md` (seção "Validação do SECURITY-PLAN.md").
+> Validação foi feita contra o estado REAL (queries ao banco de produção, grep no código, GitHub API,
+> `npm audit`), não só releitura do documento.
+
+| # | Item | Status | Nota |
+|---|---|---|---|
+| §1 | Sourcemaps publicados | ✅ Verificado | `find dist -name "*.map"` vazio nos 4 builds |
+| §1 | Segredo no bundle | ✅ Verificado | grep por `sbp_/BLOB_/KV_/SECRET` no `dist/` → zero |
+| §1 | **Repo `locavia-dashboard` público** | ✅ Resolvido — **achado novo, mais grave que o previsto** | Não era só código: `sfmkt_data.json` versionado tinha dado real do Jira (nomes de assignee, sumários). Repo tornado **privado** |
+| §1 | Backup do monorepo | ✅ Resolvido | `origin/main` estava vazio (`[gone]`); restabelecido |
+| §1 | Protection Bypass da Vercel | ⬜ Pendente | Não rotacionado nesta rodada |
+| §2.1 | Escopo do `/api/data` | ✅ Decisão registrada | Aceito como está (mesmo grupo/allowlist) — ver HANDOFF |
+| §2.1 | Minimização de campos sensíveis no dataset | ⬜ Pendente | Não avaliado |
+| §2.1 | Blob privado | ✅ Verificado | `access: 'private'` confirmado no código |
+| §2.1 | CORS/Bearer em `comments` | ✅ Verificado | `ALLOWED_ORIGIN` + `isAuthed` corretos; validação de input adicionada (QA-PLAN) |
+| §2.2 | `is_any_am()` global | ✅ Já resolvido, **confirmado por query ao banco** | Zero policies vivas usando a função; `delete_squad`→`is_portal_admin()`, `officialize_cycle`→`is_am(team)` |
+| §2.2 | Policies legadas de `teams` | ✅ Já resolvido | Dropadas na migration `20260715120000` |
+| §2.2 | `profiles` aberto | ✅ Já resolvido | Fechado via `shares_squad_with`/`is_portal_admin()` |
+| §2.2 | `service_role` no client | ✅ Verificado | grep nos 3 apps → zero |
+| §2.2 | Views sem `security_invoker` | ✅ Verificado por query | Zero views sem o flag |
+| §2.2 | **Escalada SM→AM** (achado do QA, não deste plano) | ✅ Resolvido e provado | Migration `20260715150000` + teste de regressão real em produção (4/4) |
+| §2.3 | Senha da Torre forte/trocável | ✅ Resolvido | **Rotacionada** nesta sessão (a antiga havia passado pelo chat) — valor novo nunca impresso, injetado direto na Vercel |
+| §2.3 | Rate-limit de tentativas | ✅ Resolvido | Bug do `EXPIRE` corrigido (evita lockout permanente) |
+| §3 | Offboarding / revisão trimestral / allowlist | ⬜ Pendente | Processo/runbook — não é código, precisa virar rotina operacional |
+| §4 | Clickjacking global | ✅ Já estava correto | `frame-ancestors`/`X-Frame-Options` já cobriam `/(.*)` |
+| §4 | CSP completa | ✅ Resolvido | Aplicada e validada sem quebrar as SPAs |
+| §4 | `dangerouslySetInnerHTML` | ✅ Verificado | 1 ocorrência, em `chart.tsx` do shadcn/ui (biblioteca, não conteúdo de usuário) |
+| §4 | HSTS / Cookies | ✅ Já estava correto | Confirmado |
+| §5 | Rotação de segredos expostos em chat | ⚠️ Parcial | `TOWER_PASSWORD` rotacionada; tokens Supabase (`sbp_a5f2...`, `sbp_6ac9...`) e senha do Gmail/Resend **seguem pendentes** — só o Diego pode revogá-los (dashboards externos) |
+| §5 | Envs Sensitive na Vercel | ✅ Resolvido para novas/rotacionadas | CLI atual marca Production como Sensitive por padrão; `TOWER_PASSWORD` nova já nasce assim. Envs antigas não reauditadas uma a uma |
+| §5 | Menor privilégio no `GITHUB_DISPATCH_TOKEN` | ⬜ Pendente | Não verificável remotamente |
+| §5 | `npm audit` / supply chain | ✅ Resolvido | `xlsx` removido (vuln sem fix); `npm audit fix` → 0 vulns em produção nos 2 apps; Actions pinadas por SHA (2 repos); Dependabot (2 repos) |
+| §5 | 2FA nas contas | ⬜ Pendente | Não verificável via API — ação manual do Diego |
+| §6 | Logs de Auth/Vercel | ⬜ Pendente | Não revisados nesta rodada |
+| §6 | Canário fail-open | ✅ Coberto pelo fail-closed | Garantido em código; sem monitor periódico ativo separado |
+| §6 | Log de acesso à Torre | ✅ Resolvido | `api/tower.ts` loga e-mail (decodificado do JWT já validado) via `console.log` — visível em `vercel logs` |
+
+**Pendências reais para o Diego (fora do alcance de qualquer agente):** revogar `sbp_a5f2...` e
+`sbp_6ac9...` em supabase.com/dashboard/account/tokens; rotacionar senha de app do Gmail e API key
+do Resend; 2FA nas 4 contas; revisar escopo do `GITHUB_DISPATCH_TOKEN`; decidir sobre minimização
+de campos do dataset e offboarding formal.
+
 ## Modelo de ameaça (em ordem de probabilidade)
 
 | # | Ameaça | Vetor |

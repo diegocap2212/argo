@@ -9,6 +9,18 @@
 > Para o estado operacional do momento (o que falta, quem tem conta, o que
 > está pendente) veja `STATUS.md`. Este arquivo é sobre **como o sistema é
 > construído**, não sobre o que falta fazer hoje.
+>
+> ⚠️ **DEFASADO em duas mudanças estruturais grandes** que aconteceram depois
+> deste texto ter sido escrito (2026-07-10) e que **não foram propagadas para
+> cá ainda**: (1) o **cutover do Portal NEO** (2026-07-14) — o MMA não é mais
+> um deploy Vercel separado, é servido em `neo-lm.vercel.app/maturity/**`
+> (ver §10, corrigido) com login unificado (Supabase/OTP no hub, não mais
+> email+senha próprio do MMA — §4.1 abaixo ainda descreve o modelo ANTIGO);
+> (2) o **redesenho de roles** (2026-07-15) — `is_any_am()` não é mais a regra
+> viva, existe admin global por e-mail (`is_portal_admin()`); §4.2 e §8.4
+> foram corrigidos, mas o resto do texto ainda assume o modelo antigo em
+> alguns exemplos. Fonte de verdade do estado atual: `HANDOFF.md` da raiz do
+> monorepo e `docs/ROLES-REDESIGN.md` deste app.
 
 ## 1. O que é este projeto
 
@@ -95,16 +107,27 @@ prototype/mma-prototipo-v2.html ← protótipo HTML estático, referência visua
 
 Isso está espelhado em `supabase/config.toml` `[auth]` e foi aplicado via `supabase config push` em 2026-07-10. **Cuidado**: esse comando reescreve a seção `[auth]` inteira (não é patch parcial) — sempre revisar o diff mostrado antes de confirmar, e nunca rodar sem antes conferir que todo campo que já está em produção (MFA, confirmação de email) está explicitamente declarado no arquivo local. Já causou um incidente real antes desta sessão (ver o comentário no topo do arquivo).
 
-### 4.2 Papéis e RLS
+### 4.2 Papéis e RLS — **ATUALIZADO 2026-07-15** (redesenho de roles)
 
 Papel é **por squad**, guardado em `squad_members (team_id, user_id, role)` — chave primária composta, então uma pessoa pode ter múltiplos papéis no mesmo squad (ex.: `team`+`sm`). Papéis: `team`, `po`, `tl`, `sm`, `am`.
 
-- `is_member(team_id)`, `is_am(team_id)`, `is_sm(team_id)` — funções SQL `SECURITY DEFINER` que checam papel **naquele squad específico**.
-- `is_any_am()` — checa se o usuário é `am` de **qualquer** squad. Usada pelas policies de leitura ampla (ex.: ver todos os squads na Torre) e pela regra de escrita de `squad_members` (`sqm_write` exige `is_any_am()` pra qualquer insert/update/delete).
+- `is_member(team_id)`, `is_am(team_id)`, `is_sm(team_id)` — funções SQL `SECURITY DEFINER` que checam papel **naquele squad específico**. Inalteradas.
+- `is_any_am()` — **APOSENTADA**. Existia e concedia poder global a qualquer AM (ver histórico logo abaixo); nenhuma policy viva usa mais essa função (confirmado por query direta ao banco em 2026-07-15). Mantida no schema só por compatibilidade histórica das migrations antigas.
+- `is_portal_admin()` (nova) — admin global explícito, por **e-mail de login** (tabela `portal_admins`: `ext.diego.caporusso@` e `ext.tiago.massaro@lmmobilidade.com.br`), não por papel em squad. É quem cria/exclui squad, reinicia assessment, edita conteúdo do modelo, e vê tudo.
+- `sqm_write` (gestão de membros) hoje é `is_portal_admin() OR is_am(team_id) OR is_sm(team_id)` **com uma trava adicional**: só admin global ou um AM já existente do squad pode gravar `role='am'` — um SM não consegue se auto-promover (migration `20260715150000`, corrigindo uma escalada de privilégio real encontrada em QA).
 
-**Armadilha de bootstrap conhecida**: como `sqm_write` exige `is_any_am()`, **não existe caminho de auto-serviço pra criar o primeiro AM do sistema** — ninguém pode se auto-promover a AM pelo app, porque pra inserir a própria linha `am` você já precisaria ser AM. A primeira concessão de `am` tem que ser feita via `service_role` (bypassa RLS), diretamente por SQL. Já foi feito uma vez nesta sessão para Diego Caporusso; qualquer reset de ambiente vai precisar repetir esse passo manual.
+**Histórico (não se aplica mais, preservado para contexto)**: até 2026-07-15, `is_any_am()` dava a
+qualquer AM (de qualquer squad) poder de ler/escrever TUDO — incluindo a "armadilha de bootstrap"
+que exigia `service_role` pra criar o primeiro AM do sistema. O redesenho substituiu isso por admin
+global explícito (`portal_admins`), então **não existe mais essa armadilha**: o admin cadastrado na
+tabela já pode fazer tudo via app normal, sem precisar de `service_role`. Detalhe completo da
+migração e as 4 decisões do Diego: `docs/ROLES-REDESIGN.md`.
 
-No front, `useSquadRole(teamId)` resolve os papéis do usuário **naquele squad**; `isAMAnywhere` (calculado em `AppShell.tsx` e em `RequireAM`) varre `useMySquads()` pra saber se a pessoa é AM em algum lugar — controla a visibilidade do link "Administração" e o acesso à rota `/admin`.
+No front, `useSquadRole(teamId)` resolve os papéis do usuário **naquele squad**. O hook
+`useIsPortalAdmin()` (RPC `is_portal_admin`) substitui o antigo "AM em qualquer squad" para
+controlar a visibilidade de ações de admin global; `RequireManager` (antigo `RequireAM`) guarda
+`/admin` exigindo só SM/AM em algum squad OU admin — a UI então esconde as ações que a RLS negaria
+para quem não é admin global.
 
 ### 4.3 Rotas protegidas
 
@@ -203,19 +226,24 @@ archived     → []
 
 Mapeamento jornada↔status (3 estações): Sessão=`session` · Homologação=`homologation` · Plano=`official`.
 
-### 8.4 RLS — regras por tabela
+### 8.4 RLS — regras por tabela — **ATUALIZADO 2026-07-15** (redesenho de roles)
 
-Helpers `SECURITY DEFINER` (`set search_path=public`): `is_member(t)`, `is_am(t)`, `is_sm(t)`, `is_any_am()`.
+Helpers `SECURITY DEFINER` (`set search_path=public`): `is_member(t)`, `is_am(t)`, `is_sm(t)`,
+`is_portal_admin()` (novo — admin global por e-mail, ver §4.2). `is_any_am()` existe na base mas
+nenhuma policy viva a referencia mais.
 
-- **Conteúdo do modelo** (axes/stages/dimensions/dimension_stage_descriptions/anchors): leitura para qualquer autenticado, escrita só `is_any_am()`.
-- **squad_members**: leitura própria + membro + qualquer AM; escrita só `is_any_am()` (ver armadilha de bootstrap, §4.2).
-- **teams**: leitura membro + qualquer AM; update só `is_any_am()`.
-- **assessment_cycles**: leitura membro + AM; insert `is_sm() OR is_am()`; **update com check `status <> 'official'`** — status oficial só muda via RPC.
+- **Conteúdo do modelo** (axes/stages/dimensions/dimension_stage_descriptions/anchors): leitura para qualquer autenticado, escrita só `is_portal_admin()`.
+- **squad_members**: leitura própria + membro + `is_portal_admin()`; escrita por `is_portal_admin() OR is_am(team_id) OR is_sm(team_id)`, **exceto** gravar `role='am'`, que exige admin global ou AM já existente do squad (bloqueia auto-promoção — migration `20260715150000`).
+- **teams**: leitura membro + `is_portal_admin()`; update por admin/AM/SM do squad (metadados); **insert (criar squad) só admin**; delete não tem policy direta (só via RPC `delete_squad`, admin).
+- **assessment_cycles**: leitura membro + `is_portal_admin()`; insert `is_sm() OR is_am()`; **update com check `status <> 'official'`** — status oficial só muda via RPC.
 - **votes**: **tabela morta** no modelo de sessão colaborativa (não há voto individual). Policies removidas na migration `20260710130000`; RLS habilitada sem policy = sem acesso. Mantida no schema só para não fazer drop destrutivo.
-- **proposals**: leitura membro/AM; escrita pelo facilitador (`is_sm() OR is_am()`) enquanto `status = 'session'` — é onde a nota de consenso é registrada.
-- **homologations**: leitura membro/AM; insert/update pelo AM enquanto `status = 'homologation'`.
-- **anchor_readings**: leitura membro/AM; **sem policy de insert** — só `service_role` grava (a Edge Function).
-- **kaizens**: leitura e escrita membro/AM.
+- **proposals**: leitura membro/admin; escrita pelo facilitador (`is_sm() OR is_am()`) enquanto `status = 'session'` — é onde a nota de consenso é registrada.
+- **homologations**: leitura membro/admin; insert/update pelo AM enquanto `status = 'homologation'`.
+- **anchor_readings**: leitura membro/admin; **sem policy de insert** — só `service_role` grava (a Edge Function).
+- **kaizens**: leitura e escrita membro/admin.
+- **profiles**: leitura restrita a si mesmo, admin global, ou quem compartilha squad (`shares_squad_with`) — diretório fechado (antes era `using(true)`, aberto a qualquer logado). Busca de pessoa por e-mail exato via RPC `find_profile_by_email` (security definer), sem abrir o diretório inteiro.
+- **RPCs destrutivos** (`restart_assessment`, `delete_squad`): **só `is_portal_admin()`** — antes eram `is_any_am()` (qualquer AM podia reiniciar/apagar qualquer squad).
+- **Views** `v_cycle_scores`/`v_quarter_comparison`/`v_axis_scores`: `security_invoker=true` (antes rodavam como owner e bypassavam a RLS das tabelas base — corrigido junto do redesenho).
 
 ### 8.5 RPC `officialize_cycle(p_cycle uuid)`
 
@@ -233,11 +261,15 @@ Deno, em `supabase/functions/sync-anchors/index.ts`. Único ponto de contato com
 - **Secrets** (`supabase secrets set`, projeto `cvkcngrmnfwupstyrpsd`): `JIRA_BASE_URL` (`https://grupolm.atlassian.net`), `JIRA_USER_EMAIL` (`ext.diego.caporusso@lmmobilidade.com.br`), `JIRA_API_TOKEN`, `SB_URL`, `SB_SERVICE_ROLE`. ✅ **Deployada e testada em produção** (2026-07-10): sync do Nivus puxou 163 itens do Jira Grupo LM e gravou 8 leituras com valores reais. Os secrets antigos `LOCAVIA_*` foram removidos. Nota: o token da LM não é recuperável por CLI/MCP (sensível no Vercel do locavia, one-time no Atlassian) — foi fornecido pelo usuário.
 - **Invocação**: sob demanda (`POST /functions/v1/sync-anchors {team_id, cycle_id?}`, botão "Sincronizar agora" na Métricas) ou cron (sem body → todos os squads ativos mapeados) — cron ainda não agendado.
 
-## 10. Deploy e infraestrutura
+## 10. Deploy e infraestrutura — **ATUALIZADO 2026-07-15** (pós-cutover Portal NEO)
 
-- **Vercel**: projeto `maturitymodel` (org `diegocaporusso-2820s-projects`), deploy automático a cada push em `main`. `vercel.json` só faz rewrite de SPA (`/(.*)→/index.html`). Sem CI de testes — o "gate" antes de produção é manual (`npm run build` local + revisão).
-- **Supabase**: projeto `cvkcngrmnfwupstyrpsd`, CLI `2.107.0` linkado localmente (`supabase/.temp/linked-project.json`). Migrations aplicadas via `supabase db push`. Edge Function via `supabase functions deploy sync-anchors`. Secrets via `supabase secrets set`.
-- **Locavia Dashboard**: projeto Vercel separado e independente (`locavia-dashboard`), não faz parte deste repositório. Ver `Desktop/localhost/locavia-dashboard` se precisar entender o contrato da API por dentro.
+> Esta seção descrevia um deploy Vercel próprio e independente para o MMA. Isso **não existe mais**
+> desde o cutover de 2026-07-14 — ver `HANDOFF.md` da raiz do monorepo para a arquitetura completa.
+
+- **Vercel**: **um único projeto (`neo-lm`)**, deploy da RAIZ do monorepo (`argo/`), não mais um projeto próprio `maturitymodel`. O MMA é servido em `https://neo-lm.vercel.app/maturity/**` (build Vite com `--base=/maturity/`, composto com o Hub e o Dash via `scripts/build-portal.mjs` na raiz). `vercel.json` da raiz define rewrites/headers para os três apps. CI de lint/typecheck/build por app: `.github/workflows/ci.yml` na raiz (novo, 2026-07-15) — ainda sem testes automatizados de RLS/E2E para o MMA especificamente (ver `docs/QA-PLAN.md` da raiz, item B4/B6).
+- **Login**: não é mais email+senha próprio do MMA (§4.1 acima descreve o modelo antigo) — é sessão Supabase unificada, criada no Hub (`/`) via OTP, válida nas três apps por same-origin (`localStorage` compartilhado) + cookie `neo_session` (HMAC) exigido pelo `middleware.ts` da raiz para servir `/maturity/**`.
+- **Supabase**: projeto `cvkcngrmnfwupstyrpsd` (inalterado), CLI linkado localmente. Migrations aplicadas via `supabase db push` ou Management API. Edge Function via `supabase functions deploy sync-anchors`. Secrets via `supabase secrets set`.
+- **Locavia Dashboard (`locavia-dashboard/`)**: agora é **outra pasta do mesmo monorepo** (`argo/locavia-dashboard/`), não mais um projeto separado — servido em `/dash/**` do mesmo domínio `neo-lm.vercel.app`. O contrato de API (`/api/data`, `?embed=1`) segue igual, só a origem mudou (same-origin agora, sem cross-origin/postMessage).
 
 ## 11. Governança — como mexer aqui com segurança
 

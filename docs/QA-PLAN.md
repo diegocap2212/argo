@@ -5,6 +5,47 @@
 > Estado de referência: cutover de 2026-07-14 — portal em `https://neo-lm.vercel.app` (hub `/`, Dash `/dash`, MMA `/maturity`),
 > middleware Edge + cookie `neo_session`, Torre com senha (`neo_tower`), redirects 308 nos domínios antigos.
 
+## Status final (2026-07-15) — o que foi executado desta rodada
+
+> Detalhe completo das correções e evidências: `HANDOFF.md` (seções "QA profundo — correções
+> aplicadas" e "Validação do SECURITY-PLAN.md"). Tabela abaixo é o mapa rápido do que ficou
+> resolvido/verificado versus o que segue como trabalho futuro.
+
+| Bloco | Item | Status | Nota |
+|---|---|---|---|
+| A1 | Fail-open sem `SESSION_SECRET` | ✅ Resolvido | Fail-closed em produção (`VERCEL_ENV==='production'`); dev/preview seguem abertos |
+| A1 | Cookie malformado → 500 | ✅ Resolvido | `decodeURIComponent` com try/catch (middleware + tower) |
+| A1 | Matcher `/DASH/`, `//dash/`, `?next` adversarial | ⬜ Pendente | Não testado nesta rodada |
+| A1 | TTL 12h — UX do expirado com app aberto | ⬜ Pendente | Não revisado |
+| A2 | Rate-limit da Torre | ✅ Resolvido | Já existia (KV); corrigido bug do `EXPIRE` (lockout permanente) |
+| A2 | GET/POST fail-open sem `TOWER_PASSWORD` | ✅ Resolvido | Fail-closed em produção |
+| A2 | `/api/data` mesmo dado p/ todo logado | ✅ Aceito (não é bug) | Documentado: Torre protege visualização, não o dado — decisão de produto registrada |
+| A3 | `dash_session`/`DASHBOARD_PASSWORD` inerte | ⬜ Pendente | Fase 3c — remover ramo legado das functions + `openapi.ts` |
+| A3 | `ALLOWED_ORIGIN`/CORS em comments | ✅ Verificado | Confere origem + Bearer |
+| A3 | `trigger-sync` sem validar método (PUT→401) | ✅ Resolvido | Agora 405 antes da auth |
+| A4 | `frame-ancestors` só em `/dash` | ✅ Já estava correto | Confirmado que já cobria `/(.*)` — achado do relatório externo estava desatualizado |
+| A4 | CSP completa | ✅ Resolvido | `default-src 'self'` + ajustes Supabase; validado sem quebrar as 3 SPAs (0 erros de console) |
+| A5 | Logout nos 3 pontos | ✅ Verificado ao vivo | Sessão real: logout → `/dash/` volta a 302 |
+| A6 | Sourcemaps não publicados | ✅ Verificado | `find dist -name "*.map"` vazio |
+| A7 | `is_any_am()` global (escalada) | ✅ Resolvido e **provado** | Migration `20260715150000` + teste de regressão ao vivo em produção (JWT real de SM, 4/4 negado) |
+| A7 | Policies legadas de `teams` | ✅ Já estava resolvido | Confirmado morto via query direta ao banco (não só leitura de migration) |
+| A7 | `profiles` aberto | ✅ Já estava resolvido | `shares_squad_with` + `is_portal_admin()` |
+| A7 | Views sem `security_invoker` | ✅ Já estava resolvido | Confirmado: zero views sem o flag |
+| A8 | Jira sync — repo do cron | ✅ Resolvido (achado novo) | Repo estava **público** com dado real do Jira — tornado privado (ver SECURITY-PLAN) |
+| B1 | Gate de regressão local | ✅ Verde | tsc/lint/test/build nos 3 apps + `build:portal` |
+| B2 | Matriz HTTP do portal | ✅ Verificado em produção | 200/302/401/405, cookie malformado, CSP — todos conferidos por curl real |
+| B3 | E2E do portal (logado) | ✅ Verificado manualmente ao vivo | Home+dados, detalhe do time, MMA+iframe, Torre (senha certa), logout — percorridos com sessão real; **não** viraram specs Playwright versionados contra o portal (só o `tests/dashboard.spec.ts` standalone do Dash foi corrigido/roda em CI) |
+| B4 | Matriz de RLS do MMA | ⚠️ Parcial | Script completo criado (`rls-matrix.ts`, requer branch Supabase — bloqueado por plano free); teste de regressão mínimo da escalada rodou de fato em produção (4/4) |
+| B5 | Unidade da camada nova (HMAC extraído) | ⬜ Pendente | Não extraído em função pura testável |
+| B6 | Compatibilidade (Firefox/WebKit/mobile/dark) | ⬜ Pendente | Não testado |
+| B7 | Perf do dataset | ✅ Verificado | ~5,77 MB / ~579 KB gzip / ~16ms cache quente, medido ao vivo |
+| C2 | Canário fail-open | ✅ Coberto pelo fail-closed | Não existe monitor ativo separado; o comportamento correto (302, nunca 200) já é garantido em código |
+| C5 | Runbook de rollback testado | ⬜ Pendente | Não exercido nesta rodada |
+| — | CI (lint/typecheck/build/test) | ✅ Novo | `.github/workflows/ci.yml` criado |
+| — | Saúde dos times (achado fora do plano original) | ✅ Resolvido | Critério recalibrado (menos rígido, motivos + legenda na UI) — ver HANDOFF |
+
+**Pendências reais para uma próxima rodada:** B4 completo (precisa Supabase Pro para branch, ou aceitar rodar direto em produção com o mesmo cuidado desta sessão), B5, B6, C1/C4 (revisão de logs), C5 (exercício de rollback), Fase 3c (remover `dash_session` legado).
+
 ## O que JÁ existe de verificação (inventário)
 
 | Área | Cobertura atual |

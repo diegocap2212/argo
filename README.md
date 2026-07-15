@@ -65,9 +65,21 @@ Variáveis (Production e Preview):
 
 Infra externa: **Supabase** (auth + Postgres + Edge Function), **Vercel Blob + Upstash Redis**, **GitHub Actions** (sync agendado no repo `diegocap2212/locavia-dashboard`, grava direto no Blob).
 
+## Qualidade e segurança
+
+- **`docs/QA-PLAN.md`** — plano de QA profundo (review + testes + debug/observabilidade); tem uma
+  seção "Status final" no topo com o que já foi resolvido/verificado e o que segue pendente.
+- **`docs/SECURITY-PLAN.md`** — plano de cybersecurity (modelo de ameaça, proteção de código/dados,
+  segredos, supply chain); mesma estrutura de "Status final" no topo.
+- **`.github/workflows/ci.yml`** — lint/typecheck/build/test por app em push/PR.
+- **`.github/dependabot.yml`** — atualização semanal de deps (npm + github-actions).
+- Ambos os planos foram validados contra o estado real (queries ao banco de produção, `npm audit`,
+  GitHub API), não só releitura de documento — histórico completo das correções em `HANDOFF.md`.
+
 ## Documentação por app
 
 - `locavia-dashboard/README.md` · `CLAUDE.md` · `DESIGN.md`
-- `maturitymodel/ARCHITECTURE.md` · `docs/`
+- `maturitymodel/ARCHITECTURE.md` · `STATUS.md` · `docs/` (ambos citam onde estão defasados e
+  apontam para a fonte de verdade atual)
 - `neo-hub/` — landing (identidade no próprio `index.html`)
 - `HANDOFF.md` — estado operacional corrente (ler antes de trabalhar)

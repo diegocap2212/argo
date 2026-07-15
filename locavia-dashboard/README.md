@@ -176,18 +176,30 @@ Invariantes importantes:
 
 ## Autenticação e ambiente
 
-Variáveis principais:
+**Modelo atual (pós-cutover do Portal NEO, 2026-07-14):** login é no hub (`/`), sessão Supabase
+same-origin. As functions (`api/*`, na raiz do monorepo) autorizam por **JWT Bearer do Supabase**
+validado contra a allowlist `is_neo_allowed()`; o `middleware.ts` da raiz exige o cookie
+`neo_session` (HMAC) para servir HTML/assets de `/dash/**`. O ramo antigo de cookie
+`dash_session`/`DASHBOARD_PASSWORD` (senha única do dashboard) está **inerte** — nunca configurado
+no projeto atual, mantido só até a remoção definitiva (Fase 3c, ver `HANDOFF.md` da raiz). **Não
+reconfigurar `DASHBOARD_PASSWORD`** em produção.
+
+Variáveis principais (ver detalhe completo e valores por grupo no `README.md` da raiz):
 
 | Variável | Uso |
 |---|---|
-| `SESSION_SECRET` | Assinatura HMAC da sessão |
-| `DASHBOARD_PASSWORD` | Senha do dashboard |
+| `SESSION_SECRET` | Assinatura HMAC de `neo_session` (middleware) e `neo_tower` — **obrigatória em produção**; sem ela o gate fica fail-closed (não fail-open) |
+| `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Validação do Bearer nas functions (`is_neo_allowed`) |
+| `TOWER_PASSWORD` | Senha da visão restrita `/torre` (`api/tower.ts`) |
+| `ALLOWED_ORIGIN` | CORS de `api/comments.ts` |
 | `BLOB_READ_WRITE_TOKEN` | Dataset privado no Vercel Blob |
-| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Redis/Upstash |
-| `JIRA_BASE_URL` / `JIRA_USER_EMAIL` / `JIRA_API_TOKEN` | Sync Jira |
-| `GITHUB_TOKEN` | Disparo manual do workflow de sync |
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Redis/Upstash — comentários e rate-limit da Torre |
+| `JIRA_BASE_URL` / `JIRA_USER_EMAIL` / `JIRA_API_TOKEN` | Sync Jira (só no workflow do GitHub Actions) |
+| `CRON_SECRET` / `GITHUB_DISPATCH_TOKEN` | `api/trigger-sync.ts` — disparo do sync por cron externo |
 
-Sem `SESSION_SECRET` e `DASHBOARD_PASSWORD`, o gate fica aberto para desenvolvimento local. Em produção, ambas devem estar configuradas.
+Em produção, sem `SUPABASE_URL`/`SUPABASE_ANON_KEY` ou `SESSION_SECRET` configuradas, os gates
+**fecham** (fail-closed) em vez de abrir — comportamento oposto ao dev local (fail-open por
+paridade). Ver `docs/QA-PLAN.md`/`docs/SECURITY-PLAN.md` na raiz para o histórico de correções.
 
 ## Testes
 

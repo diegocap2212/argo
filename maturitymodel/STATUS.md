@@ -3,10 +3,21 @@
 > Snapshot do estado atual. Arquitetura completa (schema, RLS, hooks, DS,
 > governança) em `ARCHITECTURE.md`. Este arquivo é "o que já foi feito" e "o
 > que falta".
+>
+> ⚠️ **Este arquivo é de 2026-07-10 e ficou defasado em dois pontos grandes**:
+> a URL/deploy abaixo e a lista de AMs (§"Squads e pessoas") descrevem o
+> **modelo antigo de acesso** (AM = poder global via `is_any_am()`). Desde
+> 2026-07-15 existe admin global explícito por e-mail (`portal_admins`) e
+> SM/AM ficam escopados ao próprio squad — ver `ARCHITECTURE.md` §4.2/§8.4
+> (já corrigidas) e `docs/ROLES-REDESIGN.md`. Fonte de verdade do estado
+> operacional corrente: `HANDOFF.md` da raiz do monorepo.
 
-## 🟢 EM PRODUÇÃO — `https://maturitymodel-ashen.vercel.app`
+## 🟢 EM PRODUÇÃO — `https://neo-lm.vercel.app/maturity/**`
 
-Branch `main`, deploy automático Vercel a cada push. Login real obrigatório.
+> Domínio antigo (`maturitymodel-ashen.vercel.app`) foi descontinuado no cutover
+> do Portal NEO (2026-07-14) — o MMA agora é servido pelo domínio unificado.
+
+Deploy do monorepo `argo/` (raiz), não mais deste repositório isoladamente. Login via sessão Supabase unificada (OTP no Hub), não mais email+senha próprio do MMA.
 
 ## Revisão mais recente (sessão colaborativa + Jira direto + jornada clara)
 
