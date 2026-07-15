@@ -91,6 +91,18 @@ Achados avaliados como NÃO-vulnerabilidade (design): senha da Torre protege a V
 `/api/data` (mesmo dataset que qualquer usuário NEO já acessa — Torre é reorganização, não segredo novo).
 Se o comparativo SM×SM virar sensível, mover o cálculo server-side atrás do cookie `neo_tower`.
 
+## Saúde dos times recalibrada (2026-07-15) — NO AR
+
+Critério de saúde (`locavia-dashboard/src/performance/health.ts`) estava marcando quase todo time
+como Crítico (contagem plana de 5 riscos com gatilhos quase sempre ligados). **Afrouxado
+temporariamente** para a janela de release (dpl `neo-p6w8r0qwf`): aging por proporção (>40% do WIP
+e ≥5 itens), leadTime P85 >45d, flowBalance >max(5, saída×0,5), previsib. <60%; `dataQuality`
+removido (flag morto); novo status **"Sem dados"** para times sem entregas/WIP (não são mais
+"Saudável"). Efeito: Crítico 5→0, Nivus→Atenção. UI ganhou motivos no hover + legenda do critério.
+Limites/labels centralizados em `health.ts` (eram duplicados em 3 telas). **REAPERTAR quando a
+operação normalizar** (voltar `HEALTH_THRESHOLDS`). Smoke test logado do board ficou pendente
+(sessão expirou; validado localmente por auditoria no dataset real + E2E).
+
 ## Pendências pós-cutover
 2. **E-mail OTP:** mitigado (código no assunto, remetente "NEO — LM Mobilidade", OTP 1h, reenvio com cooldown no hub). Definitivo = Resend: 3 registros DNS em lmmobilidade.com.br pendentes + trocar SMTP (hoje Gmail pessoal).
 3. **Rotacionar segredos que passaram pelo chat:** token Supabase `sbp_a5f2...` (2026-07-14), senha de app do Gmail, API key antiga do Resend.
