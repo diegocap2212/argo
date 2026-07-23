@@ -1,12 +1,12 @@
 import type { DashboardItem } from '../types/jira';
 import type { PerformancePeriod } from './types';
 import type { PerformanceTrendPoint } from './trends';
+import { isDiscardedStatus } from './discard';
 
 // Funções puras para a aba "Análise de Fluxo". Reaproveitam os mesmos utilitários de data e
 // percentil do resto de src/performance/ (duplicados aqui como em trends.ts, sem acoplar).
 
 const DAY_MS = 86_400_000;
-const TERMINAL_DISCARDED = new Set(['CANCELADO', 'DESCARTADO']);
 
 // Etapas de trabalho do fluxo, na ordem — "Concluído" fica de fora (é o fim, não tempo de ciclo).
 // Os nomes batem com as chaves de item.TimeInStatus gravadas pelo sync (classifyStage).
@@ -29,7 +29,7 @@ function percentile(values: number[], ratio: number): number | null {
   return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
 }
 
-const isDiscarded = (item: DashboardItem) => TERMINAL_DISCARDED.has(item.Status.toUpperCase());
+const isDiscarded = (item: DashboardItem) => isDiscardedStatus(item.Status);
 
 // ── 1. Dispersão de Lead Time (control chart) ────────────────────────────────
 export interface LeadTimePoint {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Building2, Car, Home, LayoutGrid, LogOut, Users } from 'lucide-react';
+import { Building2, Car, FileCode2, Home, LayoutGrid, LogOut, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SM_CONFIGS } from '../config/sm-config';
 import { deriveTeams } from '../config/teams';
@@ -86,6 +86,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div style={{ width: 28, height: 1, background: 'var(--border-default)', margin: '2px 0' }} aria-hidden="true" />
       <GlobalNavItem label="Início" icon={Home} active={location.pathname === '/'} onClick={() => navigate('/')} />
       <GlobalNavItem label="Torre · comparativo restrito" icon={Building2} active={location.pathname === '/torre'} onClick={() => navigate('/torre')} />
+      <GlobalNavItem label="Scripts Manuais por módulo" icon={FileCode2} active={location.pathname === '/modulos'} onClick={() => navigate('/modulos')} />
       <ContextNavItem label="Agilistas" icon={Users} active={!!activeSm} items={SM_CONFIGS.map(sm => ({ id: sm.id, label: sm.name, active: activeSm === sm.id, onSelect: () => navigate(`/sm/${sm.id}`) }))} />
       <ContextNavItem label="Times" icon={Car} active={!!activeTeam} items={teams.map(team => ({ id: team, label: teamLabel(team), active: activeTeam === team, onSelect: () => navigate(`/time/${encodeURIComponent(team)}`) }))} />
     </aside>

@@ -25,6 +25,7 @@ O charter visual e de vocabulário vive em [`DESIGN.md`](DESIGN.md) e deve ser l
 | `/torre` | **Visão restrita (senha)**: comparativo por agilista — ranking SM×SM e time×time |
 | `/time/:teamId` | Performance detalhada de um time |
 | `/sm/:smId` | Portfólio de times por agilista |
+| `/modulos` | **Scripts Manuais por Módulo**: donuts Módulo × Jornada e × Status, filtráveis por Módulo/Jornada (espelha o dashboard do Jira "Erro de processo"). Lógica em `src/performance/moduleErrors.ts`, UI em `src/components/ModuleErrorCharts.tsx` + `src/pages/ModuleErrors.tsx` |
 | `/api-docs` | Swagger UI da API autenticada |
 
 ### Incorporação no Portal MMA
@@ -131,8 +132,10 @@ As telas de gestão priorizam dataviz: CFD, entradas × saídas, Lead Time P85, 
 
 ### Regras atuais
 
+- **Escopo operacional:** as métricas de performance consideram apenas os issuetypes de desenvolvimento — **US (História), Task (Tarefa), Bug e Spike**. UAT, Script Manual, GMUD, HOTFIX, Ideia, Melhoria e Release ficam de fora. Filtro em `src/performance/operational.ts`, aplicado nos hooks `usePerformancePortfolio`/`useTeamPerformance` (a tela `/modulos`, sobre Script Manual, não usa este filtro).
 - Período padrão: últimas 8 semanas; seleção contínua de 1 a 24 semanas, em passos de uma semana.
-- Entrega: item `DONE`, com `Resolved` dentro do período, exceto `CANCELADO`/`DESCARTADO`.
+- Entrega: item `DONE`, com `Resolved` dentro do período, exceto `CANCELADO`/`DESCARTADO` (predicado único em `src/performance/discard.ts`, por substring — pega variantes como "DESCARTADOS").
+- A vazão semanal e o comparativo por tipo derivam do mesmo conjunto de entregas por semana (janela local não-sobreposta) — a linha bate com as barras.
 - WIP: itens `IN_PROGRESS` ativos no final do período.
 - Aging: WIP iniciado/criado há mais de 15 dias.
 - Saldo de fluxo: entradas menos saídas.
@@ -162,11 +165,14 @@ Quando o modelo estiver disponível, ele poderá ser conectado sem importar regr
 - `npm run sync:sfmkt`: sincroniza Salesforce Marketplace.
 - `npm run sync`: executa o sync Jira local.
 - `npm run audit:performance`: valida o dataset gerado pelo ponto de vista do produto.
+- `npx tsx sync/discover-modulo.ts [KEY]`: introspecção (read-only) para descobrir o custom field de um valor/campo no Jira (usado para achar Módulo = `cf11297`).
+- `npx tsx sync/reconcile-throughput.ts <TIME> <YYYY-MM-DD>`: diagnóstico (read-only, lê `src/data.json`) que lista os itens contados como vazão numa semana e as causas comuns de divergência com uma JQL do Jira.
 
 Invariantes importantes:
 
 - **Time = squad, derivado do campo Time do Jira (cf11795).** `sync/field-mapper.ts` resolve o time por: projeto dedicado (prefixo `SFMKT`/`SFV`) → tabela explícita `TIME_FIELD_TO_TEAM` (cf11795) → `SEM TIME`. Não deriva time de jornada nem de prefixo ambíguo (`RM`/`CTO`/`MS` aparecem em vários times).
 - **Jornada (cf12386) é dimensão de negócio, nunca time.** A mesma jornada (Compras, Estoque, Contratos…) é atendida por vários squads; é preservada em `DashboardItem.Jornada`. Auditar com `tools/debug/audit-jornada-time.ts` (read-only, não grava no Blob).
+- **Módulo (cf11297) e Produto (cf13338)** são dimensões de negócio preservadas em `DashboardItem.Modulo`/`DashboardItem.Produto` (ex.: Módulo "Erro de processo", Produto "Motorista por Aplicativo"). Mapeados em `sync/field-mapper.ts` (`readSelectValue`). Não confundir Módulo (cf11297) com o campo de exclusão "Automação" (cf13065).
 - Itens sem campo Time confiável caem em `SEM TIME` (sinal de qualidade de dado a ser corrigido no Jira), em vez de inflar um squad.
 - `Resolved` vem de `resolutiondate`, nunca da primeira transição para um status parecido com concluído.
 - Classificação de status vive em `sync/status-classification.ts`.

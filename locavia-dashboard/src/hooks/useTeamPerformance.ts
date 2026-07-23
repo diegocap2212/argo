@@ -7,6 +7,7 @@ import type { DashboardItem } from '../types/jira';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { computeEpics } from '../performance/epics';
+import { operationalItems } from '../performance/operational';
 
 export function useTeamPerformance(teamId: string, days = 56) {
   const [allItems, setAllItems] = useState<DashboardItem[]>([]);
@@ -17,7 +18,7 @@ export function useTeamPerformance(teamId: string, days = 56) {
   useEffect(() => {
     let alive = true;
     fetchData()
-      .then(data => { if (alive) setAllItems(data as unknown as DashboardItem[]); })
+      .then(data => { if (alive) setAllItems(operationalItems(data as unknown as DashboardItem[])); })
       .catch(reason => { if (alive) setError(reason instanceof Error ? reason.message : String(reason)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -33,7 +34,7 @@ export function useTeamPerformance(teamId: string, days = 56) {
   const previousSnapshot = useMemo(() => computeTeamPerformance(items, { teamId, period: previousPeriod, now }), [items, teamId, previousPeriod, now]);
   const insights = useMemo(() => generateTeamInsights(snapshot, previousSnapshot), [snapshot, previousSnapshot]);
 
-  const trend = useMemo(() => computeWeeklyPerformanceTrend(items, period, now, teamId), [items, period, now, teamId]);
+  const trend = useMemo(() => computeWeeklyPerformanceTrend(items, period), [items, period]);
   const cfd = useMemo(() => computeCumulativeFlow(items, period), [items, period]);
   const aging = useMemo(() => computeAgingDistribution(items, now), [items, now]);
   const analysis = useMemo(() => ({

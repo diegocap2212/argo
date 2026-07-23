@@ -29,6 +29,14 @@ export const TYPE_COLORS: Record<string, string> = {
   'Outros': CHART.neutral,
 };
 
+/**
+ * Ordem categórica para fatias de identidade (donuts por Jornada/Status/Módulo).
+ * Validada pelo script do skill dataviz (CVD/normal-vision PASS em light).
+ * Atribuir SEMPRE nesta ordem fixa; o 6º+ item vira "Outros" (neutro).
+ */
+export const CATEGORICAL = ['#1FD75F', '#8A38F5', '#E8A317', '#E5484D', '#12A594'] as const;
+export const CATEGORICAL_OUTROS = CHART.neutral; // cinza deliberado para o balde "Outros"
+
 // ── Tema ESCURO branded para o card de destaque (CFD) ──
 export const CHART_DARK = {
   bg: '#0A1F12',

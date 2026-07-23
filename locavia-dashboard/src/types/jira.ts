@@ -66,6 +66,8 @@ export interface DashboardItem {
   FuraFila: string[];                 // Labels fura-fila
   NaturezaDemanda: string[];          // Natureza da Demanda
   Jornada: string[];                  // Jornada(s) de negócio (cf12386) — dimensão, NÃO define o Team
+  Modulo: string | null;              // Módulo (cf11297) — ex.: "Erro de processo"
+  Produto: string | null;             // Produto (cf13338) — ex.: "Motorista por Aplicativo"
   Epic: string | null;                // Key do épico pai (via parent), quando o pai é do tipo Epic
   EpicName: string | null;            // Summary do épico pai
   EpicStatus: string | null;          // Status atual do épico pai

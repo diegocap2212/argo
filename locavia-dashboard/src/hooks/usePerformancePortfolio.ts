@@ -7,6 +7,7 @@ import type { DashboardItem } from '../types/jira';
 import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerformanceTrend } from '../performance/trends';
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { computeEpics } from '../performance/epics';
+import { operationalItems } from '../performance/operational';
 
 export function usePerformancePortfolio(days = 56) {
   const [items, setItems] = useState<DashboardItem[]>([]);
@@ -17,7 +18,7 @@ export function usePerformancePortfolio(days = 56) {
   useEffect(() => {
     let alive = true;
     fetchData()
-      .then(data => { if (alive) setItems(data as unknown as DashboardItem[]); })
+      .then(data => { if (alive) setItems(operationalItems(data as unknown as DashboardItem[])); })
       .catch(reason => { if (alive) setError(reason instanceof Error ? reason.message : String(reason)); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -43,7 +44,7 @@ export function usePerformancePortfolio(days = 56) {
     () => generatePortfolioInsights(portfolio.teams, previousPortfolio.teams),
     [portfolio.teams, previousPortfolio.teams],
   );
-  const trend = useMemo(() => computeWeeklyPerformanceTrend(items, period, now), [items, period, now]);
+  const trend = useMemo(() => computeWeeklyPerformanceTrend(items, period), [items, period]);
   const cfd = useMemo(() => computeCumulativeFlow(items, period), [items, period]);
   const aging = useMemo(() => computeAgingDistribution(items, now), [items, now]);
   const analysis = useMemo(() => ({

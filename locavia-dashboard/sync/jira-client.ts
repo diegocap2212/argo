@@ -64,7 +64,7 @@ export class JiraClient {
   }
 
   // Busca issues via Enhanced Search (JQL) com paginação por tokens
-  async searchIssues(jql: string, fields: string[] = ['summary', 'status', 'issuetype', 'created', 'updated', 'labels', 'parent', 'customfield_11330', 'customfield_12386', 'customfield_11795', 'customfield_10001', 'customfield_10215', 'customfield_13065', 'customfield_12683', 'customfield_10102', 'customfield_10015', 'customfield_10165', 'customfield_12584', 'customfield_12585', 'customfield_10026', 'customfield_10016', 'resolutiondate', 'assignee', 'priority', 'fixVersions']): Promise<JiraApiIssue[]> {
+  async searchIssues(jql: string, fields: string[] = ['summary', 'status', 'issuetype', 'created', 'updated', 'labels', 'parent', 'customfield_11330', 'customfield_12386', 'customfield_11795', 'customfield_11297', 'customfield_13338', 'customfield_10001', 'customfield_10215', 'customfield_13065', 'customfield_12683', 'customfield_10102', 'customfield_10015', 'customfield_10165', 'customfield_12584', 'customfield_12585', 'customfield_10026', 'customfield_10016', 'resolutiondate', 'assignee', 'priority', 'fixVersions']): Promise<JiraApiIssue[]> {
     const allIssues: JiraApiIssue[] = [];
     let nextPageToken: string | undefined = undefined;
     const maxResults = 100;

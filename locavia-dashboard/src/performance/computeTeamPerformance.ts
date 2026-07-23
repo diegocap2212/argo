@@ -1,8 +1,8 @@
 import type { DashboardItem } from '../types/jira';
 import type { PerformancePeriod, TeamPerformanceSnapshot } from './types';
+import { isDiscardedStatus } from './discard';
 
 const DAY_MS = 86_400_000;
-const TERMINAL_DISCARDED = new Set(['CANCELADO', 'DESCARTADO']);
 
 export interface TeamPerformanceOptions {
   teamId: string;
@@ -50,12 +50,13 @@ export function computeTeamPerformance(
   const now = options.now ?? new Date();
   const agingThreshold = new Date(now.getTime() - (options.agingDays ?? 15) * DAY_MS);
   const isInPeriod = (date: Date | null) => date !== null && date >= start && date <= end;
-  const isDiscarded = (item: DashboardItem) => TERMINAL_DISCARDED.has(item.Status.toUpperCase());
+  const isDiscarded = (item: DashboardItem) => isDiscardedStatus(item.Status);
 
   const delivered = items.filter(item =>
     item.StatusCategory === 'DONE' && !isDiscarded(item) && isInPeriod(parseDate(item.Resolved)),
   );
-  const inflow = items.filter(item => isInPeriod(parseDate(item.Created))).length;
+  // Descartados/cancelados não são "entrada" de trabalho — alinha com o gráfico semanal.
+  const inflow = items.filter(item => !isDiscarded(item) && isInPeriod(parseDate(item.Created))).length;
   const activeAtEnd = items.filter(item => {
     const created = parseDate(item.Created);
     const resolved = parseDate(item.Resolved);

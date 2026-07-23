@@ -10,6 +10,7 @@ const PerformanceDashboard = lazy(() => import('./pages/PerformanceDashboard'));
 const TeamDetail = lazy(() => import('./pages/TeamDetail'));
 const TowerView = lazy(() => import('./pages/TowerView'));
 const ApiDocs = lazy(() => import('./pages/ApiDocs'));
+const ModuleErrors = lazy(() => import('./pages/ModuleErrors'));
 
 const Loading = () => (
   <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem' }}>
@@ -32,6 +33,7 @@ const App = () => (
       <Route path="/torre" element={<Suspense fallback={<Loading />}><TowerView /></Suspense>} />
       <Route path="/sm/:smId" element={<SMDashboardWrapper />} />
       <Route path="/time/:teamId" element={<Suspense fallback={<Loading />}><TeamDetail /></Suspense>} />
+      <Route path="/modulos" element={<Suspense fallback={<Loading />}><ModuleErrors /></Suspense>} />
       <Route path="/api-docs" element={<Suspense fallback={<Loading />}><ApiDocs /></Suspense>} />
       {/* URLs antigas permanecem como redirects para favoritos já salvos. */}
       <Route path="/release/:releaseId" element={<Navigate to="/" replace />} />

@@ -1,6 +1,6 @@
 import { addDays, endOfWeek, startOfWeek } from 'date-fns';
 import type { DashboardItem } from '../types/jira';
-import { computeTeamPerformance } from './computeTeamPerformance';
+import { isDiscardedStatus } from './discard';
 import type { PerformancePeriod } from './types';
 
 export interface PerformanceTrendPoint {
@@ -36,7 +36,7 @@ export interface AgingBucket {
   severity: 'normal' | 'attention' | 'critical';
 }
 
-const discarded = new Set(['CANCELADO', 'DESCARTADO']);
+const DAY_MS = 86_400_000;
 
 function parseDate(value: string | null | undefined): Date | null {
   if (!value) return null;
@@ -44,11 +44,24 @@ function parseDate(value: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+// Percentil linear-interpolado — mesma fórmula de computeTeamPerformance/analytics.
+function percentile(values: number[], ratio: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * ratio;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function differenceInDays(startDate: Date | null, endDate: Date | null): number | null {
+  if (!startDate || !endDate || endDate < startDate) return null;
+  return (endDate.getTime() - startDate.getTime()) / DAY_MS;
+}
+
 export function computeWeeklyPerformanceTrend(
   items: readonly DashboardItem[],
   period: PerformancePeriod,
-  now: Date,
-  scopeId = 'PORTFOLIO',
 ): PerformanceTrendPoint[] {
   const points: PerformanceTrendPoint[] = [];
   let week = startOfWeek(new Date(period.start), { weekStartsOn: 1 });
@@ -56,13 +69,11 @@ export function computeWeeklyPerformanceTrend(
   while (week <= periodEnd) {
     const naturalEnd = endOfWeek(week, { weekStartsOn: 1 });
     const weekEnd = naturalEnd > periodEnd ? periodEnd : naturalEnd;
-    const snapshot = computeTeamPerformance(items, {
-      teamId: scopeId,
-      period: { start: week.toISOString(), end: weekEnd.toISOString() },
-      now,
-    });
+    // Janela da semana [segunda 00:00, domingo 23:59:59.999] LOCAL, sem sobreposição
+    // entre semanas — TODAS as métricas semanais usam este mesmo `inWeek` (a linha de
+    // vazão e as barras "por tipo" derivam do MESMO conjunto `delivered`, então batem).
     const inWeek = (date: Date | null) => Boolean(date && date >= week && date <= weekEnd);
-    const activeItems = items.filter(item => !discarded.has(item.Status.toUpperCase()));
+    const activeItems = items.filter(item => !isDiscardedStatus(item.Status));
     const delivered = activeItems.filter(item => item.StatusCategory === 'DONE' && inWeek(parseDate(item.Resolved) ?? parseDate(item.UpdatedAt)));
     const created = activeItems.filter(item => inWeek(parseDate(item.Created)));
     const plannedAtStart = activeItems.filter(item => {
@@ -82,14 +93,23 @@ export function computeWeeklyPerformanceTrend(
       totals[type] = (totals[type] ?? 0) + 1;
       return totals;
     }, {});
+    // Lead/Cycle time P85 da semana — sobre o MESMO `delivered` da vazão (sem sobreposição).
+    const leadTimes = delivered
+      .map(item => item.LeadTime ?? differenceInDays(parseDate(item.Created), parseDate(item.Resolved)))
+      .filter((value): value is number => value !== null);
+    const cycleTimes = delivered
+      .map(item => differenceInDays(parseDate(item.StartDate), parseDate(item.Resolved)))
+      .filter((value): value is number => value !== null);
+    const leadP85 = percentile(leadTimes, 0.85);
+    const cycleP85 = percentile(cycleTimes, 0.85);
     points.push({
       label: week.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' }),
       date: new Date(week),
-      throughput: snapshot.delivery.throughput,
-      inflow: snapshot.flow.inflow,
-      flowBalance: snapshot.flow.flowBalance,
-      leadTimeP85: snapshot.delivery.leadTimeP85,
-      cycleTimeP85: snapshot.delivery.cycleTimeP85,
+      throughput: delivered.length,
+      inflow: created.length,
+      flowBalance: created.length - delivered.length,
+      leadTimeP85: leadP85 === null ? null : Math.round(leadP85),
+      cycleTimeP85: cycleP85 === null ? null : Math.round(cycleP85),
       newItems: created.length,
       plannedAtStart: plannedAtStart.length,
       unplannedIntake: committedDuringWeek.filter(item => {
@@ -153,7 +173,7 @@ export function computeCumulativeFlow(
     let inProgress = 0;
     let done = 0;
     for (const item of items) {
-      if (discarded.has(item.Status.toUpperCase())) continue;
+      if (isDiscardedStatus(item.Status)) continue;
       const created = parseDate(item.Created);
       if (!created || created > at) continue;
       const started = parseDate(item.StartDate);

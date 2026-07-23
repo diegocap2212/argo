@@ -48,7 +48,7 @@ export const SMDashboard: React.FC<Props> = ({ smConfig }) => {
   }), [portfolio.teams, selectedTeam, smConfig.teams]);
   const teamIds = useMemo(() => new Set(teams.map(team => team.teamId)), [teams]);
   const scopedItems = useMemo(() => items.filter(item => teamIds.has(item.Team.trim())), [items, teamIds]);
-  const trend = useMemo(() => computeWeeklyPerformanceTrend(scopedItems, period, now, smConfig.id), [scopedItems, period, now, smConfig.id]);
+  const trend = useMemo(() => computeWeeklyPerformanceTrend(scopedItems, period), [scopedItems, period]);
   const cfd = useMemo(() => computeCumulativeFlow(scopedItems, period), [scopedItems, period]);
   const aging = useMemo(() => computeAgingDistribution(scopedItems, now), [scopedItems, now]);
   const analysis = useMemo(() => ({

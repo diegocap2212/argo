@@ -8,6 +8,7 @@ import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerforman
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations } from '../src/performance/analytics';
 import { forecastHowMany, forecastWhen } from '../src/performance/montecarlo';
 import { computeSMComparison, rankByMetric, COMPARISON_METRICS } from '../src/performance/smComparison';
+import { isOperationalType, operationalItems } from '../src/performance/operational';
 import type { SMConfig } from '../src/config/sm-config';
 import type { DashboardItem } from '../src/types/jira';
 
@@ -51,9 +52,9 @@ const snapshot = computeTeamPerformance([
 assert.equal(snapshot.delivery.throughput, 2);
 assert.equal(snapshot.delivery.leadTimeP85, 9);
 assert.equal(snapshot.delivery.cycleTimeP85, 5);
-assert.equal(snapshot.flow.inflow, 4);
+assert.equal(snapshot.flow.inflow, 3); // TEAM-3 (CANCELADO) não conta como entrada
 assert.equal(snapshot.flow.outflow, 2);
-assert.equal(snapshot.flow.flowBalance, 2);
+assert.equal(snapshot.flow.flowBalance, 1);
 assert.equal(snapshot.flow.wip, 1);
 assert.equal(snapshot.predictability.committed, 2);
 assert.equal(snapshot.predictability.delivered, 1);
@@ -86,12 +87,31 @@ assert.equal(snapshot.maturity, undefined);
 const trend = computeWeeklyPerformanceTrend([
   item({ Key: 'TEAM-10', Type: 'Bug', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-11T00:00:00Z', LeadTime: 10, StoryPoints: 3, CommitmentDate: '2026-06-02T00:00:00Z' }),
   item({ Key: 'TEAM-11', Created: '2026-06-10T00:00:00Z', CommitmentDate: null }),
-], { start: '2026-06-01', end: '2026-06-30' }, new Date('2026-07-01T00:00:00Z'));
+], { start: '2026-06-01', end: '2026-06-30' });
 assert.ok(trend.some(point => point.throughput === 1));
 assert.ok(trend.some(point => point.newItems === 1));
 assert.ok(trend.some(point => point.unknownCommitment === 1));
 assert.ok(trend.some(point => point.pointsDelivered === 3 && point.pointsCoverage === 100));
 assert.ok(trend.some(point => point.byType.Bug === 1));
+
+// ── Regressão: bug de fronteira semanal (double-count) ──
+// Item resolvido numa SEGUNDA (limite de semana) não pode ser contado em 2 semanas,
+// e a linha de vazão deve bater com a soma das barras "por tipo" em TODA semana.
+const boundaryTrend = computeWeeklyPerformanceTrend([
+  item({ Key: 'BD-1', Type: 'Bug', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-08T19:00:00-03:00', LeadTime: 5 }),
+], { start: '2026-06-01', end: '2026-06-30' });
+for (const point of boundaryTrend) {
+  const byTypeSum = Object.values(point.byType).reduce((a, b) => a + b, 0);
+  assert.equal(point.throughput, byTypeSum, `semana ${point.label}: throughput ${point.throughput} != soma byType ${byTypeSum}`);
+}
+assert.equal(boundaryTrend.reduce((a, p) => a + p.throughput, 0), 1, 'item de fronteira contado em mais de uma semana');
+
+// ── Regressão: descarte (variante) fora de entrega e de inflow ──
+const discardSnap = computeTeamPerformance([
+  item({ Key: 'DC-1', Status: 'DESCARTADOS', StatusCategory: 'TODO', Created: '2026-06-05T00:00:00Z', Resolved: '2026-06-10T00:00:00Z' }),
+], { teamId: 'TEAM', period: { start: '2026-06-01', end: '2026-06-30' }, now: new Date('2026-07-01T00:00:00Z') });
+assert.equal(discardSnap.flow.inflow, 0, 'variante de descarte nao deve contar como inflow');
+assert.equal(discardSnap.delivery.throughput, 0);
 
 const cfd = computeCumulativeFlow([
   item({ Key: 'TEAM-20', Created: '2026-06-01T00:00:00Z', StartDate: '2026-06-08T00:00:00Z' }),
@@ -200,5 +220,21 @@ assert.deepEqual(rankByMetric(cmp.sms, throughput).map(s => s.id), ['ana', 'brun
 // Ranking de lead time (menor é melhor): Bruno (3) antes de Ana (P85 mais alto por causa do BETA-1=20).
 const lead = COMPARISON_METRICS.find(m => m.key === 'leadTimeP85')!;
 assert.equal(rankByMetric(cmp.sms, lead)[0].id, 'bruno');
+
+// ── Escopo operacional: só US(História)/Task(Tarefa)/Bug/Spike entram nas métricas ──
+assert.equal(isOperationalType('História'), true);
+assert.equal(isOperationalType('Tarefa'), true);
+assert.equal(isOperationalType('Bug'), true);
+assert.equal(isOperationalType('Spike'), true);
+assert.equal(isOperationalType('UAT'), false);
+assert.equal(isOperationalType('Script Manual'), false);
+assert.equal(isOperationalType('GMUD'), false);
+const opFiltered = operationalItems([
+  item({ Key: 'OP-1', Type: 'História' }),
+  item({ Key: 'OP-2', Type: 'UAT' }),
+  item({ Key: 'OP-3', Type: 'Script Manual' }),
+  item({ Key: 'OP-4', Type: 'Bug' }),
+]);
+assert.deepEqual(opFiltered.map(i => i.Key), ['OP-1', 'OP-4']);
 
 console.log('Performance snapshot: testes passaram.');

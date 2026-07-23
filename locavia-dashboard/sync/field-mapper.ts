@@ -73,6 +73,14 @@ export function resolveTeam(issue: JiraApiIssue): string {
   return SEM_TIME;
 }
 
+// Lê um campo que pode vir como string simples ou como select ({ value }).
+function readSelectValue(field: unknown): string | null {
+  if (!field) return null;
+  if (typeof field === 'string') return field.trim() || null;
+  if (typeof field === 'object' && 'value' in (field as any)) return (field as any).value ?? null;
+  return null;
+}
+
 export function mapJiraIssueToDashboardItem(issue: JiraApiIssue): DashboardItem {
   const key = issue.key;
 
@@ -158,6 +166,8 @@ export function mapJiraIssueToDashboardItem(issue: JiraApiIssue): DashboardItem 
     FuraFila: issue.fields.customfield_10165 || [],         // Fura Fila
     NaturezaDemanda: issue.fields.customfield_12683 || [],  // Natureza da Demanda
     Jornada: jornada,                                       // Jornada de negócio (dimensão)
+    Modulo: readSelectValue(issue.fields.customfield_11297), // Módulo (ex.: "Erro de processo")
+    Produto: readSelectValue(issue.fields.customfield_13338), // Produto (ex.: "Motorista por Aplicativo")
     // Épico pai (via parent) — só quando o pai é do tipo Epic (evita capturar hierarquias não-épico).
     Epic: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? issue.fields.parent.key : null,
     EpicName: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? (issue.fields.parent.fields.summary || null) : null,

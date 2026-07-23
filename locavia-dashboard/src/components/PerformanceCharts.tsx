@@ -18,8 +18,9 @@ export function DashboardChartCard({ title, subtitle, children, height = 340 }: 
 
 const axis = { fill: CHART.axis, fontSize: 11 };
 const tooltipStyle = { background: 'var(--surface)', border: '1px solid var(--border-default)', borderRadius: 10, color: 'var(--text-main)' };
-const itemTypes = ['História', 'Bug', 'Tarefa', 'Spike', 'Outros'] as const;
-const typeColors = [CHART.primary, CHART.red, CHART.mint, CHART.sage, CHART.neutral];
+// Operacional só tem US(História)/Task(Tarefa)/Bug/Spike — ver performance/operational.ts.
+const itemTypes = ['História', 'Bug', 'Tarefa', 'Spike'] as const;
+const typeColors = [CHART.primary, CHART.red, CHART.mint, CHART.sage];
 
 export function WeeklyIntakeChart({ data }: { data: readonly PerformanceTrendPoint[] }) {
   return <ResponsiveContainer width="100%" height="100%"><ComposedChart data={data}>
