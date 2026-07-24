@@ -1,19 +1,49 @@
 {
   "items": [
     {
-      "key": "SFMKT-188",
-      "summary": "Executar carga dos leads do RDS no SF",
-      "type": "Tarefa",
+      "key": "SFMKT-196",
+      "summary": "Retorno de Lead com a nova campanha acionada",
+      "type": "História",
       "status": "1. Backlog",
       "statusCategory": "TODO",
-      "assignee": "Thiago Rodrigues Ferreira",
-      "created": "2026-07-08T20:53:50.907-0300",
+      "assignee": null,
+      "created": "2026-07-22T10:02:19.957-0300",
       "resolved": null,
-      "sprint": null,
-      "sprintId": null,
-      "sprintState": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
       "storyPoints": null,
       "priority": "High",
+      "labels": [
+        "SUSTENTAÇÃO"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": null,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": true,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-195",
+      "summary": "Continuidade do envio de campanha para oportunidade perdida e ganha",
+      "type": "História",
+      "status": "PRONTO PRA DESENVOLVER",
+      "statusCategory": "TODO",
+      "assignee": "Izaque Bernardo",
+      "created": "2026-07-20T19:23:36.366-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": 3,
+      "priority": "Medium",
       "labels": [
         "Produto"
       ],
@@ -24,7 +54,215 @@
         "missingResolutionDate": false,
         "missingAssignee": false,
         "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-194",
+      "summary": "Cria expurgo da base de dados de leads e oportunidades",
+      "type": "História",
+      "status": "EM DESENVOLVIMENTO",
+      "statusCategory": "IN_PROGRESS",
+      "assignee": "Thiago Rodrigues Ferreira",
+      "created": "2026-07-20T19:17:22.497-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": 3,
+      "priority": "Medium",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": 1,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-193",
+      "summary": "Disparo de email boas vindas",
+      "type": "História",
+      "status": "DESENV CONCLUIDO",
+      "statusCategory": "DONE",
+      "assignee": "Josivan Santos de Freitas",
+      "created": "2026-07-20T19:05:42.236-0300",
+      "resolved": "2026-07-23T17:38:20.868-0300",
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": 3,
+      "priority": "Medium",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": 3,
+      "cycleTimeDays": 2,
+      "timeInTodoDays": 1,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-192",
+      "summary": "Disponibilizar o projeto CRM em PROD",
+      "type": "Tarefa",
+      "status": "EM DESENVOLVIMENTO",
+      "statusCategory": "IN_PROGRESS",
+      "assignee": "Izaque Bernardo",
+      "created": "2026-07-20T16:21:14.477-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": null,
+      "priority": "High",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": 1,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-191",
+      "summary": "Disponibilizar o projeto CRM em UAT",
+      "type": "Tarefa",
+      "status": "EM DESENVOLVIMENTO",
+      "statusCategory": "IN_PROGRESS",
+      "assignee": "Izaque Bernardo",
+      "created": "2026-07-20T16:20:07.999-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": null,
+      "priority": "High",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": 1,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-190",
+      "summary": "Tratar campos da pipe de Oportunidade",
+      "type": "História",
+      "status": "1. Backlog",
+      "statusCategory": "TODO",
+      "assignee": null,
+      "created": "2026-07-16T09:33:04.268-0300",
+      "resolved": null,
+      "sprint": null,
+      "sprintId": null,
+      "sprintState": null,
+      "storyPoints": null,
+      "priority": "High",
+      "labels": [],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": null,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": true,
+        "noStatusTransitions": false,
         "noSprint": true,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-189",
+      "summary": "Tratar campos da pipe de LEAD",
+      "type": "História",
+      "status": "AGUARDANDO CODE REVIEW",
+      "statusCategory": "IN_PROGRESS",
+      "assignee": "Izaque Bernardo",
+      "created": "2026-07-14T18:28:57.027-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": 3,
+      "priority": "Medium",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": 1,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
+        "staleTodo": false,
+        "suspiciouslyLongLead": false,
+        "doneWithoutCycleData": false
+      }
+    },
+    {
+      "key": "SFMKT-188",
+      "summary": "Executar carga dos leads do RDS no SF",
+      "type": "Tarefa",
+      "status": "EM DESENVOLVIMENTO",
+      "statusCategory": "IN_PROGRESS",
+      "assignee": "Thiago Rodrigues Ferreira",
+      "created": "2026-07-08T20:53:50.907-0300",
+      "resolved": null,
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
+      "storyPoints": null,
+      "priority": "High",
+      "labels": [
+        "Produto"
+      ],
+      "leadTimeDays": null,
+      "cycleTimeDays": null,
+      "timeInTodoDays": 13,
+      "dq": {
+        "missingResolutionDate": false,
+        "missingAssignee": false,
+        "noStatusTransitions": false,
+        "noSprint": false,
         "staleTodo": false,
         "suspiciouslyLongLead": false,
         "doneWithoutCycleData": false
@@ -90,19 +328,19 @@
       "key": "SFMKT-178",
       "summary": "Integração de Leads - Whatsapp x Blip via API",
       "type": "História",
-      "status": "EM DESENVOLVIMENTO",
-      "statusCategory": "IN_PROGRESS",
+      "status": "DESENV CONCLUIDO",
+      "statusCategory": "DONE",
       "assignee": "Izaque Bernardo",
       "created": "2026-06-24T22:43:13.789-0300",
-      "resolved": null,
-      "sprint": "SFMKT-SP Sprint 19",
-      "sprintId": 22107,
-      "sprintState": "closed",
+      "resolved": "2026-07-20T14:52:19.939-0300",
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
       "storyPoints": 8,
       "priority": "Medium",
       "labels": [],
-      "leadTimeDays": null,
-      "cycleTimeDays": null,
+      "leadTimeDays": 26,
+      "cycleTimeDays": 25,
       "timeInTodoDays": 0,
       "dq": {
         "missingResolutionDate": false,
@@ -137,7 +375,7 @@
         "missingAssignee": false,
         "noStatusTransitions": false,
         "noSprint": false,
-        "staleTodo": false,
+        "staleTodo": true,
         "suspiciouslyLongLead": false,
         "doneWithoutCycleData": false
       }
@@ -165,7 +403,7 @@
         "missingAssignee": true,
         "noStatusTransitions": false,
         "noSprint": true,
-        "staleTodo": false,
+        "staleTodo": true,
         "suspiciouslyLongLead": false,
         "doneWithoutCycleData": false
       }
@@ -193,7 +431,7 @@
         "missingAssignee": true,
         "noStatusTransitions": false,
         "noSprint": true,
-        "staleTodo": false,
+        "staleTodo": true,
         "suspiciouslyLongLead": false,
         "doneWithoutCycleData": false
       }
@@ -884,19 +1122,19 @@
       "key": "SFMKT-110",
       "summary": "[Migração Marketing Cloud] Dashboard de Volume de Leads Gerados",
       "type": "História",
-      "status": "AGUARDANDO CODE REVIEW",
-      "statusCategory": "IN_PROGRESS",
+      "status": "DESENV CONCLUIDO",
+      "statusCategory": "DONE",
       "assignee": "Izaque Bernardo",
       "created": "2026-05-13T09:21:14.111-0300",
-      "resolved": null,
-      "sprint": "SFMKT-SP Sprint 19",
-      "sprintId": 22107,
-      "sprintState": "closed",
+      "resolved": "2026-07-23T16:18:11.314-0300",
+      "sprint": "SFMKT-SP Sprint 22",
+      "sprintId": 23144,
+      "sprintState": "active",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [],
-      "leadTimeDays": null,
-      "cycleTimeDays": null,
+      "leadTimeDays": 71,
+      "cycleTimeDays": 50,
       "timeInTodoDays": 21,
       "dq": {
         "missingResolutionDate": false,
@@ -904,7 +1142,7 @@
         "noStatusTransitions": false,
         "noSprint": false,
         "staleTodo": false,
-        "suspiciouslyLongLead": false,
+        "suspiciouslyLongLead": true,
         "doneWithoutCycleData": false
       }
     },
@@ -1301,7 +1539,7 @@
       }
     }
   ],
-  "synced_at": "2026-07-13T09:02:53.643Z",
+  "synced_at": "2026-07-24T12:48:36.842Z",
   "project": "SFMKT",
-  "total_fetched": 46
+  "total_fetched": 54
 }
