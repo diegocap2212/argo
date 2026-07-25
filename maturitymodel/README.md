@@ -1,10 +1,13 @@
 # Portal MMA
 
 Portal do **Modelo de Maturidade Ágil** da LM Mobilidade: cada squad passa por
-uma **sessão colaborativa** (o facilitador apresenta as 10 dimensões e registra
-a nota de consenso do grupo), a nota é **homologada** por um Agile Master, o
+uma **pré-sessão** (o facilitador registra sua análise prévia — estágio provisório
++ argumento por dimensão, com os indicadores à vista — e ao concluir as 10 abre a
+sessão), uma **sessão colaborativa** (o facilitador apresenta as 10 dimensões e
+registra a nota de consenso do grupo), a nota é **homologada** por um Agile Master, o
 ciclo é **oficializado** (gerando o plano de kaizens), e a evolução é comparada
-quarter a quarter. Métricas objetivas do **Jira** entram como "âncoras" que
+quarter a quarter. O estado `pre_session` é o inicial do ciclo; a pré-sessão congela
+(RLS) ao transicionar para `session`. Métricas objetivas do **Jira** entram como "âncoras" que
 sustentam ou contestam a nota — sem nunca substituí-la.
 
 > **Documentação técnica completa**: veja **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**

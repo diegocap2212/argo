@@ -10,12 +10,13 @@ interface Station {
 }
 
 const STATIONS: Station[] = [
+  { key: "pre-sessao", label: "Pré-sessão", path: "sessao", statuses: ["pre_session"] },
   { key: "sessao", label: "Sessão", path: "sessao", statuses: ["session"] },
   { key: "homologacao", label: "Homologação", path: "homologacao", statuses: ["homologation"] },
   { key: "plano", label: "Plano", path: "plano", statuses: ["official", "archived"] },
 ];
 
-const ORDER: CycleStatus[] = ["session", "homologation", "official", "archived"];
+const ORDER: CycleStatus[] = ["pre_session", "session", "homologation", "official", "archived"];
 
 export function CycleJourney({ teamId, status }: { teamId: string; status: CycleStatus }) {
   const currentIndex = ORDER.indexOf(status);

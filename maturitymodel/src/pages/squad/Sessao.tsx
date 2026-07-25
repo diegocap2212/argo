@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Presentation, Eye, ChevronDown } from "lucide-react";
+import PreSessionEditor from "@/components/mma/PreSessionEditor";
 
 const POLL_MS = 5000;
 
@@ -71,6 +72,10 @@ export default function Sessao() {
         Nenhum assessment em andamento. {facilitator ? "Inicie um pela Jornada." : "Aguarde o facilitador iniciar."}
       </div>
     );
+  }
+
+  if (cycle.status === "pre_session") {
+    return <PreSessionEditor teamId={teamId!} cycleId={cycle.id} facilitator={facilitator} />;
   }
 
   if (cycle.status !== "session") {

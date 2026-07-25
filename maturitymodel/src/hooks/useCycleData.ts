@@ -113,7 +113,7 @@ export function useStartCycle(teamId: string) {
         .insert({
           team_id: teamId,
           quarter: currentQuarter(),
-          status: "session",
+          status: "pre_session",
           workshop_at: new Date().toISOString(),
         })
         .select()

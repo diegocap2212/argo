@@ -767,6 +767,48 @@ export type Database = {
         }
         Relationships: []
       }
+      pre_session_assessments: {
+        Row: {
+          created_by: string | null
+          cycle_id: string
+          dimension_id: string
+          rationale: string
+          sm_stage: number
+          updated_at: string
+        }
+        Insert: {
+          created_by?: string | null
+          cycle_id: string
+          dimension_id: string
+          rationale: string
+          sm_stage: number
+          updated_at?: string
+        }
+        Update: {
+          created_by?: string | null
+          cycle_id?: string
+          dimension_id?: string
+          rationale?: string
+          sm_stage?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pre_session_assessments_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_cycles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pre_session_assessments_dimension_id_fkey"
+            columns: ["dimension_id"]
+            isOneToOne: false
+            referencedRelation: "dimensions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           approved: boolean

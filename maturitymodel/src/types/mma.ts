@@ -6,6 +6,7 @@ export type AxisKey = "processo" | "produto" | "time";
 export type Role = "team" | "po" | "tl" | "sm" | "am";
 
 export type CycleStatus =
+  | "pre_session"   // SM prepara a análise prévia (nota provisória + argumento) antes da sessão
   | "session"       // sessão colaborativa: SM apresenta e registra a nota de consenso por dimensão
   | "homologation"  // pacote na fila do AM
   | "official"      // homologado — imutável, gera kaizens e marco no comparativo
@@ -155,6 +156,7 @@ export interface QuarterComparisonRow extends Omit<CycleScore, "cycle_id" | "dim
 
 // Máquina de estados do ciclo (transições válidas)
 export const CYCLE_TRANSITIONS: Record<CycleStatus, CycleStatus[]> = {
+  pre_session:  ["session"],               // SM fecha as 10 pré-avaliações e inicia a sessão
   session:      ["homologation"],          // SM fecha as 10 notas de consenso e envia
   homologation: ["official", "session"],   // session: AM devolve pra sessão com comentários
   official:     ["archived"],              // via RPC officialize_cycle apenas

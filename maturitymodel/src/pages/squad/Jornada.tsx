@@ -8,6 +8,7 @@ import { errMessage } from "@/lib/utils";
 import type { CycleStatus } from "@/types/mma";
 
 const STATUS_DESCRIPTION: Record<CycleStatus, string> = {
+  pre_session: "Pré-sessão — o facilitador registra a análise prévia (estágio provisório + argumento) de cada dimensão antes da sessão com o time.",
   session: "Sessão colaborativa aberta — o facilitador apresenta cada dimensão e registra a nota de consenso do grupo.",
   homologation: "Pacote na fila do Agile Master — cada dimensão precisa ser homologada.",
   official: "Assessment oficial. As notas são imutáveis e o plano de evolução foi gerado.",
@@ -37,7 +38,7 @@ export default function Jornada() {
         <p className="font-serif text-xl">Nenhum assessment em {currentQuarter()}</p>
         <p className="mx-auto mt-2 max-w-md text-sm text-venice-textTertiary">
           {canStart
-            ? "Inicie o assessment para abrir a sessão colaborativa: você apresenta as 10 dimensões e registra a nota de consenso de cada uma com o time."
+            ? "Inicie o assessment para abrir a pré-sessão: você registra sua análise prévia (estágio + argumento) das 10 dimensões e, ao concluir, abre a sessão colaborativa com o time."
             : "Aguarde o Scrum Master ou o Agile Master iniciar o assessment deste quarter."}
         </p>
         {canStart && (
@@ -47,7 +48,7 @@ export default function Jornada() {
             onClick={async () => {
               try {
                 await startCycle.mutateAsync();
-                toast({ title: "Assessment iniciado", description: "A sessão colaborativa está pronta." });
+                toast({ title: "Assessment iniciado", description: "A pré-sessão está pronta para você preencher." });
               } catch (error) {
                 toast({ title: "Não foi possível iniciar", description: errMessage(error), variant: "destructive" });
               }
