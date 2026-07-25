@@ -1,10 +1,14 @@
 name: Hourly Data Sync
 
 on:
-  # A cadência de 30 min é garantida por um cron EXTERNO confiável (cron-job.org) que chama
-  # /api/trigger-sync, que dispara este workflow via workflow_dispatch. O schedule nativo do
-  # GitHub foi removido porque é best-effort (atrasa/pula) e geraria syncs redundantes.
-  workflow_dispatch: # disparo manual e via /api/trigger-sync (cron externo)
+  # Cron NATIVO do GitHub. Reintroduzido em 2026-07-25 porque o gatilho externo
+  # (cron-job.org → /api/trigger-sync) estava quebrado — as envs CRON_SECRET e
+  # GITHUB_DISPATCH_TOKEN não existem no Vercel (neo-lm), então o endpoint respondia
+  # 401 e o workflow nunca disparava. O schedule nativo é best-effort (pode atrasar/
+  # pular sob carga), mas não depende de infra externa e usa os secrets do próprio repo.
+  schedule:
+    - cron: '*/30 * * * *' # a cada 30 min
+  workflow_dispatch: # disparo manual (e via /api/trigger-sync, se for reativado)
 
 jobs:
   sync:
