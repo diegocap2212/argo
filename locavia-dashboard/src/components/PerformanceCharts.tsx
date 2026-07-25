@@ -18,9 +18,13 @@ export function DashboardChartCard({ title, subtitle, children, height = 340 }: 
 
 const axis = { fill: CHART.axis, fontSize: 11 };
 const tooltipStyle = { background: 'var(--surface)', border: '1px solid var(--border-default)', borderRadius: 10, color: 'var(--text-main)' };
-// Operacional só tem US(História)/Task(Tarefa)/Bug/Spike — ver performance/operational.ts.
-const itemTypes = ['História', 'Bug', 'Tarefa', 'Spike'] as const;
-const typeColors = [CHART.primary, CHART.red, CHART.mint, CHART.sage];
+// Cores fixas dos 4 tipos operacionais (mantém a aparência atual da "Vazão por tipo").
+const OPERATIONAL_ORDER: string[] = ['História', 'Bug', 'Tarefa', 'Spike'];
+const OPERATIONAL_TYPE_COLORS: Record<string, string> = {
+  'História': CHART.primary, 'Bug': CHART.red, 'Tarefa': CHART.mint, 'Spike': CHART.sage,
+};
+// Paleta para os tipos "outros" (times opt-in) — distinta dos verdes operacionais.
+const OUTROS_TYPE_PALETTE = [CHART.violet, CHART.amber, '#12A594', CHART.forest, CHART.neutral];
 
 export function WeeklyIntakeChart({ data }: { data: readonly PerformanceTrendPoint[] }) {
   return <ResponsiveContainer width="100%" height="100%"><ComposedChart data={data}>
@@ -61,11 +65,19 @@ export function StoryPointsChart({ data }: { data: readonly PerformanceTrendPoin
 
 export function ThroughputByTypeChart({ data }: { data: readonly PerformanceTrendPoint[] }) {
   const chartData = data.map(point => ({ ...point, ...point.byType }));
+  // Tipos presentes nos dados: operacionais primeiro (ordem fixa), depois "outros" (times opt-in).
+  const present = new Set<string>();
+  for (const p of data) for (const k of Object.keys(p.byType)) present.add(k);
+  const operational = OPERATIONAL_ORDER.filter(t => present.has(t));
+  const outros = [...present].filter(t => !OPERATIONAL_ORDER.includes(t)).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const types = [...operational, ...outros];
+  const colorFor = (type: string) =>
+    OPERATIONAL_TYPE_COLORS[type] ?? OUTROS_TYPE_PALETTE[outros.indexOf(type) % OUTROS_TYPE_PALETTE.length];
   return <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData}>
     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART.grid} />
     <XAxis dataKey="label" tick={axis} /><YAxis allowDecimals={false} tick={axis} />
     <Tooltip contentStyle={tooltipStyle} /><Legend />
-    {itemTypes.map((type, index) => <Bar key={type} dataKey={type} name={type} stackId="types" fill={typeColors[index]} />)}
+    {types.map((type) => <Bar key={type} dataKey={type} name={type} stackId="types" fill={colorFor(type)} />)}
   </BarChart></ResponsiveContainer>;
 }
 

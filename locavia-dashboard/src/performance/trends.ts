@@ -62,7 +62,9 @@ function differenceInDays(startDate: Date | null, endDate: Date | null): number 
 export function computeWeeklyPerformanceTrend(
   items: readonly DashboardItem[],
   period: PerformancePeriod,
+  opts?: { labelOutros?: boolean },
 ): PerformanceTrendPoint[] {
+  const typeLabel = opts?.labelOutros ? preserveOutrosType : normalizedType;
   const points: PerformanceTrendPoint[] = [];
   let week = startOfWeek(new Date(period.start), { weekStartsOn: 1 });
   const periodEnd = new Date(period.end);
@@ -89,7 +91,7 @@ export function computeWeeklyPerformanceTrend(
     });
     const withDeliveredPoints = delivered.filter(item => item.StoryPoints !== null);
     const byType = delivered.reduce<Record<string, number>>((totals, item) => {
-      const type = normalizedType(item.Type);
+      const type = typeLabel(item.Type);
       totals[type] = (totals[type] ?? 0) + 1;
       return totals;
     }, {});
@@ -135,6 +137,17 @@ function normalizedType(value: string): string {
   if (type.includes('tarefa')) return 'Tarefa';
   if (type.includes('spike')) return 'Spike';
   return 'Outros';
+}
+
+// Igual a normalizedType para os 4 operacionais, mas PRESERVA o nome real dos demais
+// (GMUD, HOTFIX, UAT…) em vez de colapsar em "Outros" — usado na vazão opt-in por time.
+function preserveOutrosType(value: string): string {
+  const type = value.trim().toLocaleLowerCase('pt-BR');
+  if (type.includes('hist')) return 'História';
+  if (type.includes('bug')) return 'Bug';
+  if (type.includes('tarefa')) return 'Tarefa';
+  if (type.includes('spike')) return 'Spike';
+  return value.trim() || 'Outros';
 }
 
 export function computeAgingDistribution(items: readonly DashboardItem[], now: Date): AgingBucket[] {

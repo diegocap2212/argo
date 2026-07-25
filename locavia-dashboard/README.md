@@ -133,6 +133,7 @@ As telas de gestão priorizam dataviz: CFD, entradas × saídas, Lead Time P85, 
 ### Regras atuais
 
 - **Escopo operacional:** as métricas de performance consideram apenas os issuetypes de desenvolvimento — **US (História), Task (Tarefa), Bug e Spike**. UAT, Script Manual, GMUD, HOTFIX, Ideia, Melhoria e Release ficam de fora. Filtro em `src/performance/operational.ts`, aplicado nos hooks `usePerformancePortfolio`/`useTeamPerformance` (a tela `/modulos`, sobre Script Manual, não usa este filtro).
+- **"Outros" na vazão (opt-in por time):** times listados em `TEAMS_WITH_OUTROS_NA_VAZAO` (`operational.ts`, começando por `TIGUAN`) mostram os itens não-operacionais (exceto Script Manual) **apenas** no gráfico "Vazão por tipo", rotulados pelo tipo real. Isso vem de uma série de view separada (`viewTrend` em `useTeamPerformance`, com `labelOutros`) — KPI de vazão, "Vazão × Lead Time", previsão, saúde e insights seguem operacionais e inalterados.
 - Período padrão: últimas 8 semanas; seleção contínua de 1 a 24 semanas, em passos de uma semana.
 - Entrega: item `DONE`, com `Resolved` dentro do período, exceto `CANCELADO`/`DESCARTADO` (predicado único em `src/performance/discard.ts`, por substring — pega variantes como "DESCARTADOS").
 - A vazão semanal e o comparativo por tipo derivam do mesmo conjunto de entregas por semana (janela local não-sobreposta) — a linha bate com as barras.

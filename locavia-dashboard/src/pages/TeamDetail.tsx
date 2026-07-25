@@ -31,7 +31,7 @@ export default function TeamDetail() {
   const embedded = new URLSearchParams(location.search).get('embed') === '1';
   const [weeks, setWeeks] = useState(8);
   const [tab, setTab] = useState<DashboardTab>('delivery');
-  const { items, snapshot, previousSnapshot, insights, trend, cfd, aging, analysis, epics, loading, error } = useTeamPerformance(teamName, weeks * 7);
+  const { items, snapshot, previousSnapshot, insights, trend, viewTrend, outrosNaVazao, cfd, aging, analysis, epics, loading, error } = useTeamPerformance(teamName, weeks * 7);
   const goToTeam = (team: string) => navigate(`/time/${encodeURIComponent(team)}`);
   const throughputDelta = previousSnapshot.delivery.throughput
     ? Math.round(((snapshot.delivery.throughput - previousSnapshot.delivery.throughput) / previousSnapshot.delivery.throughput) * 100)
@@ -93,7 +93,7 @@ export default function TeamDetail() {
                     <ChartCard title="O que entrou e o que saiu" subtitle="Itens novos na semana comparados às entregas."><WeeklyIntakeChart data={trend} /></ChartCard>
                     <ChartCard title="Entradas × saídas" subtitle="Balanço semanal do fluxo do time."><FlowVolumeChart data={trend} /></ChartCard>
                     <ChartCard title="CFD do time" subtitle="A fazer, em andamento e concluído ao longo do período." tall><CumulativeFlowChart data={cfd} /></ChartCard>
-                    <ChartCard title="Vazão por tipo" subtitle="Composição semanal das entregas por tipo."><ThroughputByTypeChart data={trend} /></ChartCard>
+                    <ChartCard title="Vazão por tipo" subtitle={outrosNaVazao ? 'Composição semanal por tipo — inclui itens não-operacionais deste time (rotulados).' : 'Composição semanal das entregas por tipo.'}><ThroughputByTypeChart data={viewTrend} /></ChartCard>
                   </div>
                 )}
 
