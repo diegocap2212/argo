@@ -11,7 +11,7 @@
       "resolved": null,
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": null,
       "priority": "High",
       "labels": [
@@ -41,7 +41,7 @@
       "resolved": null,
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [
@@ -71,7 +71,7 @@
       "resolved": null,
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [
@@ -101,7 +101,7 @@
       "resolved": "2026-07-23T17:38:20.868-0300",
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [
@@ -131,7 +131,7 @@
       "resolved": null,
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": null,
       "priority": "High",
       "labels": [
@@ -161,7 +161,7 @@
       "resolved": null,
       "sprint": "SFMKT-SP Sprint 22",
       "sprintId": 23144,
-      "sprintState": "active",
+      "sprintState": "closed",
       "storyPoints": null,
       "priority": "High",
       "labels": [
@@ -217,9 +217,9 @@
       "assignee": "Izaque Bernardo",
       "created": "2026-07-14T18:28:57.027-0300",
       "resolved": null,
-      "sprint": "SFMKT-SP Sprint 22",
-      "sprintId": 23144,
-      "sprintState": "active",
+      "sprint": "SFMKT-SP Sprint 21",
+      "sprintId": 23077,
+      "sprintState": "closed",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [
@@ -247,9 +247,9 @@
       "assignee": "Thiago Rodrigues Ferreira",
       "created": "2026-07-08T20:53:50.907-0300",
       "resolved": null,
-      "sprint": "SFMKT-SP Sprint 22",
-      "sprintId": 23144,
-      "sprintState": "active",
+      "sprint": "SFMKT-SP Sprint 21",
+      "sprintId": 23077,
+      "sprintState": "closed",
       "storyPoints": null,
       "priority": "High",
       "labels": [
@@ -333,9 +333,9 @@
       "assignee": "Izaque Bernardo",
       "created": "2026-06-24T22:43:13.789-0300",
       "resolved": "2026-07-20T14:52:19.939-0300",
-      "sprint": "SFMKT-SP Sprint 22",
-      "sprintId": 23144,
-      "sprintState": "active",
+      "sprint": "SFMKT-SP Sprint 19",
+      "sprintId": 22107,
+      "sprintState": "closed",
       "storyPoints": 8,
       "priority": "Medium",
       "labels": [],
@@ -1127,9 +1127,9 @@
       "assignee": "Izaque Bernardo",
       "created": "2026-05-13T09:21:14.111-0300",
       "resolved": "2026-07-23T16:18:11.314-0300",
-      "sprint": "SFMKT-SP Sprint 22",
-      "sprintId": 23144,
-      "sprintState": "active",
+      "sprint": "SFMKT-SP Sprint 19",
+      "sprintId": 22107,
+      "sprintState": "closed",
       "storyPoints": 3,
       "priority": "Medium",
       "labels": [],
@@ -1539,7 +1539,7 @@
       }
     }
   ],
-  "synced_at": "2026-07-24T12:48:36.842Z",
+  "synced_at": "2026-07-25T12:12:00.267Z",
   "project": "SFMKT",
   "total_fetched": 54
 }
