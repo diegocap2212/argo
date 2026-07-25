@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- código de fronteira: parseia
+   respostas JSON dinâmicas da API do Jira; tipar cada campo aqui não agrega. */
 // ============================================================================
 // supabase/functions/sync-anchors/index.ts
 // Sincroniza âncoras de dados do JIRA (direto) → anchor_readings.
