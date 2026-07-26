@@ -8,13 +8,15 @@
   "scripts": {
     "build:portal": "node scripts/build-portal.mjs",
     "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck"
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test:portal": "playwright test"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
     "@vercel/blob": "^2.4.1"
   },
   "devDependencies": {
-    "typescript": "~5.9.3"
+    "typescript": "~5.9.3",
+    "@playwright/test": "^1.58.0"
   }
 }

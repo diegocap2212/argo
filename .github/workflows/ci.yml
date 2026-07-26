@@ -16,6 +16,10 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Para o job e2e-portal, que verifica um DEPLOYMENT e não o código do commit:
+  workflow_dispatch: # rodar à mão depois de promover
+  schedule:
+    - cron: '0 9 * * *' # 09:00 UTC — pega gate que abriu sem ninguém notar
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -66,6 +70,35 @@ jobs:
           # exige a URL definida para gerar o client.
           POSTGRES_PRISMA_URL: postgres://user:pass@localhost:5432/db
           DATABASE_URL_UNPOOLED: postgres://user:pass@localhost:5432/db
+
+  # NÃO roda em push/PR de propósito. Esta suíte afirma o estado de um DEPLOYMENT, e o deploy
+  # aqui é por CLI (Git desconectado — ver HANDOFF): entre o merge e o deploy existe uma janela
+  # em que main já tem os testes novos e produção ainda tem o código antigo. Rodando em push,
+  # o CI ficaria vermelho nessa janela por motivo certo e conclusão errada, e o time aprenderia
+  # a ignorar. Como gate pós-deploy + verificação diária, o vermelho sempre significa algo real:
+  # uma porta que abriu.
+  e2e-portal:
+    name: E2E do portal (matriz de gate contra produção)
+    if: github.event_name != 'push' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # SEM segredo de propósito: essa metade da suíte só verifica que porta fechada continua
+      # fechada (302/401/400/405), o que não exige forjar cookie. É a checagem que vale rodar
+      # continuamente contra produção — um gate que abriu por acidente aparece aqui.
+      # A metade logada (cookie forjado) exige NEO_SESSION_SECRET e roda contra staging antes
+      # de promover — ver ONBOARDING.md.
+      - name: Matriz sem sessão
+        run: pnpm run test:portal
+        env:
+          NEO_BASE_URL: https://neo-lm.vercel.app
 
   e2e-dash:
     name: E2E do Dash
