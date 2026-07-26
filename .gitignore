@@ -3,10 +3,11 @@ node_modules/
 dist/
 .vercel
 
-# Segredos — nunca commitar
-.env
-.env.local
-.env.private
+# Segredos — nunca commitar.
+# `.env*` cobre qualquer variante (.env.test.local, .env.production.local, ...) — o padrão
+# antigo listava só três nomes e deixava passar o resto. O .env.example é reexcluído abaixo
+# porque é documentação, não segredo.
+.env*
 !.env.example
 
 # Saídas de teste
