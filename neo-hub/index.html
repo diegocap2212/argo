@@ -3,12 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="NEO — Performance Dash e Maturity Model em uma única jornada.">
+  <meta name="description" content="NEO — Performance Dash, Maturity Model e Nero em uma única jornada.">
   <title>NEO | Venice & LM</title>
   <style>
     *{box-sizing:border-box}
     [hidden]{display:none!important}
-    :root{--ink:#161915;--green:#2be86b;--paper:#f2f4ef;--muted:#707771;--line:#d9dfd8}
+    /* Os tokens (--ink/--green/--paper/--muted/--line) vêm de src/tokens.css, que importa
+       @neo/design. Antes eram valores literais aqui, com neutros levemente esverdeados que
+       divergiam do DESIGN.md — ver packages/neo-design/README.md. */
     html,body{margin:0;min-height:100%;font-family:Inter,Arial,sans-serif;background:var(--paper);color:var(--ink)}
     body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 50% -10%,rgba(43,232,107,.13),transparent 34%),linear-gradient(90deg,rgba(255,255,255,.42) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.4) 1px,transparent 1px);background-size:auto,72px 72px,72px 72px;pointer-events:none}
     .page{position:relative;min-height:100vh;display:flex;flex-direction:column}
@@ -53,6 +55,17 @@
     .arrow{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;font-size:20px}
     .performance .arrow{background:var(--green);color:#151916}.maturity .arrow{background:#151916;color:var(--green)}
     .glow{position:absolute;width:300px;height:300px;border-radius:50%;background:var(--green);filter:blur(90px);opacity:.1;right:-110px;top:100px}
+    /* ── Porta 03: Nero (card largo, ocupa a linha inteira) ──
+       Layout horizontal em vez dos 430px de altura das outras duas: dá destaque ao
+       lançamento sem apertar os cards 01/02. No mobile a regra de 1 coluna já cobre. */
+    .nero{grid-column:1/-1;min-height:0;background:#151916;color:#fff;padding:30px 38px}
+    .nero-body{display:flex;align-items:center;gap:34px;margin-top:22px;flex-wrap:wrap}
+    .nero-mark{width:74px;height:74px;flex:none}
+    .nero-copy{flex:1;min-width:240px}
+    .nero-copy h2{margin:0 0 8px}
+    .nero-copy p{margin:0;max-width:520px}
+    .nero .door-foot{margin-top:22px}
+    .badge-lock{display:inline-flex;align-items:center;gap:6px;font-size:8px;text-transform:uppercase;letter-spacing:1.5px;border:1px solid var(--green);color:var(--green);border-radius:99px;padding:7px 11px}
     .footer{margin-top:auto;padding:24px 6vw;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
     /* ── Gate de acesso (login Microsoft) ── */
     .auth-loading{margin:0 auto 72px;color:var(--muted);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2.4px}
@@ -93,6 +106,7 @@
       .brandbar{min-height:96px;padding:18px 24px}.brand{width:110px}.venice{width:95px}.lm{width:70px}.partnership{font-size:0;gap:8px}.partnership:before,.partnership:after{width:14px}.partnership:after{display:none}.partnership:before{content:"×";width:auto;height:auto;background:none;font-size:14px;color:#909790}
       .hero{padding-top:44px}.neo-lockup{gap:12px}.neo-mark{width:48px;height:44px}.neo-mark:after{width:16px;height:20px}.neo-word{font-size:44px;letter-spacing:2px}.neo-tagline{letter-spacing:2.2px}.hero h1{margin-top:34px;letter-spacing:-2.5px}
       .doors{grid-template-columns:1fr;width:calc(100% - 32px)}.door{min-height:420px;padding:28px}.footer{gap:20px;line-height:1.5;flex-direction:column}
+      .nero{min-height:0;padding:28px}.nero-body{gap:20px;margin-top:18px}.nero-mark{width:56px;height:56px}
       .gate{width:calc(100% - 32px)}.gate-card{padding:36px 26px}
     }
   </style>
@@ -108,7 +122,7 @@
       <div class="neo-lockup" aria-label="NEO"><span class="neo-mark" aria-hidden="true"></span><span class="neo-word">NEO</span></div>
       <span class="neo-tagline">Núcleo de Evolução e Operação</span>
       <h1>Escolha onde<br><em>quer evoluir.</em></h1>
-      <p>Um único ponto de partida para acompanhar a performance da operação e desenvolver a maturidade dos nossos times.</p>
+      <p>Um único ponto de partida para acompanhar a performance da operação, desenvolver a maturidade dos times e governar os dados.</p>
     </section>
 
     <div class="auth-loading" id="auth-loading" role="status">Verificando acesso…</div>
@@ -165,8 +179,20 @@
         <h2>Evolua práticas<br>com propósito.</h2><p>Diagnóstico, jornada e planos de ação para apoiar a evolução contínua de cada squad.</p>
         <div class="door-foot"><span>Acessar Maturity Model</span><b class="arrow">→</b></div>
       </a>
+      <a class="door nero" id="door-nero" href="/nero/">
+        <div class="glow"></div>
+        <div class="door-top"><span class="number">03</span><span class="badge-lock">🔒 Acesso restrito</span></div>
+        <div class="nero-body">
+          <img class="nero-mark" src="/nero-logo.svg" alt="" aria-hidden="true">
+          <div class="nero-copy">
+            <h2>Governe os dados<br>com método.</h2>
+            <p>Advisor de governança no padrão DAMA: catálogo vivo, maturidade e report — com trilha de auditoria.</p>
+          </div>
+        </div>
+        <div class="door-foot"><span>Acessar Nero · Governança de Dados</span><b class="arrow">→</b></div>
+      </a>
     </section>
-    <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>NEO · Performance · Maturidade · Evolução</span></footer>
+    <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>NEO · Performance · Maturidade · Governança</span></footer>
   </main>
   <script type="module" src="/src/main.ts"></script>
 </body>

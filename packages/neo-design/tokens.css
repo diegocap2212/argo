@@ -1,0 +1,59 @@
+/**
+ * Tokens do design system NEO / Locavia ("Venice by blite") — a fonte única dos valores.
+ *
+ * ESCOPO: SÓ TOKENS. Nada de componentes. Compartilhar componente React entre 3 setups
+ * React diferentes + um app em HTML puro é exatamente como um "pacote compartilhado" viraria
+ * o monolito que o monorepo evita. Ver ARCHITECTURE.md.
+ *
+ * PREFIXO `--neo-` É OBRIGATÓRIO e não é decoração: os apps já usam nomes curtos com
+ * significados CONFLITANTES entre si. O caso mais perigoso é `--accent`:
+ *   - nero-portal → `--accent: #eceae4`  (hover NEUTRO, deliberadamente não-verde)
+ *   - maturitymodel → `--accent: #2be86b` (o verde da marca)
+ * Um token compartilhado sem prefixo quebraria um dos dois em silêncio.
+ *
+ * A referência escrita é nero-portal/DESIGN.md; estes valores saíram dele.
+ */
+:root {
+  /* ── Marca ──
+     O verde vivo é SÓ destaque, nunca em área grande. Como TEXTO no tema claro ele falha
+     AA — texto de marca usa --neo-brand-strong. */
+  --neo-brand: #2be86b;
+  --neo-brand-strong: #1faa52;
+  --neo-brand-foreground: #0d1f14;
+  --neo-brand-muted: #e9fbef;
+  --neo-brand-gold: oklch(0.78 0.15 85);
+
+  /* ── Neutros quentes (tema claro é o padrão) ── */
+  --neo-paper: #f7f6f3;
+  --neo-ink: #1f2024;
+  --neo-surface: #ffffff;
+  --neo-muted: #efece6;
+  --neo-muted-ink: #6b6862;
+  --neo-line: #e4e1d9;
+  --neo-hover: #eceae4;
+
+  /* ── Feedback ──
+     Veredito/status usa SEMPRE feedback, nunca o accent da marca: verde de marca e verde
+     de "aprovado" não podem ser a mesma cor, senão destaque vira julgamento. */
+  --neo-success: #15925a;
+  --neo-warning: #b45309;
+  --neo-error: #dc2626;
+  --neo-info: #2563eb;
+
+  /* ── Dataviz (ordem de série) ── */
+  --neo-chart-1: #2be86b;
+  --neo-chart-2: #8a38f5;
+  --neo-chart-3: #f5a623;
+  --neo-chart-4: #2563eb;
+  --neo-chart-5: #6b6862;
+
+  /* ── Tipografia: 3 papéis, sem sobreposição ──
+     Newsreader marca ritmo ritual/editorial (h1, hero, report, aula).
+     Inter comanda a UI (tabela, form, card) — Newsreader em rótulo é bug.
+     JetBrains Mono é para DADO (métrica, delta, nome técnico). */
+  --neo-font-display: Newsreader, Georgia, serif;
+  --neo-font-sans: Inter, system-ui, -apple-system, Arial, sans-serif;
+  --neo-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --neo-radius: 0.625rem;
+}

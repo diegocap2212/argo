@@ -1,3 +1,4 @@
+import './tokens.css';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import { safeNextPath } from './next';
