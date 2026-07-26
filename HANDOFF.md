@@ -1,5 +1,100 @@
 # HANDOFF — NEO (Núcleo de Evolução e Operação)
 
+> **Novo no projeto?** Comece por [`ARCHITECTURE.md`](ARCHITECTURE.md) (o mapa e o que é
+> load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
+> **estado operacional corrente** — histórico e pendências.
+
+## Rodada 2026-07-26 — Nero vira a porta 03 + costuras unificadas
+
+Estado: **tudo em `feat/nero-porta-03` (11 commits), NADA promovido para produção.** O
+`neo-lm.vercel.app` segue servindo o código anterior.
+
+### O que mudou
+
+| Frente | Resultado |
+|---|---|
+| **pnpm workspaces** | 5 lockfiles/installs → 1. Resolve a *causa* do npm#4828 (o `node_modules` isolado não faz o hoisting que derrubava o binário do rollup) em vez de contorná-la. Validado no builder Linux |
+| **`@neo/auth`** | Contrato de sessão canônico (Web Crypto: roda em Edge, Node e Next) + **arnês de contrato** com 77 asserções |
+| **Nero no monorepo** | `git subtree` (história preservada) + rewrite `/nero/**` + `basePath` |
+| **Gate** | `api/tower.ts` → `api/gate.ts` com escopo (`tower`\|`nero`). Nero exige `neo_session` **E** `neo_nero` |
+| **Porta 03** | Layout 2+1 no hub, selo "Acesso restrito", zero JS novo |
+| **`@neo/design`** | Tokens compartilhados (só tokens, sem componentes) |
+| **Review do Nero** | Primeiro da história dele: `docs/QA-REVIEW.md`, 5 corrigidos / 6 pendentes |
+| **E2E do portal** | 20 casos de matriz de gate; gate pós-deploy, não por commit |
+| **Migrations** | `db push` fora do build; baseline aplicado em produção com backup |
+| **Docs** | `ARCHITECTURE.md`, `ONBOARDING.md`, `SECRETS.md` novos |
+
+### O que morreu
+
+- **Login próprio do Nero** (`APP_PASSWORD`): senha única compartilhada, cookie de 30 dias, e
+  o token era HMAC de uma **constante** — sem `exp`, logo **não expirava de fato**. Sem
+  rate-limit. Substituído por identidade do NEO + senha com TTL 12h, rate-limit e auditoria.
+- **`api/tower.ts`**, absorvido pelo `api/gate.ts`.
+- **`prisma db push` no deploy** — ver incidente evitado abaixo.
+- **Gatilho de deploy no repo arquivado**: o projeto `nero-portal` ainda deployava de
+  `diegocap2212/nero-portal`. Um push lá subiria o código antigo, que lê a `APP_PASSWORD`
+  removida — Nero quebrado disparado por push num repo que todos consideram morto. Git
+  desconectado.
+- **`.gitignore` furado**: listava só `.env`, `.env.local` e `.env.private` nominalmente, então
+  `.env.test.local` **não era ignorado**. Trocado por `.env*` + `!.env.example`.
+
+### Incidente evitado: preview escrevendo em produção
+
+Um deploy de **preview** do `nero-portal` rodou `prisma db push` **contra o banco de
+produção**. Sem dano (schema idêntico → no-op), mas o mecanismo está provado: se a branch
+tivesse mudança de schema, o preview a aplicaria em produção em silêncio, sem backup e sem
+trilha. Duas causas somadas: `vercel-build` fazia `db push`, e as envs `POSTGRES_*` estão em
+`Production, Preview` (mesmo banco nos dois ambientes).
+
+Corrigido na raiz: `vercel-build` é `prisma generate && next build`, e schema muda por
+`db:migrate`. Baseline `0_init` (17 tabelas, 0 DROP) aplicado em produção com backup
+(`backup-pre-migrate-baseline`) e dados conferidos antes e depois (198/10/212 idênticos).
+
+### Restrições de plataforma medidas (não folclore)
+
+- **Funções da Vercel não resolvem código compartilhado.** Edge Middleware falha no deploy
+  ("unsupported modules") tanto com bare specifier quanto com caminho relativo; function Node
+  **passa no build e quebra em runtime** com `ERR_MODULE_NOT_FOUND`. Por isso `middleware.ts`,
+  `api/session.ts` e `api/gate.ts` são autocontidos — e o arnês de contrato é o que impede as
+  cópias de divergirem.
+- **Streaming atravessa rewrite externa** sem buffering (medido: chunks incrementais,
+  `chunked` e `no-store` preservados, ~150ms no primeiro byte). Era o risco que poderia ter
+  invalidado a arquitetura toda.
+- **`vercel env add ... preview` é impossível não-interativamente** na CLI 54: sem branch dá
+  `git_branch_required`; com branch dá `branch_not_found`; com o Git desconectado, de novo
+  `git_branch_required`. A CLI sugere um comando que ela própria rejeita.
+- **`vercel env rm NOME preview` apaga a variável inteira**, produção incluída. Produção é
+  write-only. Quase virou incidente — só não virou porque as URLs eram reconstituíveis pelo
+  `neonctl`.
+- **Deploy do Nero exige `--local-config nero-portal/vercel.json`**, senão a CLI usa o
+  `vercel.json` da raiz e roda o build do portal dentro do projeto do Nero.
+
+### Custo real do Nero (primeira medição)
+
+**US$ 6,91 no mês corrente, 80 turnos → ~US$ 0,086/turno**, 34,5% do teto de US$ 20. Base de
+198 registros em `UsageLog`. É o número que ancora o modelo de custo do blueprint enterprise.
+
+### Antes de promover
+
+1. Deployar o `nero-portal` com o código novo (`--local-config`), depois o portal.
+2. Rodar o e2e com `NEO_FULL_STACK=1` (3 casos hoje pulados dependem disso).
+3. Fluxos logados manuais: OTP → 3 portas → Nero pede senha → chat/estado/catálogo/report →
+   logout.
+4. Regressão da Torre (mudou de `api/tower` para `api/gate`).
+5. **A rotação do `SESSION_SECRET` faz todos refazerem login no primeiro deploy do `neo-lm`.**
+
+### Pendências desta rodada
+
+- Envs de **Preview** do `nero-portal` apontando para a branch `preview` do Neon — exige
+  dashboard (catch-22 da CLI). Deixou de ser urgente com o `db push` fora do build; hoje é
+  defesa em profundidade.
+- Arquivar `diegocap2212/nero-portal` no GitHub (o Vercel já não deploya de lá).
+- Remover o projeto Vercel descartável `neo-lm-verify` (harness de validação desta rodada).
+- Os 6 itens abertos em `nero-portal/docs/QA-REVIEW.md`.
+
+---
+
+
 > Plano corrente: `C:\Users\Usuario\.claude\plans\fable-precisamos-sincronizar-essas-frolicking-rainbow.md` (Portal unificado).
 > **Estado (2026-07-14): PORTAL UNIFICADO NO AR — cutover concluído.** `https://neo-lm.vercel.app` serve hub (`/`), Dash (`/dash`) e MMA (`/maturity`); domínios antigos respondem 308 para as rotas novas.
 
