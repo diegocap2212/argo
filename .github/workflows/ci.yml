@@ -50,6 +50,12 @@ jobs:
       - name: Testes de performance do Dash (lógica pura)
         run: pnpm --filter locavia-dashboard test:performance
 
+      # Guarda a lista de modelos liberados, que vive em 3 lugares (allowlist, tabela de
+      # preços, seletor do cliente). Divergir ali distorce o custo em silêncio — e custo
+      # errado só aparece na fatura.
+      - name: Modelos e preços do Nero (lógica pura)
+        run: pnpm --filter nero-portal test:core
+
       - name: Build do portal (hub + dash + maturity, composto)
         run: pnpm build:portal
 

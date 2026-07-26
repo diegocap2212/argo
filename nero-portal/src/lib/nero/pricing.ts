@@ -6,13 +6,25 @@
 
 type Rates = { input: number; output: number };
 
-const PRICES: Record<string, Rates> = {
-  "claude-sonnet-4-6": { input: 3, output: 15 },
+// Só entram modelos que a allowlist de core.ts pode de fato resolver. `claude-opus-4-8`
+// estava aqui sem nunca ser alcançável (resolveModel aceita apenas haiku|sonnet) — entrada
+// morta, removida. Ao liberar um modelo novo, acrescentar nos DOIS lugares.
+//
+// `as const satisfies` NÃO é enfeite: com `Record<string, Rates>` o TypeScript tipa
+// PRICES["chave-que-nao-existe"] como `Rates` (e não `Rates | undefined`), então uma chave
+// errada no FALLBACK abaixo compilava e só explodia em runtime — foi exatamente o que
+// aconteceu ao trocar Sonnet 4.6 por Sonnet 5: FALLBACK virou undefined e costOfTurn passou
+// a lançar TypeError. Com o tipo literal, chave inexistente é ERRO DE COMPILAÇÃO.
+const PRICES = {
+  "claude-sonnet-5": { input: 3, output: 15 }, // promocional $2/$10 até 2026-08-31
   "claude-haiku-4-5": { input: 1, output: 5 },
-  "claude-opus-4-8": { input: 5, output: 25 },
-};
+} as const satisfies Record<string, Rates>;
 
-const FALLBACK: Rates = PRICES["claude-sonnet-4-6"];
+type PricedModel = keyof typeof PRICES;
+
+// Tarifa usada quando o modelo não está na tabela: a MAIS CARA das liberadas, para um
+// modelo desconhecido nunca SUBESTIMAR o custo (subestimar afrouxaria o freio de orçamento).
+const FALLBACK: Rates = PRICES["claude-sonnet-5"];
 
 export type TurnUsage = {
   inputTokens: number;
@@ -23,7 +35,7 @@ export type TurnUsage = {
 
 /** Custo em USD de um turno, dado o modelo e os tokens (incl. cache). */
 export function costOfTurn(model: string, u: TurnUsage): number {
-  const r = PRICES[model] ?? FALLBACK;
+  const r: Rates = PRICES[model as PricedModel] ?? FALLBACK;
   const cost =
     (u.inputTokens * r.input +
       u.outputTokens * r.output +

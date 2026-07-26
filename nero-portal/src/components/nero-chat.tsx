@@ -17,7 +17,7 @@ type Message = { role: "user" | "assistant"; content: string };
 // arrastar o SDK da Anthropic pro bundle do cliente). Haiku 4.5 é o padrão.
 const MODELS = [
   { id: "claude-haiku-4-5", label: "Haiku 4.5" },
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "claude-sonnet-5", label: "Sonnet 5" },
 ] as const;
 const MODEL_STORAGE_KEY = "nero:model";
 

@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystem } from "./prompt";
 import { NERO_TOOLS } from "./tools";
+import { assertWithinBudget } from "./usage";
 
 /**
  * Nero Core — o ÚNICO ponto de IA do portal. Toda interação com o Claude passa
@@ -15,12 +16,18 @@ function getClient(): Anthropic {
 
 /**
  * Modelos liberados no portal. Haiku 4.5 é o padrão (rápido e barato, cabe melhor
- * no teto de 60s do deploy); Sonnet 4.6 é a alternativa para tarefas mais densas.
+ * no teto de 60s do deploy); Sonnet 5 é a alternativa para tarefas mais densas.
  * IDs sem sufixo de data (aliases) — ambos existem na tabela de preços (pricing.ts).
+ *
+ * Sonnet 4.6 -> Sonnet 5: mesmo preço de tabela ($3/$15 por 1M) com qualidade bem maior
+ * em tarefas densas, e ainda em preço promocional ($2/$10) até 2026-08-31. Atenção ao
+ * migrar: o Sonnet 5 usa tokenizer novo (~30% mais tokens para o mesmo texto), então o
+ * custo por turno sobe mesmo com o preço por token igual — o freio de orçamento acima é
+ * justamente o que impede isso de virar surpresa na fatura.
  */
 export const NERO_MODELS = {
   haiku: "claude-haiku-4-5",
-  sonnet: "claude-sonnet-4-6",
+  sonnet: "claude-sonnet-5",
 } as const;
 
 export type NeroModelId = (typeof NERO_MODELS)[keyof typeof NERO_MODELS];
@@ -75,6 +82,11 @@ export async function streamTurn(
   messages: Anthropic.MessageParam[],
   opts: { tools?: boolean; scopeContext?: string; model?: string } = {},
 ) {
+  // FREIO de orçamento. Aqui e não na rota HTTP porque este é o único ponto de IA do
+  // portal: o chat (laço agêntico) e o generate.ts do report passam os dois por aqui,
+  // então um só guarda cobre todas as chamadas ao modelo. Lança BudgetExceededError.
+  await assertWithinBudget();
+
   const baseSystem = await buildSystem();
   const system: Anthropic.TextBlockParam[] = opts.scopeContext
     ? [...baseSystem, { type: "text", text: opts.scopeContext }]

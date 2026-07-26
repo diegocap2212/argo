@@ -12,7 +12,8 @@
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-demo.ts",
-    "db:push": "prisma db push"
+    "db:push": "prisma db push",
+    "test:core": "tsx scripts/test-nero-core.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

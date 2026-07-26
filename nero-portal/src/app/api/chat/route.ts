@@ -3,6 +3,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { streamTurn, resolveModel, type NeroMessage } from "@/lib/nero/core";
 import { runNeroTool } from "@/lib/nero/tools";
 import { costOfTurn } from "@/lib/nero/pricing";
+import { BudgetExceededError, assertWithinBudget, invalidateSpendCache } from "@/lib/nero/usage";
 import { prisma } from "@/lib/db";
 import { loadPhase, buildPhaseContext } from "@/lib/state/queries";
 import { loadTrilha, buildTutorContext } from "@/lib/academia/trilhas";
@@ -42,6 +43,21 @@ export async function POST(req: NextRequest) {
       "ANTHROPIC_API_KEY não configurada. Defina-a em .env.local para usar o Nero.",
       { status: 500 },
     );
+  }
+
+  // Freio de orçamento ANTES de abrir o stream: assim o estouro vira um 429 legível em vez
+  // de um texto de erro dentro de uma resposta 200 (o streamTurn também barra, mas ali já
+  // não há como mudar o status). Ver assertWithinBudget em lib/nero/usage.ts.
+  try {
+    await assertWithinBudget();
+  } catch (e) {
+    if (e instanceof BudgetExceededError) {
+      return new Response(e.message, {
+        status: 429,
+        headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+      });
+    }
+    throw e;
   }
 
   // Carrega contexto da fase se o chat for escopado a um step do roadmap.
@@ -104,6 +120,9 @@ export async function POST(req: NextRequest) {
         const costUsd = costOfTurn(model, usage);
         try {
           await prisma.usageLog.create({ data: { model, ...usage, costUsd } });
+          // O freio memoiza o gasto por 30s; invalidar aqui faz o próximo turno do laço
+          // agêntico já enxergar o custo deste turno.
+          invalidateSpendCache();
         } catch (e) {
           // Não derruba o chat por causa do log, mas a falha PRECISA ficar visível:
           // se a persistência falhar, o medidor mostraria "zero" sem explicação.
