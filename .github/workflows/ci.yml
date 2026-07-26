@@ -1,8 +1,15 @@
 name: CI
 
-# Gate de qualidade em push/PR. Cada app tem seu próprio package-lock (sem npm workspaces —
-# ver HANDOFF), então rodamos `npm ci` dentro de cada pasta. NUNCA `npm run build` do Dash no
-# CI: ele roda `sync:sfmkt` e exige credenciais do Jira/Salesforce; usamos `tsc -b && vite build`.
+# Gate de qualidade em push/PR do monorepo NEO (4 apps + packages/*).
+#
+# UM `pnpm install` cobre tudo (pnpm workspaces — ver pnpm-workspace.yaml). Antes eram 4
+# jobs com 4 `npm ci`, um por app, porque cada um tinha o próprio package-lock.
+#
+# pnpm vem por COREPACK (lê `packageManager` do package.json) em vez de uma action de
+# terceiro — menos superfície de supply chain e uma peça a menos para manter.
+#
+# NUNCA rodar `npm run build` do Dash aqui: ele chama sync:sfmkt e exige credenciais do
+# Jira/Salesforce. O build:portal usa `vite build` direto, sem sync.
 
 on:
   push:
@@ -14,70 +21,60 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
 jobs:
-  dash:
-    name: Dash (locavia-dashboard)
+  checks:
+    name: Tipos, lint, contrato e builds
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: locavia-dashboard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: locavia-dashboard/package-lock.json
-      - run: npm ci
-      - name: Typecheck
-        run: npx tsc -b
+          node-version: 24 # paridade com o runtime dos projetos Vercel (24.x)
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (4 apps + packages)
+        run: pnpm typecheck
       - name: Lint
-        run: npm run lint
-      - name: Testes de performance (lógica pura)
-        run: npm run test:performance
-      - name: Build (sem sync:sfmkt)
-        run: npx vite build
-      - name: Instala navegador do Playwright
-        run: npx playwright install --with-deps chromium
-      - name: E2E (fallback local de dados)
-        run: npx playwright test --project=chromium
+        run: pnpm lint
+
+      # Guarda as cópias autocontidas do HMAC (middleware.ts e api/session.ts): a Vercel não
+      # deixa compartilhar módulo entre Edge Middleware/functions, então o contrato é testado.
+      - name: Contrato de sessão (@neo/auth × middleware × api/session)
+        run: pnpm --filter @neo/auth test
+
+      - name: Testes de performance do Dash (lógica pura)
+        run: pnpm --filter locavia-dashboard test:performance
+
+      - name: Build do portal (hub + dash + maturity, composto)
+        run: pnpm build:portal
+
+      - name: Build do Nero (Next, projeto Vercel separado)
+        run: pnpm --filter nero-portal build
         env:
-          VITE_API_TARGET: ""
+          # O build não toca o banco (todas as páginas são force-dynamic), mas o Prisma
+          # exige a URL definida para gerar o client.
+          POSTGRES_PRISMA_URL: postgres://user:pass@localhost:5432/db
+          DATABASE_URL_UNPOOLED: postgres://user:pass@localhost:5432/db
 
-  mma:
-    name: MMA (maturitymodel)
+  e2e-dash:
+    name: E2E do Dash
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: maturitymodel
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: maturitymodel/package-lock.json
-      - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Build
-        run: npx vite build
-
-  hub:
-    name: Hub (neo-hub)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: neo-hub
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: neo-hub/package-lock.json
-      - run: npm ci
-      - name: Typecheck + build
-        run: npm run build
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Instala o navegador do Playwright
+        run: pnpm --filter locavia-dashboard exec playwright install --with-deps chromium
+      - name: E2E (fallback local de dados)
+        run: pnpm --filter locavia-dashboard exec playwright test --project=chromium
+        env:
+          VITE_API_TARGET: ''

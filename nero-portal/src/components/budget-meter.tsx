@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { api } from "@/lib/base-path";
 
 type Usage = {
   costUsd: number;
@@ -16,7 +17,8 @@ export function BudgetMeter() {
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch("/api/usage", { cache: "no-store" });
+      // api() aplica o basePath: `fetch` não recebe o prefixo do Next automaticamente.
+      const r = await fetch(api("/api/usage"), { cache: "no-store" });
       if (r.ok) setU(await r.json());
     } catch {
       /* silencioso */

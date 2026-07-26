@@ -1,22 +1,10 @@
 version: 2
 updates:
+  # UMA entrada npm cobre o monorepo inteiro: com pnpm workspaces existe um único
+  # pnpm-lock.yaml na raiz, e o Dependabot resolve todos os membros a partir dele.
+  # Antes eram 4 entradas (uma por app), porque cada app tinha o próprio package-lock.
   - package-ecosystem: npm
     directory: "/"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-  - package-ecosystem: npm
-    directory: "/locavia-dashboard"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-  - package-ecosystem: npm
-    directory: "/maturitymodel"
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 10
-  - package-ecosystem: npm
-    directory: "/neo-hub"
     schedule:
       interval: weekly
     open-pull-requests-limit: 10

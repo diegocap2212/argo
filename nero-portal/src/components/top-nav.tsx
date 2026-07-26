@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ArrowLeft,
   MessageSquare,
   LayoutDashboard,
   Database,
@@ -35,6 +36,21 @@ export function TopNav() {
   return (
     <header className="sticky top-0 z-20 border-b bg-background/85 backdrop-blur print:hidden">
       <div className="mx-auto flex h-14 w-full max-w-6xl items-center gap-4 px-4">
+        {/* Volta ao hub do NEO. <a> CRU de propósito: o next/link prefixaria o basePath
+            (/nero) e aqui queremos justamente SAIR dele, para a raiz da origem.
+            A regra do ESLint pressupõe que "/" é uma página DESTE app Next — não é: "/" é
+            o neo-hub (outro app, mesma origem, servido pelo projeto neo-lm). */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a
+          href="/"
+          className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+          title="Voltar ao Hub NEO"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">NEO</span>
+        </a>
+        <span className="h-5 w-px bg-border" aria-hidden="true" />
+
         {/* Marca */}
         <Link href="/" className="flex items-center gap-2.5">
           <NeroLogo size={32} />

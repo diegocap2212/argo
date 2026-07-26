@@ -1,12 +1,14 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowRight, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { NeroLogo } from "@/components/nero-logo";
+import { api } from "@/lib/base-path";
 import { setLocalStorage, useLocalStorage } from "@/lib/use-local-storage";
 
 type Message = { role: "user" | "assistant"; content: string };
@@ -75,7 +77,8 @@ export function NeroChat({ scope }: { scope?: ChatScope } = {}) {
         body.stepSlug = scope.stepSlug;
       }
 
-      const res = await fetch("/api/chat", {
+      // api() aplica o basePath: `fetch` não recebe o prefixo do Next automaticamente.
+      const res = await fetch(api("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -236,9 +239,10 @@ export function NeroChat({ scope }: { scope?: ChatScope } = {}) {
             </label>
             <p className="text-xs text-muted-foreground">
               Enter envia · Shift+Enter quebra linha · Só metadados/schemas — nunca PII real (
-              <a href="/privacidade" className="underline hover:text-foreground">
+              {/* Link (não <a> cru): só o next/link aplica o basePath sozinho. */}
+              <Link href="/privacidade" className="underline hover:text-foreground">
                 LGPD
-              </a>
+              </Link>
               )
             </p>
           </div>

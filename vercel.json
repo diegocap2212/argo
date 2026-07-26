@@ -2,6 +2,8 @@
   "buildCommand": "pnpm run build:portal",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/nero", "destination": "https://nero-portal.vercel.app/nero" },
+    { "source": "/nero/:path*", "destination": "https://nero-portal.vercel.app/nero/:path*" },
     { "source": "/dash/:path*", "destination": "/dash/index.html" },
     { "source": "/maturity/:path*", "destination": "/maturity/index.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
