@@ -100,6 +100,23 @@ ser restaurar backup. O `DEPLOY.md` compensa com ritual manual (branch Neon + `p
 revisar `migrate diff`), o que é frágil por depender de disciplina — e a Fase 7 já removeu o
 `db:reset` justamente porque foot-gun documentado não protege ninguém.
 
+**Deixou de ser teórico — medido em 2026-07-26.** Um deploy de **PREVIEW** do `nero-portal`
+(feito só para validar o Root Directory) rodou contra o banco de **PRODUÇÃO**:
+
+```
+Running "pnpm run vercel-build"
+$ prisma generate && prisma db push && next build
+Datasource "db": PostgreSQL database "neondb", schema "public"
+The database is already in sync with the Prisma schema.
+```
+
+Sem dano — o schema estava idêntico, então foi no-op. Mas o mecanismo está provado: **preview
+escreve schema em produção**. Se a branch tivesse qualquer alteração de schema, o preview a
+teria aplicado em produção em silêncio, sem backup e sem trilha, disparada por um deploy que
+ninguém considera arriscado. Duas causas somadas: `vercel-build` faz `db push`, e o projeto
+não separa banco de Preview do de Production (as envs `POSTGRES_*` estão em
+`Production, Preview`).
+
 **Recomendação:** migrar para `prisma migrate deploy` com migrations versionadas no repo.
 É a mudança que mais reduz risco operacional no handoff — mas **não** deve ser feita sem
 janela e backup, e é decisão sua.
