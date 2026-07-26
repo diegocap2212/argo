@@ -14,7 +14,7 @@
 | 3 | Entrada de preço inalcançável (`claude-opus-4-8`) | Baixo | ✅ Corrigido |
 | 4 | `FALLBACK` de preço quebrável em silêncio | **Alto (financeiro)** | ✅ Corrigido (erro de compilação) |
 | 5 | Login por senha única, cookie de 30 dias sem expiração real | **Crítico (segurança)** | ✅ Corrigido na Fase 4 |
-| 6 | `vercel-build` roda `prisma db push` a cada deploy | Alto | ⬜ Pendente — decisão do Diego |
+| 6 | `vercel-build` rodava `prisma db push` (preview escrevia em produção) | **Alto** | ✅ Corrigido |
 | 7 | Invariante de `mutations.ts` só em comentário | Médio | ⬜ Pendente |
 | 8 | Prompt injection pela Biblioteca | Médio | ⬜ Pendente — avaliar |
 | 9 | Gate fecha se o Upstash cair | Médio | ⬜ Aceito por ora — confirmar |
@@ -93,7 +93,7 @@ entrou. Detalhes em `argo/HANDOFF.md`.
 
 ## Pendentes
 
-### 6. `prisma db push` a cada deploy (alto) — decisão do Diego
+### 6. `prisma db push` a cada deploy (alto) — ✅ CORRIGIDO
 
 `vercel-build` é `prisma generate && prisma db push && next build`. Isso aplica schema
 **sem trilha de migração**: drift silencioso, sem histórico do que mudou, sem rollback a não
@@ -118,9 +118,17 @@ ninguém considera arriscado. Duas causas somadas: `vercel-build` faz `db push`,
 não separa banco de Preview do de Production (as envs `POSTGRES_*` estão em
 `Production, Preview`).
 
-**Recomendação:** migrar para `prisma migrate deploy` com migrations versionadas no repo.
-É a mudança que mais reduz risco operacional no handoff — mas **não** deve ser feita sem
-janela e backup, e é decisão sua.
+**Corrigido em 2026-07-26.** `vercel-build` passou a ser `prisma generate && next build`; schema
+muda por `db:migrate` (`prisma migrate deploy`), e `db:push` foi **removido** do package.json.
+Baseline `0_init` (17 tabelas, 0 DROP) aplicado em produção com backup
+(`backup-pre-migrate-baseline`) e dados conferidos antes e depois (198/10/212 idênticos). O
+procedimento foi ensaiado antes na branch `preview`, então produção não foi o primeiro teste.
+Runbook em [`../DEPLOY.md`](../DEPLOY.md).
+
+**Segue em aberto (menor):** as envs `POSTGRES_*` continuam em `Production, Preview`, ou seja
+preview e produção **compartilham banco**. Com o `db push` fora do build isso deixou de poder
+alterar schema, mas um preview ainda **lê e escreve dado** em produção. Apontar o Preview para a
+branch `preview` do Neon exige o dashboard (catch-22 da CLI 54 — ver `ONBOARDING.md`).
 
 ### 7. Invariante de `mutations.ts` (médio)
 
