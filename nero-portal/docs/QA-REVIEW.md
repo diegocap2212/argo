@@ -20,6 +20,7 @@
 | 9 | Gate fecha se o Upstash cair | Médio | ⬜ Aceito por ora — confirmar |
 | 10 | Sanitização do full-text (`to_tsquery`) | A verificar | ⬜ Pendente |
 | 11 | `DEMO_SEED_ALLOWED` | Baixo | ⬜ Pendente |
+| 12 | Rate-limit se auto-renovava (15 min viravam indefinido) | **Alto (usabilidade)** | ✅ Corrigido |
 
 ---
 
@@ -137,6 +138,33 @@ como dado pelo modelo. O risco é limitado hoje porque quem popula a Biblioteca 
 equipe (não é upload de terceiro) e toda escrita é auditável/undoable via `StateVersion`.
 **Recomendação:** delimitar o conteúdo recuperado com marcação explícita de "isto é dado,
 não instrução" no prompt, e reavaliar antes de abrir upload para o cliente.
+
+### 12. Rate-limit se auto-renovava e transformava 15 min em indefinido (✅ corrigido)
+
+`consumeAttempt` rodava `EXPIRE` em **toda** tentativa, inclusive nas já bloqueadas. A
+justificativa original era válida — `INCR` e `EXPIRE` são operações separadas, e se o `INCR`
+criasse a chave e o `EXPIRE` falhasse, ela ficaria sem TTL e travaria o IP para sempre — mas o
+efeito colateral era pior:
+
+**Quem já estava bloqueado empurrava o próprio desbloqueio 15 minutos para frente a cada
+retry.** E a reação natural de quem lê "muitas tentativas" é tentar de novo. Bloqueio de 15
+minutos virava, na prática, indefinido.
+
+Aconteceu em produção em 2026-07-26, e a origem foi **a própria suíte e2e**: o caso "senha
+errada com sessão válida" gasta uma tentativa, o rate-limit é **por IP**, e rodar a suíte
+quatro vezes contra produção consumiu o orçamento de uma pessoa real na mesma rede.
+
+Duas correções:
+
+- `api/gate.ts` define a janela só na primeira tentativa; `ttl < 0` (-1 sem TTL, -2 inexistente)
+  cobre a preocupação original sem renovar a janela de quem já está bloqueado.
+- `tests/gate.spec.ts` pula esse caso a menos que `NEO_ALLOW_RATE_LIMIT_BURN=1`. **Teste não
+  deve consumir recurso compartilhado com usuário real.**
+
+Fica em aberto para avaliação: o rate-limit é por IP, então NAT corporativo agrupa pessoas
+diferentes na mesma chave (já registrado como aceito no HANDOFF). Com a janela não-renovável o
+prejuízo é limitado a 15 min, mas se o LM tiver saída NAT única vale trocar a chave por
+`IP + e-mail` — o e-mail já está disponível na identidade validada.
 
 ### 9. Gate fecha se o Upstash cair (médio) — confirmar
 

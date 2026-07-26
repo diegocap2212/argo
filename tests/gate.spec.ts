@@ -157,6 +157,15 @@ test.describe('com sessão do NEO', () => {
 
 test.describe('/api/gate — com sessão do NEO', () => {
   test.skip(!HAS_SECRET, 'NEO_SESSION_SECRET ausente — não é possível forjar cookie');
+  // NUNCA contra produção: o teste abaixo gasta uma tentativa do rate-limit, que é POR IP e
+  // COMPARTILHADO com as pessoas de verdade. Rodando a suíte 4x contra produção eu tranquei
+  // o Diego fora do Nero em 2026-07-26 — e como o gate renova o EXPIRE em toda tentativa,
+  // inclusive nas já bloqueadas, cada retry dele empurrava o desbloqueio mais para frente.
+  // Ligue com NEO_ALLOW_RATE_LIMIT_BURN=1 só contra staging ou harness descartável.
+  test.skip(
+    process.env.NEO_ALLOW_RATE_LIMIT_BURN !== '1',
+    'consome tentativa do rate-limit (compartilhado por IP com usuários reais) — só em staging',
+  );
   // Vive aqui e não no bloco "com sessão do NEO"? Não: PRECISA da sessão, e o `test.skip` no
   // corpo não salva — a fixture `neoContext` roda ANTES do corpo e falharia ao forjar o cookie
   // sem o segredo. Por isso o guarda é do describe inteiro, abaixo.

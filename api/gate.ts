@@ -128,10 +128,20 @@ async function consumeAttempt(
   if (!redis) throw new Error('Rate limit do gate não configurado');
   const key = rateLimitKey(req, scope, secret);
   const attempts = await redis.incr(key);
-  // EXPIRE em toda tentativa: se o INCR criasse a chave mas o EXPIRE falhasse (duas
-  // operações separadas), a chave ficaria SEM TTL e travaria o IP para sempre. Renovar
-  // a janela a cada tentativa é aceitável para força-bruta e garante que a chave expira.
-  await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
+  // A janela é definida na PRIMEIRA tentativa e NÃO é renovada nas seguintes.
+  //
+  // Antes o EXPIRE rodava em toda tentativa, com a justificativa de que INCR e EXPIRE são
+  // operações separadas: se o INCR criasse a chave e o EXPIRE falhasse, ela ficaria sem TTL e
+  // travaria o IP para sempre. A preocupação é legítima, mas o efeito colateral é pior e
+  // aconteceu em produção (2026-07-26): quem já estava bloqueado empurrava o próprio
+  // desbloqueio 15 min para frente a CADA retry — e a reação natural de quem vê "muitas
+  // tentativas" é justamente tentar de novo. Bloqueio de 15 minutos virava indefinido.
+  //
+  // O `ttl < 0` cobre a preocupação original sem o efeito colateral: -1 = existe sem TTL,
+  // -2 = não existe. Nos dois casos, define a janela.
+  if (attempts === 1 || (await redis.ttl(key)) < 0) {
+    await redis.expire(key, RATE_LIMIT_WINDOW_SECONDS);
+  }
   return { allowed: attempts <= RATE_LIMIT_MAX, key };
 }
 
