@@ -27,6 +27,9 @@ import {
   parseCookie as mwParseCookie,
   verifyToken as mwVerifyToken,
 } from '../../middleware.ts';
+// api/session.ts também é autocontida (as functions da Vercel não resolvem código
+// compartilhado — ver o aviso no cabeçalho dela). Mesma ideia: o contrato é testado.
+import { makeToken as fnMakeToken, emailFromJwt as fnEmailFromJwt } from '../../api/session.ts';
 
 let pass = 0;
 let fail = 0;
@@ -164,6 +167,30 @@ async function main() {
       const mw = mwParseCookie(header, 'neo_session');
       check(`parseCookie concorda: ${nome}`, pkg === mw, `pacote=${pkg} middleware=${mw}`);
     }
+  }
+
+  console.log('\n▶ Contrato: api/session.ts (cópia autocontida) × @neo/auth × middleware');
+  {
+    // O token que a function EMITE tem de ser aceito pelo middleware que o LÊ e pelo pacote.
+    // É o caminho crítico do portal: emitir aqui e barrar ali = ninguém entra.
+    const payload = { email: 'd@lmmobilidade.com.br', exp: future };
+    const emitido = fnMakeToken(payload, SECRET);
+    check('token emitido pela function passa no pacote', await verifyToken(emitido, SECRET));
+    check('token emitido pela function passa no middleware', await mwVerifyToken(emitido, SECRET));
+    check('token emitido é byte-idêntico ao do pacote', emitido === (await signToken(payload, SECRET)));
+
+    // E o inverso: token do pacote tem de ser aceito por quem consome.
+    const doPacote = await signToken(payload, SECRET);
+    check('token do pacote passa no middleware', await mwVerifyToken(doPacote, SECRET));
+
+    // Expirado emitido pela function tem de ser rejeitado pelos dois leitores.
+    const velho = fnMakeToken({ exp: past }, SECRET);
+    check('token expirado da function é rejeitado no pacote', !(await verifyToken(velho, SECRET)));
+    check('token expirado da function é rejeitado no middleware', !(await mwVerifyToken(velho, SECRET)));
+
+    const jwt = `h.${Buffer.from(JSON.stringify({ email: 'e@f.g' })).toString('base64url')}.s`;
+    check('emailFromJwt da function concorda com o pacote', fnEmailFromJwt(jwt) === emailFromJwt(jwt));
+    check('emailFromJwt da function em lixo devolve vazio', fnEmailFromJwt('lixo') === '');
   }
 
   console.log(`\n${fail === 0 ? '✔' : '✖'} ${pass} passaram, ${fail} falharam\n`);
