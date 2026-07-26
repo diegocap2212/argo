@@ -30,6 +30,12 @@ import {
 // api/session.ts também é autocontida (as functions da Vercel não resolvem código
 // compartilhado — ver o aviso no cabeçalho dela). Mesma ideia: o contrato é testado.
 import { makeToken as fnMakeToken, emailFromJwt as fnEmailFromJwt } from '../../api/session.ts';
+import {
+  isScope,
+  parseCookie as gateParseCookie,
+  safeSecretEqual as gateSafeSecretEqual,
+  verifyToken as gateVerifyToken,
+} from '../../api/gate.ts';
 
 let pass = 0;
 let fail = 0;
@@ -191,6 +197,50 @@ async function main() {
     const jwt = `h.${Buffer.from(JSON.stringify({ email: 'e@f.g' })).toString('base64url')}.s`;
     check('emailFromJwt da function concorda com o pacote', fnEmailFromJwt(jwt) === emailFromJwt(jwt));
     check('emailFromJwt da function em lixo devolve vazio', fnEmailFromJwt('lixo') === '');
+  }
+
+  console.log('\n▶ Contrato: api/gate.ts (cópia autocontida) × @neo/auth');
+  {
+    // O gate LÊ o neo_session emitido por api/session e EMITE neo_tower/neo_nero, que o
+    // próprio gate relê depois. Se qualquer um desses três divergir, a trava quebra.
+    const casos: Array<[string, string, string]> = [
+      ['token válido', await signToken({ email: 'a@b.c', exp: future }, SECRET), SECRET],
+      ['token legado', legacyToken({ email: 'a@b.c', exp: future }, SECRET), SECRET],
+      ['emitido pela function de sessão', fnMakeToken({ exp: future }, SECRET), SECRET],
+      ['expirado', await signToken({ exp: past }, SECRET), SECRET],
+      ['secret errado', await signToken({ exp: future }, SECRET), OTHER_SECRET],
+      ['sem exp', legacyToken({ email: 'x' }, SECRET), SECRET],
+      ['sem ponto', 'abcdef', SECRET],
+      ['vazio', '', SECRET],
+      ['lixo base64', '%%%.###', SECRET],
+    ];
+    for (const [nome, token, secret] of casos) {
+      const pkg = await verifyToken(token, secret);
+      const gate = gateVerifyToken(token, secret);
+      check(`gate.verifyToken concorda: ${nome} (${pkg})`, pkg === gate, `pacote=${pkg} gate=${gate}`);
+    }
+
+    for (const [nome, header] of [
+      ['normal', 'neo_nero=abc.def'],
+      ['malformado', 'neo_nero=%'],
+      ['ausente', 'outro=1'],
+    ] as Array<[string, string]>) {
+      const pkg = parseCookie(header, 'neo_nero');
+      const gate = gateParseCookie(header, 'neo_nero');
+      check(`gate.parseCookie concorda: ${nome}`, pkg === gate, `pacote=${pkg} gate=${gate}`);
+    }
+
+    check('gate.safeSecretEqual: iguais', gateSafeSecretEqual('s3nh4', 's3nh4') === (await safeSecretEqual('s3nh4', 's3nh4')));
+    check('gate.safeSecretEqual: diferentes', gateSafeSecretEqual('a', 'b') === (await safeSecretEqual('a', 'b')));
+    check('gate.safeSecretEqual: tamanhos diferentes', gateSafeSecretEqual('a', 'aaaaaaaa') === false);
+
+    // O escopo é o que separa TOWER_PASSWORD de NERO_PASSWORD e neo_tower de neo_nero.
+    // Aceitar um escopo desconhecido abriria a porta para cookie/env inexistentes.
+    check('isScope aceita tower', isScope('tower'));
+    check('isScope aceita nero', isScope('nero'));
+    check('isScope rejeita desconhecido', !isScope('admin'));
+    check('isScope rejeita vazio/undefined', !isScope('') && !isScope(undefined));
+    check('isScope rejeita array', !isScope(['tower']));
   }
 
   console.log(`\n${fail === 0 ? '✔' : '✖'} ${pass} passaram, ${fail} falharam\n`);

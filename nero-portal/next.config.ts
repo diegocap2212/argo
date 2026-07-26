@@ -12,6 +12,11 @@ import { BASE_PATH } from "./src/lib/base-path";
  */
 const nextConfig: NextConfig = {
   basePath: BASE_PATH,
+  // @neo/auth é publicado como FONTE TypeScript (não tem passo de build), então o Next
+  // precisa transpilá-lo junto. É o caminho suportado para pacotes de workspace — e é o que
+  // permite ao Nero importar o contrato de sessão por nome, coisa que o Edge Middleware e as
+  // functions da Vercel não conseguem (ver o cabeçalho de api/session.ts na raiz).
+  transpilePackages: ["@neo/auth"],
   // Saída standalone: necessária para a imagem Docker enxuta (self-host no domínio do
   // cliente — cenários (b)/(c) do blueprint enterprise); inofensiva na Vercel.
   output: "standalone",

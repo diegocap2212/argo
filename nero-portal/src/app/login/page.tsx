@@ -1,15 +1,60 @@
+"use client";
+
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { NeroLogo } from "@/components/nero-logo";
+import { BASE_PATH } from "@/lib/base-path";
 
-export const dynamic = "force-dynamic";
+/**
+ * Trava de acesso do Nero — a segunda das duas (ver src/proxy.ts).
+ *
+ * Quem chega aqui JÁ passou pela sessão do Portal NEO (login OTP + allowlist): o proxy só
+ * serve esta tela para quem tem `neo_session`. O que falta é a senha específica do Nero,
+ * porque ele contém informação proprietária.
+ *
+ * O POST vai para `/api/gate?scope=nero` — caminho ABSOLUTO, de propósito FORA do basePath:
+ * essa function vive no projeto `neo-lm` (a mesma origem serve o hub, o Dash, o Maturity e
+ * este app). É o mesmo endpoint que a Torre do Dash usa com ?scope=tower, e a senha nunca
+ * entra no bundle: fica na env NERO_PASSWORD e é comparada server-side, com rate-limit.
+ *
+ * Substituiu o login por senha única própria do Nero (APP_PASSWORD + cookie nero_session de
+ * 30 dias, sem identidade): agora a identidade vem do NEO e o TTL é de 12h.
+ */
+const GATE_URL = "/api/gate?scope=nero";
 
-export default async function LoginPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ error?: string }>;
-}) {
-  const { error } = await searchParams;
+export default function LoginPage() {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function unlock(e: React.FormEvent) {
+    e.preventDefault();
+    if (!password || submitting) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const r = await fetch(GATE_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      if (r.ok) {
+        // Recarrega pela raiz do app (com basePath) — agora com o cookie neo_nero.
+        window.location.assign(`${BASE_PATH}/`);
+        return;
+      }
+      if (r.status === 403) setError("Senha incorreta.");
+      else if (r.status === 429) setError("Muitas tentativas. Aguarde alguns minutos.");
+      else if (r.status === 401) setError("Sua sessão do NEO expirou. Recarregue a página.");
+      else setError("Não foi possível validar agora. Tente de novo.");
+    } catch {
+      setError("Não foi possível validar agora. Tente de novo.");
+    } finally {
+      setSubmitting(false);
+      setPassword("");
+    }
+  }
 
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-16">
@@ -22,11 +67,7 @@ export default async function LoginPage({
           </div>
         </div>
 
-        <form
-          action="/api/login"
-          method="post"
-          className="space-y-3 rounded-2xl border bg-card p-5 shadow-sm"
-        >
+        <form onSubmit={unlock} className="space-y-3 rounded-2xl border bg-card p-5 shadow-sm">
           <label htmlFor="password" className="block text-sm font-medium">
             Senha de acesso
           </label>
@@ -38,12 +79,12 @@ export default async function LoginPage({
             required
             placeholder="••••••••"
             autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
           />
-          {error && (
-            <p className="text-sm text-red-600 dark:text-red-400">Senha incorreta. Tente novamente.</p>
-          )}
-          <Button type="submit" className="w-full">
-            Entrar
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? "Validando…" : "Entrar"}
           </Button>
         </form>
 
