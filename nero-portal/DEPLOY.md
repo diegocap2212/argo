@@ -1,4 +1,42 @@
-# Deploy — checklist da v2 (report + radar + catálogo + academia)
+# Deploy — runbook do Portal Nero
+
+> **O deploy não altera mais o schema.** O `vercel-build` era
+> `prisma generate && prisma db push && next build` e aplicava schema a cada deploy —
+> inclusive **de preview, contra o banco de produção** (medido em 2026-07-26; ver
+> `docs/QA-REVIEW.md` §6). Agora é `prisma generate && next build`, e mudança de schema é
+> **ato deliberado**, nunca efeito colateral de build.
+>
+> ```bash
+> pnpm --filter nero-portal db:migrate:new   # cria a migration (sem aplicar)
+> pnpm --filter nero-portal db:migrate       # prisma migrate deploy — aplica
+> ```
+>
+> `db:push` foi **removido** do package.json: era o gatilho do problema.
+
+## Baseline (uma vez, por banco) — PENDENTE em produção
+
+As migrations começam em `prisma/migrations/0_init`, gerada do schema atual. O banco de
+produção já tem essas 17 tabelas (criadas por `db push`), então o `0_init` **não deve ser
+executado** lá — deve ser marcado como já aplicado:
+
+```bash
+# 1. Backup ANTES (branch Neon + dump). Ver §1 abaixo.
+# 2. Conferir que o schema do repo bate com o banco — a saída tem de ser VAZIA:
+npx prisma migrate diff --from-url "$DATABASE_URL_UNPOOLED" \
+  --to-schema-datamodel prisma/schema.prisma --script
+# 3. Marcar o baseline (grava só metadados em _prisma_migrations; não mexe em tabela):
+npx prisma migrate resolve --applied 0_init
+# 4. Confirmar:
+npx prisma migrate status     # -> "Database schema is up to date!"
+```
+
+**Validado em 2026-07-26 na branch `preview` do Neon** (projeto `neon-celeste-globe`), não em
+produção: `resolve --applied` → `status` "up to date" → `migrate deploy` no-op. O passo 3 em
+produção segue **pendente** e é decisão do Diego, com janela e backup.
+
+---
+
+## Histórico — checklist da v2 (report + radar + catálogo + academia)
 
 Esta versão adiciona 4 modelos NOVOS ao banco (`Report`, `MaturityAssessment`,
 `CatalogAsset`, `DataField`). A mudança é **100% aditiva** (nenhuma tabela/coluna

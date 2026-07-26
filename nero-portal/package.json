@@ -5,15 +5,16 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "vercel-build": "prisma generate && prisma db push && next build",
+    "vercel-build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-demo.ts",
-    "db:push": "prisma db push",
-    "test:core": "tsx scripts/test-nero-core.ts"
+    "test:core": "tsx scripts/test-nero-core.ts",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:new": "prisma migrate dev --create-only"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
