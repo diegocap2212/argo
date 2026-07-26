@@ -55,6 +55,17 @@ test.describe('sem sessão — nada além do hub', () => {
     });
   }
 
+  // Regressão de 2026-07-26, encontrada em PRODUÇÃO: `/nero/` (com barra) não casava com
+  // `/nero` nem com `/nero/:path*`, caía no catch-all e servia o HTML do HUB — e é exatamente
+  // para onde a porta 03 aponta, então o Nero ficava inalcançável pelo caminho normal.
+  // Sem sessão os três dão 302 (coberto acima); logado, o teste é "não serviu o hub".
+  test('as três formas de entrar no Nero existem no roteamento', async ({ request }) => {
+    for (const p of ['/nero', '/nero/', '/nero/login']) {
+      const r = await request.get(p, { maxRedirects: 0 });
+      expect(r.status(), `${p} deveria ser barrado sem sessão`).toBe(302);
+    }
+  });
+
   // Barrar só o HTML deixaria o bundle e os dados acessíveis a quem soubesse a URL do asset.
   test('assets profundos também são barrados, não só o HTML', async ({ request }) => {
     for (const asset of ['/dash/assets/index.js', '/nero/_next/static/chunk.js']) {
@@ -101,16 +112,21 @@ test.describe('cookie inválido não abre porta', () => {
 test.describe('com sessão do NEO', () => {
   test.skip(!HAS_SECRET, 'NEO_SESSION_SECRET ausente — não é possível forjar cookie');
 
-  test('o hub mostra as TRÊS portas', async ({ neoPage }) => {
-    test.skip(!FULL_STACK, 'exige VITE_SUPABASE_* no deployment (o reveal das portas é client-side)');
+  // Erro de desenho MEU, corrigido: a versão anterior afirmava `toBeVisible()` nas portas. Não
+  // dá — o hub revela `#doors` a partir da sessão do SUPABASE no localStorage, e forjar o
+  // cookie HMAC (que é o que o middleware lê) não cria sessão Supabase. O teste falhava por
+  // limitação da fixture, não por defeito do produto, e um teste que falha por motivo errado é
+  // pior que teste nenhum. O que é verificável sem sessão Supabase é o DOM e o destino da
+  // porta; a visibilidade fica no roteiro manual do ONBOARDING.
+  test('as três portas existem no hub, com o Nero marcado como restrito', async ({ neoPage }) => {
     await neoPage.goto('/');
-    // As portas só aparecem depois do reconcile da sessão no cliente.
-    await expect(neoPage.locator('#doors')).toBeVisible({ timeout: 20_000 });
     for (const id of ['#door-performance', '#door-maturity', '#door-nero']) {
-      await expect(neoPage.locator(id)).toBeVisible();
+      await expect(neoPage.locator(id)).toHaveCount(1);
     }
-    // A porta do Nero anuncia a trava extra — o usuário não deve descobrir no meio do caminho.
+    // A trava extra tem de estar anunciada na porta — o usuário não deve descobrir no meio.
     await expect(neoPage.locator('#door-nero')).toContainText(/restrito/i);
+    // E a porta tem de apontar para um caminho que o roteamento realmente resolve.
+    expect(await neoPage.locator('#door-nero').getAttribute('href')).toMatch(/^\/nero\/?$/);
   });
 
   test('Dash e Maturity abrem com só a sessão do NEO', async ({ neoContext }) => {
@@ -122,8 +138,11 @@ test.describe('com sessão do NEO', () => {
   test('o Nero NÃO abre só com a sessão — exige a senha própria', async ({ neoContext }) => {
     test.skip(!FULL_STACK, 'exige o Nero já cortado para o código novo (basePath + proxy de 2 travas)');
     const r = await neoContext.request.get('/nero/', { maxRedirects: 0 });
-    // 302 para a tela de senha (não para o hub: a sessão do portal está válida).
-    expect(r.status()).toBe(302);
+    // Redireciona para a tela de senha — e NÃO para o hub, porque a sessão do portal é válida.
+    // 307 e não 302: quem responde aqui é o proxy do Next (do Nero), não o middleware do
+    // portal, que monta a Response à mão com 302. São camadas diferentes com convenções
+    // diferentes; a primeira versão deste teste confundia as duas.
+    expect([302, 307]).toContain(r.status());
     expect(r.headers()['location'] ?? '').toContain('/nero/login');
   });
 

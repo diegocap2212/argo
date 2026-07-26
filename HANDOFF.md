@@ -6,8 +6,35 @@
 
 ## Rodada 2026-07-26 — Nero vira a porta 03 + costuras unificadas
 
-Estado: **tudo em `feat/nero-porta-03` (11 commits), NADA promovido para produção.** O
-`neo-lm.vercel.app` segue servindo o código anterior.
+Estado: **NO AR.** Cutover feito em 2026-07-26 ~21:45 UTC (domingo, janela de tráfego baixo).
+`neo-lm.vercel.app` serve hub (`/`), Dash (`/dash`), Maturity (`/maturity`) e **Nero (`/nero`)**.
+E2E contra produção: **21/21**.
+
+Rollback, se necessário: `vercel promote https://neo-5cctm6lzl-diegocaporusso-2820s-projects.vercel.app`
+(deployment de 25/07, o último anterior a esta rodada). **Não** usar os deployments marcados
+"Production" de 6h antes do cutover — são staging `--skip-domain` e um deles tem o código da
+Fase 2 que dá 500 em runtime.
+
+### Dois bugs encontrados no cutover — pelo e2e, em produção
+
+Ambos escaparam de todas as validações anteriores porque só aparecem com o **portal e o Nero
+servindo juntos**, o que nenhum ambiente parcial reproduzia.
+
+**1. `/nero/` servia o HUB.** O caminho com barra final não casava nem `/nero` nem
+`/nero/:path*`, caía no catch-all `/((?!api/).*)` → `/index.html`. E a porta 03 aponta
+exatamente para `/nero/`, então o Nero ficava inalcançável pelo caminho normal. Sem exposição
+de dado (servia o hub). Corrigido com uma regra explícita `/nero/` no `vercel.json`.
+
+**2. BYPASS DO GATE na rota índice do Nero.** `/nero/` com apenas `neo_session` servia a home
+do Nero (24KB, título "Portal Nero"), **sem a senha**. Causa: o matcher do proxy
+`/((?!...).*)`  **não casa a rota índice** — pegadinha conhecida do Next. As demais rotas,
+estáticas e dinâmicas, redirecionavam corretamente (`/privacidade` e `/academia` são estáticas
+e estavam certas), então não era estático vs dinâmico: era só o índice. A API já estava
+protegida (401). Corrigido com `matcher: ["/", "/((?!...).*)"]`  — **não remover o `"/"`**.
+
+A lição: o e2e pegou o bypass e o teste estava certo enquanto o código estava errado. Sem a
+matriz logada rodando contra produção, isso teria ficado aberto para qualquer usuário
+@lmmobilidade.
 
 ### O que mudou
 

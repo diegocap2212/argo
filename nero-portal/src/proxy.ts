@@ -24,7 +24,12 @@ import { BASE_PATH } from "@/lib/base-path";
  * cabeçalho de api/session.ts na raiz do monorepo).
  */
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // "/" É OBRIGATÓRIO E SEPARADO. O padrão `/((?!...).*)`  NÃO casa a rota índice — pegadinha
+  // conhecida do matcher do Next. Sem esta entrada, `/nero/` servia a home do Nero a QUALQUER
+  // usuário com sessão do portal, sem a senha: bypass do gate, encontrado em produção pelo
+  // e2e em 2026-07-26 (as outras rotas, estáticas e dinâmicas, redirecionavam corretamente —
+  // só o índice escapava). Não remover.
+  matcher: ["/", "/((?!_next/static|_next/image|favicon.ico).*)"],
 };
 
 const SESSION_COOKIE = "neo_session";
