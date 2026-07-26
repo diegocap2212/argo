@@ -187,9 +187,8 @@ Invariantes importantes:
 same-origin. As functions (`api/*`, na raiz do monorepo) autorizam por **JWT Bearer do Supabase**
 validado contra a allowlist `is_neo_allowed()`; o `middleware.ts` da raiz exige o cookie
 `neo_session` (HMAC) para servir HTML/assets de `/dash/**`. O ramo antigo de cookie
-`dash_session`/`DASHBOARD_PASSWORD` (senha única do dashboard) está **inerte** — nunca configurado
-no projeto atual, mantido só até a remoção definitiva (Fase 3c, ver `HANDOFF.md` da raiz). **Não
-reconfigurar `DASHBOARD_PASSWORD`** em produção.
+`dash_session`/`DASHBOARD_PASSWORD` (senha única do dashboard) foi **removido** — não existe mais
+em código nem em `.env.example`. **Não reintroduzir.**
 
 Variáveis principais (ver detalhe completo e valores por grupo no `README.md` da raiz):
 

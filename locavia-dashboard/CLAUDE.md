@@ -49,7 +49,7 @@ Antes de criar ou alterar qualquer tela, leia `DESIGN.md`; ele é a fonte de ver
 - O browser carrega dados por `/api/data`; não importar `src/data.json` no bundle.
 - `/api/data` usa Blob privado com fallback versionado e exige sessão quando o gate está configurado.
 - Sessão HMAC em cookie HttpOnly.
-- O gate local é fail-open somente quando `SESSION_SECRET` e `DASHBOARD_PASSWORD` não estão configurados; ambas são obrigatórias em produção.
+- O gate local é fail-open somente quando `SESSION_SECRET` não está configurado; em produção é obrigatória (fail-closed). O ramo legado `DASHBOARD_PASSWORD` foi removido — não reintroduzir.
 
 ## Comentários legados
 
