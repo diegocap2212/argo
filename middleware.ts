@@ -1,9 +1,21 @@
-// Edge Middleware do Portal NEO: barra /dash/** e /maturity/** (HTML e assets) sem o cookie
-// neo_session emitido por /api/session após o login no hub. Roda na borda, antes do filesystem.
-// HMAC via Web Crypto (node:crypto não existe no runtime Edge). /api/** fica fora do matcher
-// (as functions validam Bearer por conta própria).
+// Edge Middleware do Portal NEO: barra /dash/**, /maturity/** e /nero/** (HTML e assets)
+// sem o cookie neo_session emitido por /api/session após o login no hub. Roda na borda,
+// antes do filesystem. /api/** fica fora do matcher (as functions validam Bearer por conta).
+//
+// ⚠️ ESTE ARQUIVO É AUTOCONTIDO POR IMPOSIÇÃO DA PLATAFORMA — NÃO ADICIONE IMPORTS.
+// O Edge Middleware standalone da Vercel (middleware.ts na raiz de um projeto não-Next) não
+// bundleia dependências: tanto `import ... from '@neo/auth'` quanto o caminho relativo
+// `./packages/neo-auth/src/index.ts` fazem o deploy FALHAR com
+//   "The Edge Function 'middleware' is referencing unsupported modules".
+// Testado nos dois formatos em 2026-07-26. Por isso o HMAC está duplicado aqui em vez de
+// vir de @neo/auth como nas functions e no Nero.
+//
+// A duplicação é INTENCIONAL mas não é livre: `packages/neo-auth/test.ts` tem uma seção de
+// CONTRATO que importa estas funções e exige que elas concordem com o pacote token por
+// token. Se alguém mudar um lado só, o teste quebra. Mexeu aqui? Rode:
+//   pnpm --filter @neo/auth test
 
-export const config = { matcher: ['/dash/:path*', '/maturity/:path*'] };
+export const config = { matcher: ['/dash/:path*', '/maturity/:path*', '/nero/:path*'] };
 
 const COOKIE = 'neo_session';
 
@@ -33,7 +45,7 @@ export function b64urlToBytes(value: string): Uint8Array {
   return bytes;
 }
 
-/** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de api/session.ts) + exp. */
+/** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de @neo/auth) + exp. */
 export async function verifyToken(token: string, secret: string): Promise<boolean> {
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return false;
@@ -61,8 +73,8 @@ export async function verifyToken(token: string, secret: string): Promise<boolea
 
 export default async function middleware(request: Request): Promise<Response | undefined> {
   // Sem SESSION_SECRET: em dev/preview abre (paridade com o gate das functions);
-  // em PRODUÇÃO é misconfiguração e o gate fecha (fail-closed) — nunca libera /dash
-  // e /maturity por env sumida. Ver HANDOFF.
+  // em PRODUÇÃO é misconfiguração e o gate fecha (fail-closed) — nunca libera as apps
+  // por env sumida. Ver HANDOFF.
   const secret = process.env.SESSION_SECRET;
   if (!secret) {
     if (process.env.VERCEL_ENV === 'production') {

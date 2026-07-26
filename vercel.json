@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build:portal",
+  "buildCommand": "pnpm run build:portal",
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/dash/:path*", "destination": "/dash/index.html" },
