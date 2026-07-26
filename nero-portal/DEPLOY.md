@@ -13,7 +13,7 @@
 >
 > `db:push` foi **removido** do package.json: era o gatilho do problema.
 
-## Baseline (uma vez, por banco) — PENDENTE em produção
+## Baseline (uma vez, por banco) — ✅ APLICADO em produção (2026-07-26)
 
 As migrations começam em `prisma/migrations/0_init`, gerada do schema atual. O banco de
 produção já tem essas 17 tabelas (criadas por `db push`), então o `0_init` **não deve ser
@@ -30,9 +30,20 @@ npx prisma migrate resolve --applied 0_init
 npx prisma migrate status     # -> "Database schema is up to date!"
 ```
 
-**Validado em 2026-07-26 na branch `preview` do Neon** (projeto `neon-celeste-globe`), não em
-produção: `resolve --applied` → `status` "up to date" → `migrate deploy` no-op. O passo 3 em
-produção segue **pendente** e é decisão do Diego, com janela e backup.
+**Aplicado em produção em 2026-07-26**, na ordem acima e com verificação a cada passo:
+
+| Passo | Resultado |
+|---|---|
+| Backup | branch Neon `backup-pre-migrate-baseline` (`br-round-heart-ac5sg4oj`), criada de `main` |
+| Paridade de schema | `migrate diff` do repo × produção → **vazio** |
+| `resolve --applied 0_init` | `Migration 0_init marked as applied` |
+| `migrate status` | `Database schema is up to date!` |
+| `migrate deploy` | `No pending migrations to apply` (no-op) |
+| Dados | `UsageLog=198 Document=10 StateVersion=212` — **idênticos ao antes** |
+
+O procedimento havia sido ensaiado antes na branch `preview` do mesmo projeto Neon
+(`neon-celeste-globe`), então produção não foi o primeiro teste. Daqui em diante, mudança de
+schema é `db:migrate:new` → revisar o SQL → `db:migrate`.
 
 ---
 
