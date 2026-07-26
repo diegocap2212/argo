@@ -1,5 +1,5 @@
 {
-  "name": "athena",
+  "name": "nero-portal",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -8,11 +8,11 @@
     "vercel-build": "prisma generate && prisma db push && next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:demo": "tsx prisma/seed-demo.ts",
-    "db:push": "prisma db push",
-    "db:reset": "prisma db push --force-reset"
+    "db:push": "prisma db push"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

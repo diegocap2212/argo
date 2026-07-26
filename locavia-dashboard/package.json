@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npm run sync:sfmkt && tsc -b && vite build",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
     "sync": "npm run sync:jira",
