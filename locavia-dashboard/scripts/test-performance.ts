@@ -12,6 +12,16 @@ import { isOperationalType, operationalItems } from '../src/performance/operatio
 import type { SMConfig } from '../src/config/sm-config';
 import type { DashboardItem } from '../src/types/jira';
 
+/**
+ * ⚠️ CONTRATO DE PERÍODO: `end` é EXCLUSIVO. "Junho inteiro" é
+ * `{ start: '2026-06-01', end: '2026-07-01' }` — não `end: '2026-06-30'`.
+ *
+ * Estes casos usavam `end: '2026-06-30'` e passavam porque `computeTeamPerformance` esticava o
+ * fim para 23:59:59.999 internamente. Esse esticão era metade da causa da contagem dupla: o
+ * `end` de um período coincide com o `start` do próximo, então esticar dentro do cálculo fazia
+ * o dia da fronteira cair nos DOIS. Hoje quem define o limite é o chamador.
+ * Ver src/performance/period.ts e as invariantes em test-sync-invariants.ts.
+ */
 function item(overrides: Partial<DashboardItem>): DashboardItem {
   return {
     Type: 'Story', Key: 'TEAM-1', Summary: 'Item de teste', Status: 'EM ANDAMENTO',
@@ -19,11 +29,13 @@ function item(overrides: Partial<DashboardItem>): DashboardItem {
     Resolved: null, UpdatedAt: '2026-06-10T00:00:00Z', Release: 'LEGACY',
     StoryPoints: null, Priority: 'Medium', Assignee: null, Labels: [],
     CommitmentDate: null, StartDate: null, FuraFila: [], NaturezaDemanda: [],
+    Jornada: [], Modulo: null, Produto: null, Epic: null, EpicName: null, EpicStatus: null,
     TimeInTodo: null, LeadTime: null, LeadTimeP85: null, LeadTimeP15: null,
     TimeInStatus: {}, IsPlanned: false,
     DataQuality: {
       missingResolutionDate: false, missingAssignee: false, noStatusTransitions: false,
-      noSprint: false, staleTodo: false, suspiciouslyLongLead: false,
+      noSprint: false, staleTodo: false, suspiciouslyLongLead: false, negativeLeadTime: false,
+      historyComplete: true,
     },
     Source: 'api', ...overrides,
   };
@@ -45,7 +57,7 @@ const snapshot = computeTeamPerformance([
     Created: '2026-06-29T00:00:00Z', Resolved: '2026-06-30T22:00:00Z', LeadTime: 2,
   }),
 ], {
-  teamId: 'TEAM', period: { start: '2026-06-01', end: '2026-06-30' },
+  teamId: 'TEAM', period: { start: '2026-06-01', end: '2026-07-01' },
   now: new Date('2026-07-01T00:00:00Z'),
 });
 
@@ -69,7 +81,7 @@ const portfolio = computePerformancePortfolio([
   item({ Team: 'BETA', Key: 'BETA-1' }),
   item({ Team: 'ALFA', Key: 'ALFA-1' }),
   item({ Team: '', Key: 'UNKNOWN-1' }),
-], { start: '2026-06-01', end: '2026-06-30' }, new Date('2026-07-01T00:00:00Z'));
+], { start: '2026-06-01', end: '2026-07-01' }, new Date('2026-07-01T00:00:00Z'));
 assert.deepEqual(portfolio.teams.map(team => team.teamId), ['ALFA', 'BETA']);
 assert.equal(portfolio.totals.teams, 2);
 assert.equal(portfolio.totals.wip, 2);
@@ -87,7 +99,7 @@ assert.equal(snapshot.maturity, undefined);
 const trend = computeWeeklyPerformanceTrend([
   item({ Key: 'TEAM-10', Type: 'Bug', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-11T00:00:00Z', LeadTime: 10, StoryPoints: 3, CommitmentDate: '2026-06-02T00:00:00Z' }),
   item({ Key: 'TEAM-11', Created: '2026-06-10T00:00:00Z', CommitmentDate: null }),
-], { start: '2026-06-01', end: '2026-06-30' });
+], { start: '2026-06-01', end: '2026-07-01' });
 assert.ok(trend.some(point => point.throughput === 1));
 assert.ok(trend.some(point => point.newItems === 1));
 assert.ok(trend.some(point => point.unknownCommitment === 1));
@@ -99,7 +111,7 @@ assert.ok(trend.some(point => point.byType.Bug === 1));
 // e a linha de vazão deve bater com a soma das barras "por tipo" em TODA semana.
 const boundaryTrend = computeWeeklyPerformanceTrend([
   item({ Key: 'BD-1', Type: 'Bug', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: '2026-06-08T19:00:00-03:00', LeadTime: 5 }),
-], { start: '2026-06-01', end: '2026-06-30' });
+], { start: '2026-06-01', end: '2026-07-01' });
 for (const point of boundaryTrend) {
   const byTypeSum = Object.values(point.byType).reduce((a, b) => a + b, 0);
   assert.equal(point.throughput, byTypeSum, `semana ${point.label}: throughput ${point.throughput} != soma byType ${byTypeSum}`);
@@ -109,14 +121,14 @@ assert.equal(boundaryTrend.reduce((a, p) => a + p.throughput, 0), 1, 'item de fr
 // ── Regressão: descarte (variante) fora de entrega e de inflow ──
 const discardSnap = computeTeamPerformance([
   item({ Key: 'DC-1', Status: 'DESCARTADOS', StatusCategory: 'TODO', Created: '2026-06-05T00:00:00Z', Resolved: '2026-06-10T00:00:00Z' }),
-], { teamId: 'TEAM', period: { start: '2026-06-01', end: '2026-06-30' }, now: new Date('2026-07-01T00:00:00Z') });
+], { teamId: 'TEAM', period: { start: '2026-06-01', end: '2026-07-01' }, now: new Date('2026-07-01T00:00:00Z') });
 assert.equal(discardSnap.flow.inflow, 0, 'variante de descarte nao deve contar como inflow');
 assert.equal(discardSnap.delivery.throughput, 0);
 
 const cfd = computeCumulativeFlow([
   item({ Key: 'TEAM-20', Created: '2026-06-01T00:00:00Z', StartDate: '2026-06-08T00:00:00Z' }),
   item({ Key: 'TEAM-21', Status: 'CONCLUÍDO', StatusCategory: 'DONE', Created: '2026-06-01T00:00:00Z', StartDate: '2026-06-03T00:00:00Z', Resolved: '2026-06-12T00:00:00Z' }),
-], { start: '2026-06-01', end: '2026-06-30' });
+], { start: '2026-06-01', end: '2026-07-01' });
 assert.equal(cfd.at(-1)?.inProgress, 1);
 assert.equal(cfd.at(-1)?.done, 1);
 
@@ -127,7 +139,7 @@ const aging = computeAgingDistribution([
 assert.deepEqual(aging.map(bucket => bucket.count), [1, 0, 0, 1]);
 
 // ── Analytics (aba "Análise de Fluxo") ──
-const analyticsPeriod = { start: '2026-06-01', end: '2026-06-30' };
+const analyticsPeriod = { start: '2026-06-01', end: '2026-07-01' };
 const analyticsNow = new Date('2026-07-01T00:00:00Z');
 
 // Cycle time por etapa: TimeInStatus em horas → dias por etapa.
@@ -180,7 +192,7 @@ const mcVarMany = forecastHowMany([2, 6, 10], 4, 3000);
 assert.ok(mcVarMany.p95 <= mcVarMany.p50);
 
 // ── Comparativo da torre (Home): SM × SM e time × time ──
-const cmpPeriod = { start: '2026-06-01', end: '2026-06-30' };
+const cmpPeriod = { start: '2026-06-01', end: '2026-07-01' };
 const cmpNow = new Date('2026-07-01T00:00:00Z');
 const done = (key: string, team: string, resolved: string, lead: number) =>
   item({ Key: key, Team: team, Status: 'CONCLUÍDO', StatusCategory: 'DONE', Resolved: resolved, LeadTime: lead });

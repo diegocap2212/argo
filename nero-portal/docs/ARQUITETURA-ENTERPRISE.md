@@ -192,8 +192,17 @@ por token igual — motivo pelo qual o teto de orçamento existe.
 | Quem opera | Blite | LM | LM |
 | Esforço | — | médio | alto |
 
-**(b) e (c) já estão preparados no código:** o app builda em modo `standalone` e tem
-`Dockerfile`. Não é promessa — é o que já existe.
+**(b) e (c) estão parcialmente preparados.** O que é verdade hoje: `next.config.ts` usa
+`output: "standalone"`, e existe um `Dockerfile`. O que NÃO é verdade: o container não
+builda. A versão anterior deste parágrafo dizia "não é promessa — é o que já existe",
+enquanto o `Dockerfile` copiava um `package-lock.json` inexistente, rodava `npm ci` num
+workspace pnpm, copiava um `public/` que não existe e aplicava `prisma db push` no start do
+container. Foi corrigido estruturalmente em 2026-07-27 e **continua sem build de validação**
+— ver o cabeçalho do próprio `Dockerfile`.
+
+**Antes de vender (b) como pronto:** `docker build -f nero-portal/Dockerfile .` da raiz do
+monorepo tem de passar, a imagem tem de subir, e a migration tem de rodar como passo
+separado do start. Até então, (b) é um caminho projetado, não um caminho testado.
 
 **Recomendação:** ir para **(b)**. O cenário (c) só se a classificação do catálogo exigir
 isolamento de rede — decisão de segurança do LM, não técnica.

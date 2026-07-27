@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readSearchResponse } from './jira-json';
 
 async function research() {
   const baseUrl = process.env.JIRA_BASE_URL;
@@ -17,7 +18,7 @@ async function research() {
     const res = await fetch(url, {
        headers: { 'Authorization': `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`, 'Accept': 'application/json' }
     });
-    const data = await res.json();
+    const data = await readSearchResponse(res);
     if (!res.ok) {
         console.error(`Error ${res.status}: ${JSON.stringify(data)}`);
     } else {

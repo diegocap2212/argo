@@ -60,7 +60,10 @@ export function useSyncAnchors(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke("sync-anchors", { body: { team_id: teamId } });
+      // `sync-anchors-user` (não mais `sync-anchors`): o handler antigo não fazia
+      // autorização nenhuma e, sem `team_id`, sincronizava TODOS os squads. O novo exige
+      // `team_id` e valida SM do squad / AM / admin. Ver _shared/authz.ts.
+      const { data, error } = await supabase.functions.invoke("sync-anchors-user", { body: { team_id: teamId } });
       if (error) throw error;
       return data;
     },

@@ -1,0 +1,33 @@
+{
+  /* Projeto para os TESTES do Maturity e para a lógica pura das Edge Functions.
+
+     POR QUE ESTE ARQUIVO EXISTE: `tsc -b` cobria só `tsconfig.app.json` (include: ["src"]) e
+     `tsconfig.node.json` (vite.config.ts). Ou seja, `tests/` — a suíte de RLS, o contrato da
+     jornada, o aplicador de migrations e as fórmulas das âncoras — não tinha typecheck nenhum,
+     mesmo sendo o código que decide se a política de acesso do banco está certa.
+
+     Mesmo gap que existia em `sync/` no Dashboard (ver locavia-dashboard/tsconfig.tools.json).
+
+     `supabase/functions/_shared/jira-normalize.ts` entra aqui porque é PURO. O resto de
+     `supabase/functions/` fica FORA: usa globais do Deno e `import "npm:..."`, que este
+     compilador não resolve. Foi justamente por a lógica viver lá dentro que as fórmulas das
+     âncoras nunca puderam ser testadas — extraí-la para um módulo puro é o que permitiu. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tests.tsbuildinfo",
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["tests", "supabase/functions/_shared/jira-normalize.ts"]
+}

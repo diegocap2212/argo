@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readSearchResponse } from './jira-json';
 
 async function diagnose() {
   const auth = `Basic ${Buffer.from(`${process.env.JIRA_USER_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64')}`;
@@ -17,8 +18,8 @@ async function diagnose() {
     const jql = `key = WA-747 and ${s}`;
     const url = `${process.env.JIRA_BASE_URL}/rest/api/3/search?jql=${encodeURIComponent(jql)}`;
     const res = await fetch(url, { headers: { 'Authorization': auth } });
-    const data = await res.json();
-    console.log(`${s}: ${data.total > 0 ? 'MATCH' : 'NO MATCH'}`);
+    const data = await readSearchResponse(res);
+    console.log(`${s}: ${(data.total ?? 0) > 0 ? 'MATCH' : 'NO MATCH'}`);
   }
 }
 diagnose();

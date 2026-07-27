@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { JiraClient } from './jira-client';
+import { readIssueResponse } from './jira-json';
 
 async function compare() {
   const baseUrl = process.env.JIRA_BASE_URL;
@@ -8,7 +8,8 @@ async function compare() {
   
   if (!baseUrl || !email || !token) return;
 
-  const client = new JiraClient(baseUrl, email, token);
+  // (Este diagnóstico usa fetch cru de propósito: compara a resposta BRUTA do Jira com o
+  // CSV, sem passar pelo JiraClient, que já normaliza campos.)
   
   const keys = ['WA-747', 'WA-696', 'WA-676']; // Sample from CSV
 
@@ -19,7 +20,7 @@ async function compare() {
       const res = await fetch(`${baseUrl}/rest/api/3/issue/${key}`, {
          headers: { 'Authorization': `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`, 'Accept': 'application/json' }
       });
-      const issue = await res.json();
+      const issue = await readIssueResponse(res);
       
       console.log(`\n--- ${key} ---`);
       console.log(`CSV Status: (See above)`);

@@ -15,6 +15,7 @@
     "sync:discover-fields": "tsx sync/sync-discover.ts",
     "test": "playwright test",
     "test:performance": "tsx scripts/test-performance.ts",
+    "test:sync": "tsx scripts/test-sync-invariants.ts",
     "audit:performance": "tsx scripts/audit-performance-data.ts",
     "verify-all": "npm run test:performance && npm run audit:performance && npm test"
   },

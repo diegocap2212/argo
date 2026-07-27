@@ -22,7 +22,22 @@ export interface JiraItem {
  */
 import { authHeaders, redirectToHub } from './authService';
 
+/**
+ * Procedência do dataset, declarada pelo `/api/data`. Existe para a UI poder AVISAR quando
+ * está mostrando o fallback congelado: antes o endpoint devolvia o snapshot antigo com o
+ * timestamp do último sync, e nem o cliente nem a tela tinham como distinguir.
+ */
+export interface DatasetProvenance {
+  /** Do dataset REALMENTE servido. `null` = desconhecido (fallback). Nunca emprestado. */
+  syncedAt: string | null;
+  source: 'blob' | 'fallback';
+  stale: boolean;
+  count: number;
+  hash: string | null;
+}
+
 let dataPromise: Promise<JiraItem[]> | null = null;
+let provenance: DatasetProvenance | null = null;
 
 async function loadData(): Promise<JiraItem[]> {
   const res = await fetch('/api/data', { headers: await authHeaders() });
@@ -39,6 +54,19 @@ async function loadData(): Promise<JiraItem[]> {
   if (!Array.isArray(items)) {
     throw new Error('Resposta de dados inválida.');
   }
+  provenance = {
+    syncedAt: typeof body?.syncedAt === 'string' ? body.syncedAt : null,
+    source: body?.source === 'fallback' ? 'fallback' : 'blob',
+    stale: body?.stale === true,
+    // `count` do servidor é conferido contra o que chegou: divergência = resposta truncada.
+    count: typeof body?.count === 'number' ? body.count : items.length,
+    hash: typeof body?.hash === 'string' ? body.hash : null,
+  };
+  if (provenance.count !== items.length) {
+    console.error(
+      `[dados] contagem divergente: servidor declarou ${provenance.count}, chegaram ${items.length}.`,
+    );
+  }
   return items;
 }
 
@@ -51,4 +79,19 @@ export const fetchData = async (): Promise<JiraItem[]> => {
     });
   }
   return dataPromise;
+};
+
+/** Procedência do último carregamento. `null` antes do primeiro `fetchData()`. */
+export const getDatasetProvenance = (): DatasetProvenance | null => provenance;
+
+/**
+ * Descarta o dataset memoizado para que o próximo `fetchData()` vá à rede.
+ *
+ * A memoização é por ciclo de vida do MÓDULO: sem isto, uma sincronização que acabou de
+ * rodar não era refletida sem recarregar a página inteira — a promise resolvida ficava
+ * cacheada para sempre.
+ */
+export const invalidateData = (): void => {
+  dataPromise = null;
+  provenance = null;
 };

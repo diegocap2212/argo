@@ -21,8 +21,28 @@ const COOKIE = 'neo_session';
 const TTL_SECONDS = 12 * 60 * 60; // 12h; o hub re-emite a cada visita autenticada.
 
 // ── Sessão (inline; ver o aviso acima) ──
+
+/**
+ * Salt do HKDF — tem de bater EXATAMENTE com o de packages/neo-auth/src/index.ts e das outras
+ * cópias autocontidas. O teste de contrato (`pnpm --filter @neo/auth test`) falha se divergir.
+ */
+const HKDF_SALT = 'neo-portal/token-subkey/v1';
+
+/** Propósito deste token. Cada cookie tem o seu; ver o comentário em @neo/auth. */
+const PURPOSE = 'neo_session';
+
+/**
+ * Subchave HMAC por propósito. Os três cookies do portal (`neo_session`, `neo_tower`,
+ * `neo_nero`) eram assinados com o MESMO segredo, e os verificadores só olhavam assinatura +
+ * `exp` — então qualquer token válido servia em qualquer trava. Com subchave derivada, um token
+ * de outro propósito nem chega a verificar.
+ */
+function subkey(secret: string, purpose: string): Buffer {
+  return Buffer.from(crypto.hkdfSync('sha256', secret, HKDF_SALT, purpose, 32));
+}
+
 export function sign(payload: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return crypto.createHmac('sha256', subkey(secret, PURPOSE)).update(payload).digest('base64url');
 }
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).
 interface ApiRequest {
@@ -66,9 +86,13 @@ export function emailFromJwt(bearer: string): string {
   }
 }
 
-/** Monta o token `payload.assinatura` — mesmo formato de @neo/auth e do middleware. */
+/**
+ * Monta o token `payload.assinatura` — mesmo formato de @neo/auth e do middleware.
+ * `purpose` entra no payload junto: a subchave já garante o isolamento, e o campo deixa o
+ * motivo legível em log quando um token aparece na trava errada.
+ */
 export function makeToken(payload: object, secret: string): string {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const encoded = Buffer.from(JSON.stringify({ ...payload, purpose: PURPOSE })).toString('base64url');
   return `${encoded}.${sign(encoded, secret)}`;
 }
 

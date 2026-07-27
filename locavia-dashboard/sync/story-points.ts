@@ -13,10 +13,10 @@ export const STORY_POINTS_FIELDS = [
 ];
 
 // Retorna o primeiro valor numérico não-nulo encontrado entre os campos candidatos.
-export function extractStoryPoints(fields: Record<string, any>): number | null {
+export function extractStoryPoints(fields: Record<string, unknown>): number | null {
   for (const f of STORY_POINTS_FIELDS) {
     if (fields[f] !== undefined && fields[f] !== null) {
-      const val = Number(fields[f]);
+      const val = Number(fields[f] as string | number);
       if (!isNaN(val)) return val;
     }
   }

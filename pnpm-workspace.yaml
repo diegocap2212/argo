@@ -24,3 +24,27 @@ allowBuilds:
   sharp: true # binário nativo de imagem, usado pelo Next
   unrs-resolver: true # binário nativo do resolver do ESLint
   '@scarf/scarf': false # telemetria/analytics de terceiro; nada do build depende disso
+
+# Overrides de SEGURANÇA em dependências TRANSITIVAS (2026-07-27).
+#
+# `pnpm audit` reportava 23 vulnerabilidades (10 high) — dado que o code review disse não ter
+# conseguido obter e que ninguém estava olhando, embora o log do hourly-sync já o imprimisse a
+# cada execução. Estes três são transitivos: nenhum app os declara, então não há package.json
+# para bumpar — o caminho é forçar a resolução aqui.
+#
+# O QUE NÃO ESTÁ AQUI, e por quê:
+#   · vite >=6.4.3 (`server.fs.deny` bypass em caminhos alternativos do Windows) — exige major
+#     5→6 no maturitymodel e no neo-hub. É bypass do DEV SERVER, não afeta produção (o build é
+#     estático), então não justifica um major de build tool sem ciclo de verificação próprio.
+#   · react-router >=8.3.0 (CSRF em modo RSC) — exige major 6→8 no maturitymodel, que é
+#     migração de rotas, não bump. O app não usa RSC.
+# Ambos ficam registrados como decisão, não como esquecimento.
+overrides:
+  postcss: '>=8.5.12' # leitura arbitrária de arquivo / vazamento de informação
+  sharp: '>=0.35.0' # herda CVE-2026-33327 do libvips
+  # `brace-expansion: '>=5.0.8'` foi TENTADO e REVERTIDO em 2026-07-27: quebra o eslint.
+  # `minimatch@3` (que o @eslint/config-array usa) espera a API v1 do pacote — com a v5 o
+  # lint morre em `TypeError: expand is not a function`. O CVE é DoS por expansão sem limite,
+  # numa dependência de DESENVOLVIMENTO alcançada só pelo eslint: o risco real é alguém rodar
+  # lint sobre um glob malicioso na própria máquina. Trocar o lint do monorepo inteiro por
+  # isso é pior que o problema. Sai quando o eslint subir o minimatch.

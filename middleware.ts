@@ -45,18 +45,48 @@ export function b64urlToBytes(value: string): Uint8Array {
   return bytes;
 }
 
+/**
+ * Salt do HKDF — tem de bater EXATAMENTE com @neo/auth, api/session.ts e api/gate.ts.
+ * O teste de contrato (`pnpm --filter @neo/auth test`) falha se divergir.
+ */
+const HKDF_SALT = 'neo-portal/token-subkey/v1';
+
+/** Este middleware só valida o cookie de SESSÃO — nunca o da Torre nem o do Nero. */
+const PURPOSE = 'neo_session';
+
+/**
+ * Subchave HMAC por propósito (HKDF-SHA256). Os três cookies do portal eram assinados com o
+ * MESMO segredo e este verificador olhava só assinatura + `exp` — então o cookie da Torre
+ * abria `/dash` e `/maturity` como se fosse sessão. Agora a assinatura de outro propósito nem
+ * confere: foi feita com outra chave.
+ */
+async function purposeKey(secret: string, purpose: string): Promise<CryptoKey> {
+  const material = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    'HKDF',
+    false,
+    ['deriveBits'],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: new TextEncoder().encode(HKDF_SALT),
+      info: new TextEncoder().encode(purpose),
+    },
+    material,
+    256,
+  );
+  return crypto.subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
+}
+
 /** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de @neo/auth) + exp. */
 export async function verifyToken(token: string, secret: string): Promise<boolean> {
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return false;
   try {
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['verify'],
-    );
+    const key = await purposeKey(secret, PURPOSE);
     const valid = await crypto.subtle.verify(
       'HMAC',
       key,
@@ -64,8 +94,9 @@ export async function verifyToken(token: string, secret: string): Promise<boolea
       new TextEncoder().encode(payload),
     );
     if (!valid) return false;
-    const { exp } = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload)));
-    return typeof exp === 'number' && exp > Date.now();
+    const { exp, purpose } = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload)));
+    if (typeof exp !== 'number' || exp <= Date.now()) return false;
+    return purpose === undefined || purpose === PURPOSE;
   } catch {
     return false;
   }

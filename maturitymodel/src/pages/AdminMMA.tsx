@@ -232,12 +232,19 @@ export default function AdminMMA() {
               size="sm"
               disabled={!cycle || restartAssessment.isPending}
               onClick={async () => {
-                const confirmed = window.confirm(
-                  `Reiniciar o assessment ${cycle?.quarter}? A análise prévia, as notas da sessão, as homologações, o resultado oficial e os kaizens deste ciclo serão apagados.`,
+                // `prompt` em vez de `confirm`: o motivo é OBRIGATÓRIO no banco desde
+                // 2026-07-27, e é ele que dá sentido à trilha em `destructive_audit`. Confirmar
+                // sem justificar registraria "alguém apagou tudo" e nada mais — que é
+                // exatamente a auditoria inútil que o review apontou.
+                const motivo = window.prompt(
+                  `Reiniciar o assessment ${cycle?.quarter}? A análise prévia, as notas da sessão, as homologações, o resultado oficial e os kaizens deste ciclo serão APAGADOS.\n\n` +
+                    `Esta ação fica registrada com o seu e-mail e um snapshot do que existia.\n\n` +
+                    `Descreva o motivo:`,
                 );
-                if (!confirmed) return;
+                // `null` = cancelou no diálogo; string vazia = confirmou sem justificar.
+                if (motivo === null) return;
                 try {
-                  await restartAssessment.mutateAsync();
+                  await restartAssessment.mutateAsync(motivo);
                   toast({
                     title: "Assessment reiniciado",
                     description: "O ciclo voltou vazio para a pré-sessão.",

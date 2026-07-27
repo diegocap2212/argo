@@ -24,8 +24,18 @@ export function usePortalRole() {
     queryFn: async (): Promise<PortalRole[]> => {
       const { data, error } = await supabase.rpc("my_portal_roles");
       if (error) {
-        // Fail-closed: sem resposta, ninguém ganha poder global.
-        devWarn("usePortalRole: my_portal_roles indisponível?", error.message);
+        /**
+         * ESTE hook é a exceção deliberada: NÃO lança.
+         *
+         * Ele decide se a pessoa tem papel GLOBAL (admin/am). Lançar aqui transformaria uma
+         * indisponibilidade momentânea em tela de erro no portal inteiro — e, pior, um
+         * `isError` mal tratado em algum consumidor poderia ser lido como "ainda carregando"
+         * e liberar UI de admin. Lista vazia é fail-closed: sem papel, sem poder.
+         *
+         * O que muda em relação ao original: `console.error` no lugar de `devWarn`, que era
+         * NO-OP em produção — o erro sumia exatamente onde a informação importa.
+         */
+        console.error("[usePortalRole] my_portal_roles indisponível (fail-closed, sem papel):", error);
         return [];
       }
       return (data ?? []) as PortalRole[];

@@ -2,7 +2,7 @@
 
 Central de performance das equipes de software da Locavia. O produto consolida fluxo, throughput, lead/cycle time, previsibilidade, qualidade dos dados e insights auditáveis por **time + período**.
 
-> **Portal NEO:** em produção este app é servido em `https://neo-lm.vercel.app/dash/**` (build com `--base=/dash/`, `BrowserRouter` com `basename` de `import.meta.env.BASE_URL`). As functions (`api/`) vivem na **raiz do monorepo** e o acesso é bloqueado na borda pelo `middleware.ts` do portal. Deploy e envs: ver `README.md` da raiz. Em dev standalone nada muda (`npm run dev`, base `/`).
+> **Portal NEO:** em produção este app é servido em `https://neo-lm.vercel.app/dash/**` (build com `--base=/dash/`, `BrowserRouter` com `basename` de `import.meta.env.BASE_URL`). As functions (`api/`) vivem na **raiz do monorepo** e o acesso é bloqueado na borda pelo `middleware.ts` do portal. Deploy e envs: ver `README.md` da raiz. Em dev standalone nada muda (`corepack pnpm --filter locavia-dashboard dev`, base `/`).
 
 Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **Tempo & Gargalos**, **Saúde & Prioridades**, **Épicos** e **Previsão**. Subtarefas e épicos-item são excluídos do dataset pelo JQL do sync (só histórias/bugs/tarefas/etc. contam nas métricas de fluxo).
 
@@ -11,7 +11,7 @@ Os dashboards de Agilista e Time são organizados em **5 abas**: **Entrega**, **
 - **Saúde & Prioridades** — riscos e ação: **cards mais problemáticos** (itens em andamento há mais tempo, com Key/etapa/dias), **aging heatmap** (WIP por time e faixa de idade), aging do WIP, planejado × realizado, Story Points e insights.
 - **Épicos** — iniciativas: **progresso por épico** (concluídos × restantes), **cobertura** (% do trabalho sob um épico vs avulso, em donut) e a **tabela de épicos** (status, progresso, volume, idade). Ver `src/performance/epics.ts` e `src/components/EpicsCharts.tsx`.
 
-A rota **`/torre`** (ícone próprio na sidebar) é a visão restrita de gestão: cartões-resumo por agilista e um ranking em barras que alterna entre **SM × SM** (cada agilista agregado) e **time × time** (coloridos por agilista), com métrica selecionável (vazão, lead/cycle time, WIP, saldo, previsibilidade, envelhecidos, cobertura de SP). O acesso exige senha validada server-side (`api/tower.ts` na raiz do monorepo, env `TOWER_PASSWORD`, cookie `neo_tower` de 12h). Lógica em `src/performance/smComparison.ts` (`computeSMComparison`/`rankByMetric`), UI em `src/components/TowerComparison.tsx` + `src/pages/TowerView.tsx`; o dono de cada time é resolvido por `matchesTeam` em `src/config/sm-config.ts`.
+A rota **`/torre`** (ícone próprio na sidebar) é a visão restrita de gestão: cartões-resumo por agilista e um ranking em barras que alterna entre **SM × SM** (cada agilista agregado) e **time × time** (coloridos por agilista), com métrica selecionável (vazão, lead/cycle time, WIP, saldo, previsibilidade, envelhecidos, cobertura de SP). O acesso exige senha validada server-side (`api/gate.ts` na raiz do monorepo — `POST /api/gate?scope=tower` —, env `TOWER_PASSWORD`, cookie `neo_tower` de 12h). Lógica em `src/performance/smComparison.ts` (`computeSMComparison`/`rankByMetric`), UI em `src/components/TowerComparison.tsx` + `src/pages/TowerView.tsx`; o dono de cada time é resolvido por `matchesTeam` em `src/config/sm-config.ts`.
 
 As funções de análise são puras, em `src/performance/analytics.ts` e `epics.ts`. Dois campos derivados do changelog/hierarquia do Jira sustentam essas abas, preenchidos pelo sync: **`TimeInStatus`** (horas por etapa, via `sync/status-classification.ts` `classifyStage` + `sync/metrics-calculator.ts`) e **`Epic`/`EpicName`/`EpicStatus`** (épico pai, via `parent` no `sync/field-mapper.ts`).
 
@@ -42,22 +42,35 @@ URLs antigas de Cone e releases redirecionam para `/`, preservando favoritos dur
 
 ## Como rodar
 
+Este app é um workspace do monorepo `argo`: **instale na raiz**, não nesta pasta. Não existe
+`package-lock.json` — `npm install` aqui cria um `node_modules` divergente do lockfile pnpm.
+E `pnpm` não está no PATH desta máquina, por isso `corepack pnpm`.
+
 ```bash
-npm install
-npm run dev
+corepack pnpm install --frozen-lockfile          # na RAIZ do monorepo, uma vez
+corepack pnpm --filter locavia-dashboard dev
 ```
 
 Validações principais:
 
 ```bash
-npm run test:performance
-npm run audit:performance
-npx tsc -b
-npm run lint
-npx vite build
+corepack pnpm --filter locavia-dashboard test:performance   # contrato, período, percentis, saúde…
+corepack pnpm --filter locavia-dashboard test:sync          # 32 invariantes de sync + contrato do dataset
+corepack pnpm --filter locavia-dashboard audit:performance  # invariantes sobre o dataset versionado
+corepack pnpm --filter locavia-dashboard exec tsc -b
+corepack pnpm --filter locavia-dashboard lint
+corepack pnpm --filter locavia-dashboard exec vite build
 ```
 
-O `npm run build` também executa o sync SFMKT e, portanto, requer credenciais. O build da Vercel usa `tsc -b && vite build` diretamente.
+**Verifique por código de saída, não por grep na saída** — um `grep -ci '\berror\b'` já reportou
+"0 erros" enquanto o eslint estava crashando com um `TypeError`.
+
+`audit:performance` aceita `AUDIT_NOW=<ISO>` para fixar o "agora". Sem isso, a janela deslizante de
+56 dias faz a vazão mudar entre execuções do **mesmo código** (1198 às 06:00 UTC, 1187 às 18:00 do
+mesmo dia) — o que parece regressão e não é.
+
+O `build` também executa o sync SFMKT e, portanto, requer credenciais. O build da Vercel usa
+`tsc -b && vite build` diretamente.
 
 ## Arquitetura
 
@@ -162,10 +175,21 @@ Quando o modelo estiver disponível, ele poderá ser conectado sem importar regr
 
 ## Sincronização
 
-- `npm run sync:jira`: busca e normaliza issues do Jira Grupo LM.
-- `npm run sync:sfmkt`: sincroniza Salesforce Marketplace.
-- `npm run sync`: executa o sync Jira local.
-- `npm run audit:performance`: valida o dataset gerado pelo ponto de vista do produto.
+Via `corepack pnpm --filter locavia-dashboard <script>`:
+
+- `sync:jira`: busca e normaliza issues do Jira Grupo LM. Traz o changelog por
+  `POST /rest/api/3/changelog/bulkfetch` (lotes de 1.000 por `issueId`) e marca
+  `DataQuality.historyComplete` por item — o `expand: changelog` da busca **não** garante
+  histórico completo, e métrica de etapa com histórico truncado sai errada parecendo certa.
+  Se o bulkfetch falhar, o sync **não aborta**: degrada com `historyComplete: false` (entrega e
+  lead time vêm de `resolutiondate` e seguem válidos) e o contrato do dataset alerta.
+- `sync:sfmkt`: sincroniza Salesforce Marketplace.
+- `sync`: executa o sync Jira local.
+- `audit:performance`: valida o dataset gerado pelo ponto de vista do produto.
+- Antes de publicar no Blob, `sync/dataset-contract.ts` checa o **conjunto** contra o último sync
+  (volume, queda >30%, time desaparecido, Key duplicada, datas impossíveis, drift de custom field,
+  histórico parcial). `bloqueia` aborta a publicação; `alerta` publica e avisa. Baseline em
+  `src/data-baseline.json`.
 - `npx tsx sync/discover-modulo.ts [KEY]`: introspecção (read-only) para descobrir o custom field de um valor/campo no Jira (usado para achar Módulo = `cf11297`).
 - `npx tsx sync/reconcile-throughput.ts <TIME> <YYYY-MM-DD>`: diagnóstico (read-only, lê `src/data.json`) que lista os itens contados como vazão numa semana e as causas comuns de divergência com uma JQL do Jira.
 
@@ -196,12 +220,12 @@ Variáveis principais (ver detalhe completo e valores por grupo no `README.md` d
 |---|---|
 | `SESSION_SECRET` | Assinatura HMAC de `neo_session` (middleware) e `neo_tower` — **obrigatória em produção**; sem ela o gate fica fail-closed (não fail-open) |
 | `SUPABASE_URL` / `SUPABASE_ANON_KEY` | Validação do Bearer nas functions (`is_neo_allowed`) |
-| `TOWER_PASSWORD` | Senha da visão restrita `/torre` (`api/tower.ts`) |
+| `TOWER_PASSWORD` | Senha da visão restrita `/torre` (`api/gate.ts`, escopo `tower`) |
 | `ALLOWED_ORIGIN` | CORS de `api/comments.ts` |
 | `BLOB_READ_WRITE_TOKEN` | Dataset privado no Vercel Blob |
 | `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Redis/Upstash — comentários e rate-limit da Torre |
 | `JIRA_BASE_URL` / `JIRA_USER_EMAIL` / `JIRA_API_TOKEN` | Sync Jira (só no workflow do GitHub Actions) |
-| `CRON_SECRET` / `GITHUB_DISPATCH_TOKEN` | `api/trigger-sync.ts` — disparo do sync por cron externo |
+| ~~`CRON_SECRET` / `GITHUB_DISPATCH_TOKEN`~~ | **Não usadas.** `api/trigger-sync.ts` e `api/refresh.ts` foram removidos em 2026-07-27 (nunca estiveram ativos); o sync roda por cron nativo do GitHub Actions |
 
 Em produção, sem `SUPABASE_URL`/`SUPABASE_ANON_KEY` ou `SESSION_SECRET` configuradas, os gates
 **fecham** (fail-closed) em vez de abrir — comportamento oposto ao dev local (fail-open por

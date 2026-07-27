@@ -1,10 +1,15 @@
 import type { DashboardItem } from '../types/jira';
+import { isDiscardedStatus } from './discard';
 
 // Visão de épicos: agrega os itens (histórias/bugs/tarefas) pelo épico pai (campo Epic, vindo
 // do parent no Jira). Funções puras, como o resto de src/performance/.
 
 const DAY_MS = 86_400_000;
-const TERMINAL_DISCARDED = new Set(['CANCELADO', 'DESCARTADO']);
+// O predicado de descarte vive SÓ em discard.ts. Aqui havia
+// `new Set(['CANCELADO', 'DESCARTADO'])` com match EXATO, enquanto o canônico usa raízes por
+// substring (`CANCELAD`, `DESCARTAD`) para pegar as variantes reais do Jira. Consequência:
+// "DESCARTADOS" (plural) e "CANCELADO ❌" saíam das métricas de fluxo e CONTINUAVAM contados
+// nos épicos — o mesmo item, descartado numa tela e ativo na outra.
 const DONE_EPIC_STATUS = /(CONCLU|DONE|FECHAD|FINALIZ|ENCERR)/i;
 
 function parseDate(value: string | null | undefined): Date | null {
@@ -36,7 +41,7 @@ export interface EpicsView {
 }
 
 export function computeEpics(items: readonly DashboardItem[], now: Date): EpicsView {
-  const active = items.filter(i => !TERMINAL_DISCARDED.has(i.Status.toUpperCase()));
+  const active = items.filter(i => !isDiscardedStatus(i.Status));
   let withEpic = 0;
   let withoutEpic = 0;
   const byEpic = new Map<string, DashboardItem[]>();

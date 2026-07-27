@@ -1,6 +1,17 @@
 {
+  /* Arquivo-SOLUÇÃO: `files: []` + `references`. Ele não compila nada por si — quem compila
+     são os projetos referenciados, e só via `tsc -b`.
+
+     ⚠️ O script `typecheck` era `tsc --noEmit`, que sobre este arquivo é NO-OP: passava verde
+     sem nunca olhar `src`. Foi o "falso verde" do review de 2026-07-27. Hoje é `tsc -b`.
+     As `compilerOptions` abaixo também são inertes aqui (cada projeto tem as suas) — ficam
+     como referência histórica do que o gerador do app tinha configurado. */
   "files": [],
-  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.tests.json" }
+  ],
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {

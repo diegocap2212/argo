@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readSearchResponse } from './jira-json';
 
 async function diagnose() {
   const auth = `Basic ${Buffer.from(`${process.env.JIRA_USER_EMAIL}:${process.env.JIRA_API_TOKEN}`).toString('base64')}`;
@@ -17,14 +18,14 @@ async function diagnose() {
     const jql = `key = WA-747 and ${cond}`;
     const url = `${process.env.JIRA_BASE_URL}/rest/api/3/search?jql=${encodeURIComponent(jql)}`;
     const res = await fetch(url, { headers: { 'Authorization': auth } });
-    const data = await res.json();
-    console.log(`- ${cond}: ${data.total > 0 ? 'PASS' : 'FAIL'}`);
+    const data = await readSearchResponse(res);
+    console.log(`- ${cond}: ${(data.total ?? 0) > 0 ? 'PASS' : 'FAIL'}`);
   }
   
   // Test complete JQL
   const fullJql = conditions.join(' and ');
   const resFull = await fetch(`${process.env.JIRA_BASE_URL}/rest/api/3/search?jql=${encodeURIComponent('key = WA-747 and ' + fullJql)}`, { headers: { 'Authorization': auth } });
-  const dataFull = await resFull.json();
-  console.log(`\n- JQL COMPLETO para WA-747: ${dataFull.total > 0 ? 'PASS' : 'FAIL'}`);
+  const dataFull = await readSearchResponse(resFull);
+  console.log(`\n- JQL COMPLETO para WA-747: ${(dataFull.total ?? 0) > 0 ? 'PASS' : 'FAIL'}`);
 }
 diagnose();

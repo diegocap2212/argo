@@ -1,6 +1,6 @@
-import { streamTurn, resolveModel } from "./core";
+import { streamTurn, resolveModel, MAX_TOKENS } from "./core";
 import { costOfTurn } from "./pricing";
-import { prisma } from "@/lib/db";
+import { reserveTurn, settleTurn } from "./usage";
 import type { ReportData, SaudeFrente } from "@/lib/report/build";
 
 /**
@@ -10,6 +10,9 @@ import type { ReportData, SaudeFrente } from "@/lib/report/build";
  */
 async function generateOnce(prompt: string, model?: string): Promise<string> {
   const resolved = resolveModel(model);
+  // Reserva antes da chamada — ver usage.ts. Sem isto, as N seções do report disputavam o
+  // mesmo saldo lido do cache.
+  const reservationId = await reserveTurn(resolved, MAX_TOKENS);
   const stream = await streamTurn([{ role: "user", content: prompt }], {
     tools: false,
     model: resolved,
@@ -23,15 +26,11 @@ async function generateOnce(prompt: string, model?: string): Promise<string> {
     cacheReadTokens: u.cache_read_input_tokens ?? 0,
     cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
   };
-  const costUsd = costOfTurn(resolved, usage);
-  try {
-    await prisma.usageLog.create({ data: { model: resolved, ...usage, costUsd } });
-  } catch (e) {
-    const detail = e instanceof Error ? e.message : String(e);
-    console.error(
-      `[Nero] FALHA AO PERSISTIR UsageLog (geração de report) — model=${resolved} custo=$${costUsd.toFixed(4)} :: ${detail}`,
-    );
-  }
+  // Reconcilia a reserva. Antes aqui havia um `create` solto que, além de poder abrir buraco
+  // no orçamento ao falhar, NÃO chamava `invalidateSpendCache()` — o report gerava várias
+  // seções em sequência e cada uma lia um saldo de até 30s atrás, sem ver o custo das
+  // anteriores. `settleTurn` invalida o cache.
+  await settleTurn(reservationId, resolved, usage, costOfTurn(resolved, usage));
 
   return final.content
     .filter((b): b is Extract<typeof b, { type: "text" }> => b.type === "text")

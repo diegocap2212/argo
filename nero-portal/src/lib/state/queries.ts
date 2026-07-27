@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { agingDias } from "./aging";
 import { assetCompleteness } from "@/lib/catalog/completeness";
 import type { Prisma } from "@prisma/client";
+import { personField, redactContext } from "@/lib/nero/redact";
 
 /** Carrega todo o estado vivo do projeto em paralelo (para o dashboard /estado). */
 export async function loadProjectState() {
@@ -274,7 +275,7 @@ export async function buildMemoriaContext(): Promise<string> {
   if (state.stakeholders.length) {
     L.push("| Nome | Papel | Lado | Responsabilidade |", "|---|---|---|---|");
     for (const s of state.stakeholders) {
-      L.push(`| ${s.nome ?? "—"} | ${s.papel} | ${s.lado ?? "—"} | ${s.responsabilidade ?? "—"} |`);
+      L.push(`| ${personField(s.nome)} | ${s.papel} | ${s.lado ?? "—"} | ${s.responsabilidade ?? "—"} |`);
     }
   } else L.push("_(vazio)_");
 
@@ -283,7 +284,7 @@ export async function buildMemoriaContext(): Promise<string> {
   if (state.decisions.length) {
     for (const d of state.decisions) {
       const data = d.data.toISOString().slice(0, 10);
-      L.push(`- ${data} — ${d.decisao}${d.porque ? ` (${d.porque})` : ""}${d.quem ? ` — ${d.quem}` : ""}`);
+      L.push(`- ${data} — ${d.decisao}${d.porque ? ` (${d.porque})` : ""}${d.quem ? ` — ${personField(d.quem)}` : ""}`);
     }
   } else L.push("_(nenhuma decisão registrada)_");
 
@@ -318,7 +319,7 @@ export async function buildMemoriaContext(): Promise<string> {
     L.push("| # | Risco/Blocker | Epic | Sev | Mitigação | Dono |", "|---|---|---|---|---|---|");
     for (const r of riscosAtivos) {
       const epic = r.featureId ? featureCodeById.get(r.featureId) ?? "—" : "(fase)";
-      L.push(`| ${r.codigo} | ${r.descricao} | ${epic} | ${r.severidade} | ${r.mitigacao ?? "—"} | ${r.dono ?? "—"} |`);
+      L.push(`| ${r.codigo} | ${r.descricao} | ${epic} | ${r.severidade} | ${r.mitigacao ?? "—"} | ${personField(r.dono)} |`);
     }
   } else L.push("_(nenhum risco ativo)_");
 
@@ -386,5 +387,9 @@ export async function buildMemoriaContext(): Promise<string> {
       "template como verdade.",
   );
 
-  return L.join("\n");
+  // Última barreira de PII: identificadores estruturados (e-mail, CPF, CNPJ, telefone) que
+  // entraram por TEXTO LIVRE — descrição de risco, proveniência, trecho de documento — saem
+  // aqui. Os campos que o schema declara como pessoa já foram pseudonimizados acima, campo a
+  // campo. Ver lib/nero/redact.ts, que também explica o que este piso NÃO cobre.
+  return redactContext(L.join("\n"));
 }

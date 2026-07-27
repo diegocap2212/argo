@@ -1,6 +1,7 @@
 import type { DashboardItem } from '../types/jira';
 import type { PerformancePeriod, TeamPerformanceSnapshot } from './types';
 import { isDiscardedStatus } from './discard';
+import { makeInPeriod } from './period';
 
 const DAY_MS = 86_400_000;
 
@@ -44,12 +45,21 @@ export function computeTeamPerformance(
   const end = parseDate(options.period.end);
   if (!start || !end || end < start) throw new Error('Período de performance inválido.');
 
-  // Períodos chegam como datas ISO; manter o fechamento em UTC evita perder o
-  // último dia em fusos negativos (por exemplo, America/Sao_Paulo).
-  end.setUTCHours(23, 59, 59, 999);
+  // `period.end` é EXCLUSIVO e usado como veio. Este cálculo NÃO estende o limite.
+  //
+  // Antes havia `end.setUTCHours(23, 59, 59, 999)` aqui, com `isInPeriod` fechado nas duas
+  // pontas. Como o `end` do período anterior coincide com o `start` do atual, esticar o fim
+  // DENTRO do cálculo fazia o dia da fronteira cair nos dois períodos — inflando o delta
+  // "vs. período anterior", que é o número que a home usa para dizer se o time melhorou.
+  //
+  // Quem decide "até onde vai o período" é o CHAMADOR, que é quem sabe a intenção: o hook
+  // passa `endOfDayExclusiveUTC(now)` para incluir o dia corrente inteiro (o CLAUDE.md exige
+  // o fechamento em UTC para não perder datas em fuso negativo). Esticar aqui e ali ao mesmo
+  // tempo era a contagem dupla. Ver src/performance/period.ts.
+  const endExclusive = end;
   const now = options.now ?? new Date();
   const agingThreshold = new Date(now.getTime() - (options.agingDays ?? 15) * DAY_MS);
-  const isInPeriod = (date: Date | null) => date !== null && date >= start && date <= end;
+  const isInPeriod = makeInPeriod(start, endExclusive);
   const isDiscarded = (item: DashboardItem) => isDiscardedStatus(item.Status);
 
   const delivered = items.filter(item =>
@@ -60,7 +70,10 @@ export function computeTeamPerformance(
   const activeAtEnd = items.filter(item => {
     const created = parseDate(item.Created);
     const resolved = parseDate(item.Resolved);
-    return created !== null && created <= end && (!resolved || resolved > end);
+    // "Aberto no FIM do período", com o mesmo limite exclusivo do resto do cálculo: criado
+    // antes do corte e não resolvido antes dele. Usar o `end` cru aqui e `endExclusive` no
+    // `isInPeriod` faria WIP e vazão responderem a cortes diferentes no mesmo snapshot.
+    return created !== null && created < endExclusive && (!resolved || resolved >= endExclusive);
   });
   const wipItems = activeAtEnd.filter(item => item.StatusCategory === 'IN_PROGRESS');
 

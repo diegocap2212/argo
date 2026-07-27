@@ -1,0 +1,39 @@
+# Configuração do gitleaks (secret scanning no CI).
+#
+# Estende as regras padrão e adiciona UMA allowlist — a mínima necessária para o job ser útil.
+#
+# POR QUE UMA ALLOWLIST EXISTE: a migration `20260712190000_anchor_sync_cron.sql` contém a
+# anon key do projeto Supabase, hardcoded no `Authorization: Bearer` do job de pg_cron. Ela
+# está no HISTÓRICO do git, que é imutável — sem allowlist, este job ficaria vermelho em toda
+# execução, para sempre. E job permanentemente vermelho não é controle: é o treinamento para
+# ignorar o vermelho, o que custa o próximo achado de verdade.
+#
+# ISTO NÃO É "ignorar o problema". O problema real daquele achado (P0.1 do review de
+# 2026-07-27) era a anon key ser GATILHO de escrita privilegiada: a Edge Function não fazia
+# autorização nenhuma e gravava com `service_role`. Isso foi corrigido — `sync-anchors` virou
+# `sync-anchors-user` (JWT + RPC `can_sync_anchors`) e `sync-anchors-cron` (secret do Vault).
+# A chave em si é PÚBLICA por design (vai no bundle do browser; a proteção é RLS).
+#
+# A rotação dela segue registrada como pendência em SECRETS.md (linha 7 da tabela), com a
+# ressalva de que é higiene, não contenção.
+#
+# ⚠️ A allowlist é por CAMINHO e restrita a esse arquivo. Qualquer outro arquivo — inclusive
+# migration nova — continua sendo verificado. Não amplie isto para `supabase/migrations/.*`.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "generic-api-key"
+[rules.allowlist]
+paths = [
+  '''maturitymodel/supabase/migrations/20260712190000_anchor_sync_cron\.sql''',
+]
+
+[allowlist]
+description = "Achado conhecido e documentado: anon key (pública) na migration do cron antigo."
+paths = [
+  '''maturitymodel/supabase/migrations/20260712190000_anchor_sync_cron\.sql''',
+  # Lockfile: hashes de integridade (`sha512-...`) disparam detector de segredo genérico.
+  '''pnpm-lock\.yaml''',
+]

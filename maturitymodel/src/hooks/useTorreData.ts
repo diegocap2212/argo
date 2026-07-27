@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { devWarn } from "@/lib/utils";
+import { classifyQueryError } from "@/lib/query-error";
 
 const LOCAVIA_TEAM_BY_NAME: Record<string, string> = {
   gol: "GOL",
@@ -55,7 +55,10 @@ export function useVisibleTeams() {
     queryFn: async (): Promise<TorreTeam[]> => {
       const { data, error } = await supabase.from("teams").select("id, name, tower, status").order("name");
       if (error) {
-        devWarn("useVisibleTeams:", error.message);
+        // Classifica em vez de engolir: recurso ausente/permissão devolvem vazio (com log
+        // que SOBREVIVE em produção); qualquer outra falha é lançada para a tela poder dizer
+        // "não consegui carregar" em vez de "nada aqui". Ver lib/query-error.ts.
+        classifyQueryError("useVisibleTeams", error);
         return [];
       }
       return data ?? [];

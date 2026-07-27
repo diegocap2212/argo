@@ -7,7 +7,33 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    # Agrupado (2026-07-27): 10 PRs por semana vira PR ignorado, que rende menos que 2 PRs
+    # revisados. Atualização de SEGURANÇA fica fora do agrupamento por padrão do Dependabot,
+    # que é o desejado — ela precisa ser vista isolada.
+    groups:
+      producao:
+        applies-to: version-updates
+        dependency-type: production
+        update-types: [minor, patch]
+      desenvolvimento:
+        applies-to: version-updates
+        dependency-type: development
+        update-types: [minor, patch]
+    ignore:
+      # React 18 → 19 no maturitymodel é MIGRAÇÃO, não bump: radix, react-day-picker@8 e
+      # react-router@6 precisam de QA com a aplicação rodando. Hoje é o único app do monorepo
+      # ainda em 18, e a colisão de tipos com os apps em 19 é contornada por `paths` em
+      # maturitymodel/tsconfig.app.json. Quando for feito, é decisão deliberada — não um PR
+      # automático que ninguém pediu.
+      - dependency-name: react
+        update-types: [version-update:semver-major]
+      - dependency-name: react-dom
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/react"
+        update-types: [version-update:semver-major]
+      - dependency-name: "@types/react-dom"
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

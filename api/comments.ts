@@ -167,7 +167,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
     res.status(405).json({ error: 'Method not allowed' });
   } catch (error) {
-    console.error('Redis API Error:', error);
-    res.status(500).json({ error: 'Internal Server Error', details: error instanceof Error ? error.message : String(error) });
+    // `details` com a mensagem crua do Upstash vazava host, nome do hash e trecho do comando
+    // para qualquer cliente autenticado. O detalhe vai para o log com uma referência curta,
+    // que é o que liga o relato do usuário à linha do `vercel logs`.
+    const ref = Math.random().toString(36).slice(2, 10);
+    console.error(`Redis API Error (ref=${ref}):`, error);
+    res.status(500).json({ error: 'Erro interno ao acessar os comentários.', ref });
   }
 }

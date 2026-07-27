@@ -7,16 +7,18 @@
   "packageManager": "pnpm@11.17.0",
   "scripts": {
     "build:portal": "node scripts/build-portal.mjs",
-    "lint": "pnpm -r --if-present lint",
-    "typecheck": "pnpm -r --if-present typecheck",
-    "test:portal": "playwright test"
+    "lint": "corepack pnpm -r --if-present lint",
+    "typecheck": "tsc -p tsconfig.json --noEmit && corepack pnpm -r --if-present typecheck",
+    "test:portal": "playwright test",
+    "verify": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm --filter @neo/auth test && corepack pnpm --filter locavia-dashboard test:performance && corepack pnpm --filter locavia-dashboard test:sync && corepack pnpm --filter maturitymodel test:journey && corepack pnpm --filter maturitymodel test:anchors && corepack pnpm --filter maturitymodel test:migrations && corepack pnpm --filter maturitymodel test:rls-local && corepack pnpm --filter nero-portal test:core"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",
     "@vercel/blob": "^2.4.1"
   },
   "devDependencies": {
-    "typescript": "~5.9.3",
-    "@playwright/test": "^1.58.0"
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^24.13.3",
+    "typescript": "~5.9.3"
   }
 }

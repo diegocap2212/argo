@@ -6,9 +6,20 @@ on:
   # GITHUB_DISPATCH_TOKEN não existem no Vercel (neo-lm), então o endpoint respondia
   # 401 e o workflow nunca disparava. O schedule nativo é best-effort (pode atrasar/
   # pular sob carga), mas não depende de infra externa e usa os secrets do próprio repo.
+  #
+  # `/api/trigger-sync` e `/api/refresh` foram REMOVIDOS em 2026-07-27 (superfície morta:
+  # nada os chamava e nunca estiveram ativos). Este cron é o único gatilho do sync.
   schedule:
     - cron: '*/30 * * * *' # a cada 30 min
-  workflow_dispatch: # disparo manual (e via /api/trigger-sync, se for reativado)
+  workflow_dispatch: # disparo manual
+
+# Duas execuções deste job competem pelo MESMO push em `main`. Sem isto, a segunda falha no
+# push (ou sobrescreve) quando a primeira ainda não terminou. `cancel-in-progress: false`
+# porque abortar no meio de um sync que já gravou no Blob deixa Blob e git divergentes:
+# a execução nova espera a anterior terminar.
+concurrency:
+  group: hourly-sync
+  cancel-in-progress: false
 
 jobs:
   sync:
@@ -17,9 +28,7 @@ jobs:
       contents: write # Important for pushing data.json back
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Clear Node 20 deprecation warnings
-    defaults:
-      run:
-        working-directory: locavia-dashboard # monorepo: o Dash vive nesta subpasta
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
@@ -27,15 +36,21 @@ jobs:
           fetch-depth: 0 # Full history for pushing
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # pnpm por COREPACK (lê `packageManager` da raiz), igual ao ci.yml. Antes este job
+      # rodava `npm ci` com `cache-dependency-path: locavia-dashboard/package-lock.json` —
+      # arquivo REMOVIDO na migração para pnpm workspaces (commit c5393c2). O job continuava
+      # verde, então a falha nunca apareceu; o que ele NÃO fazia era instalar a partir de um
+      # lockfile. Num job que carrega JIRA_API_TOKEN, BLOB_READ_WRITE_TOKEN e `contents:
+      # write` em main, install não reproduzível é risco de supply chain, não detalhe.
+      - run: corepack enable
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: '22' # Latest LTS
-          cache: 'npm'
-          cache-dependency-path: locavia-dashboard/package-lock.json
+          node-version: 24 # paridade com o runtime dos projetos Vercel (24.x), igual ao ci.yml
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Pre-sync Health Check
         run: |
@@ -54,10 +69,11 @@ jobs:
           BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
         run: |
           # sync:jira valida (zod) e grava o dataset no Blob; falha não-zero aborta o job.
-          npm run sync:jira
-          npm run sync:sfmkt
+          # Roda da RAIZ via filtro de workspace (não há mais install por app).
+          pnpm --filter locavia-dashboard sync:jira
+          pnpm --filter locavia-dashboard sync:sfmkt
 
-          SFMKT_SIZE=$(wc -c < sfmkt_data.json)
+          SFMKT_SIZE=$(wc -c < locavia-dashboard/sfmkt_data.json)
           echo "Tamanho do sfmkt_data.json: $SFMKT_SIZE bytes"
           if [ "$SFMKT_SIZE" -lt 1000 ]; then
             echo "❌ ERRO: sfmkt_data.json é muito pequeno ($SFMKT_SIZE bytes). Sincronização SFMKT possivelmente falhou."
@@ -68,12 +84,19 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          # data.json NÃO é mais commitado (vive no Blob). Só metadados (timestamp) + SFMKT.
-          git add sfmkt_data.json src/data-meta.json
+          # data.json NÃO é mais commitado (vive no Blob). Só metadados (timestamp) + SFMKT +
+          # o baseline do contrato de dados (contagem e lista de times do último sync BOM, que
+          # é o que permite detectar "o volume despencou" e "um time desapareceu" — sem ele as
+          # regras comparativas ficam de fora e a queda passa por trimestre fraco).
+          git add locavia-dashboard/sfmkt_data.json locavia-dashboard/src/data-meta.json \
+                  locavia-dashboard/src/data-baseline.json
 
           if git diff --quiet && git diff --staged --quiet; then
             echo "Sem alterações. Ignorando commit."
           else
             git commit -m "chore: automated hourly sync (meta + sfmkt)"
+            # `main` também recebe commits de pessoas. Sem o rebase, o push falha sempre que
+            # alguém commitou desde o checkout deste job.
+            git pull --rebase origin main
             git push origin main
           fi

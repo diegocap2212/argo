@@ -19,7 +19,19 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use((req, res, next) => {
             if (req.method === 'GET' && req.url === '/api/data') {
               res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ items: localDataset, syncedAt: localMeta?.syncedAt ?? null }))
+              // Espelha o contrato do /api/data de produção (source/stale/count/hash), senão
+              // o dev não exercita o aviso de dado congelado. Aqui é SEMPRE fallback: o dado
+              // vem do src/data.json do disco, não do Blob. O `syncedAt` do data-meta.json é
+              // o heartbeat do último sync e é exposto como tal, nunca como data destes itens.
+              res.end(JSON.stringify({
+                items: localDataset,
+                syncedAt: null,
+                source: 'fallback',
+                stale: true,
+                count: localDataset?.length ?? 0,
+                hash: null,
+                devHeartbeatAt: localMeta?.syncedAt ?? null,
+              }))
               return
             }
             next()

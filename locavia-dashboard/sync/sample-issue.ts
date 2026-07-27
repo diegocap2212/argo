@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readSearchResponse } from './jira-json';
 
 async function sample() {
   const baseUrl = process.env.JIRA_BASE_URL;
@@ -14,7 +15,7 @@ async function sample() {
   const url = `${baseUrl}/rest/api/3/search/jql?jql=${jql}&maxResults=1&fields=*all`;
 
   const res = await fetch(url, { headers: { 'Authorization': authHeader, 'Accept': 'application/json' }});
-  const data = await res.json();
+  const data = await readSearchResponse(res);
   if (data.issues && data.issues.length > 0) {
       const i = data.issues[0];
       console.log("Issue:", i.key);

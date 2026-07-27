@@ -54,6 +54,14 @@ jobs:
       - name: Testes de performance do Dash (lógica pura)
         run: pnpm --filter locavia-dashboard test:performance
 
+      # Invariantes da FRONTEIRA do dado: `Resolved` só vem de `resolutiondate` do Jira,
+      # lead time negativo não vira duração positiva, e a vazão do snapshot bate com a da
+      # tendência semanal. Existia um fallback `Resolved = UpdatedAt` que inventava a data de
+      # entrega E zerava a própria flag de higiene que deveria denunciá-lo — nenhum teste de
+      # snapshot pegava, porque tudo continuava "passando".
+      - name: Invariantes do sync do Dash (data de entrega não é inventada)
+        run: pnpm --filter locavia-dashboard test:sync
+
       # Guarda a máquina de estados do ciclo, escrita duas vezes por imposição de runtime
       # (CYCLE_TRANSITIONS no TS × trigger cycle_transition_guard no Postgres). Divergir ali
       # faz a UI oferecer caminho que o banco recusa — e já custou um bug: `pre_session`
@@ -61,6 +69,13 @@ jobs:
       # Lê o SQL como texto: não precisa de banco, roda em qualquer runner.
       - name: Contrato da jornada do MMA (TS × SQL)
         run: pnpm --filter maturitymodel test:journey
+
+      # Fórmulas das âncoras (normalização de issue do Jira). Nunca tiveram teste porque a
+      # lógica vivia dentro da Edge Function, que lê `Deno.env` na carga do módulo — importar
+      # quebrava. A métrica "sprint injetada" inferia adição comparando o COMPRIMENTO de duas
+      # strings, e um número errado numa âncora tem a mesma cara de um número certo.
+      - name: Fórmulas das âncoras do MMA (lógica pura)
+        run: pnpm --filter maturitymodel test:anchors
 
       # As 51 migrations do MMA aplicadas num Postgres limpo (PGlite/WASM — sem Docker, sem
       # nuvem, sem credencial). Responde "esta migration roda?" antes de tocar em banco real.
@@ -137,3 +152,111 @@ jobs:
         run: pnpm --filter locavia-dashboard exec playwright test --project=chromium
         env:
           VITE_API_TARGET: ''
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # SEGURANÇA DA CADEIA E DO CÓDIGO
+  #
+  # O review de 2026-07-27 (§9) listou como lacunas: sem SAST, sem secret scanning, sem
+  # SCA/SBOM, sem Dependabot. E registrou que não conseguiu consultar CVEs — o ambiente
+  # bloqueou o envio da árvore de dependências ao registry. Enquanto isso, o log do
+  # `hourly-sync` reportava **8 vulnerabilidades (7 high)** a cada execução, num job que
+  # carrega JIRA_API_TOKEN, BLOB_READ_WRITE_TOKEN e `contents: write` em main. O dado existia;
+  # ninguém estava olhando.
+  #
+  # Jobs SEPARADOS do `checks` de propósito: falha de auditoria de dependência não deve
+  # bloquear o merge de uma correção de bug, mas tem de ser visível. `continue-on-error` onde
+  # a decisão é humana; falha real onde é objetiva (segredo commitado).
+  # ══════════════════════════════════════════════════════════════════════════
+
+  seguranca:
+    name: SAST, segredos e dependências
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload do SARIF para a aba Security
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+        with:
+          # gitleaks precisa do histórico: segredo commitado e removido depois continua no
+          # histórico, e é exatamente o caso do repo (ver a anon key na migration do cron).
+          fetch-depth: 0
+
+      # ── Secret scanning ──
+      # Falha o job de verdade: segredo em commit é objetivo, não opinião.
+      #
+      # `.gitleaks.toml` na raiz tem UMA allowlist, por caminho: a anon key (pública) na
+      # migration do cron antigo, que está no histórico imutável. Sem ela este job ficaria
+      # vermelho para sempre, e vermelho permanente é o treinamento para ignorar o vermelho.
+      # Ver o arquivo — ele explica por que aquilo deixou de ser risco.
+      - name: gitleaks (segredos no código e no histórico)
+        uses: gitleaks/gitleaks-action@83373cf2f8c4db6e24b41c1a9b086bb9619e9cd3 # v2.3.7 — pinned por SHA
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # ── SCA: vulnerabilidades conhecidas nas dependências ──
+      # `continue-on-error`: um CVE novo em dependência transitiva aparece do nada e não pode
+      # travar o merge de uma correção urgente. O resumo vai para o Job Summary, que fica
+      # visível no PR sem exigir que alguém abra o log.
+      - name: pnpm audit (SCA)
+        id: audit
+        continue-on-error: true
+        run: |
+          echo '## Auditoria de dependências (`pnpm audit`)' >> "$GITHUB_STEP_SUMMARY"
+          echo '' >> "$GITHUB_STEP_SUMMARY"
+          if pnpm audit --audit-level=high --json > audit.json 2>/dev/null; then
+            echo '✅ Nenhuma vulnerabilidade high/critical.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo '⚠️ Vulnerabilidades high/critical encontradas:' >> "$GITHUB_STEP_SUMMARY"
+            echo '' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            pnpm audit --audit-level=high 2>&1 | head -60 >> "$GITHUB_STEP_SUMMARY" || true
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # ── SBOM ──
+      # Inventário do que de fato foi instalado. Serve para responder "estamos expostos a X?"
+      # sem ter que reproduzir o ambiente — e é o que faltava quando o review não conseguiu
+      # consultar CVEs.
+      - name: SBOM (CycloneDX)
+        continue-on-error: true
+        run: pnpm dlx @cyclonedx/cyclonedx-npm@latest --output-file sbom.json --output-format json || true
+
+      - name: Publica SBOM e auditoria como artefato
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 — pinned por SHA
+        with:
+          name: sbom-e-auditoria
+          path: |
+            sbom.json
+            audit.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  codeql:
+    name: SAST (CodeQL)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA
+      - name: Inicializa CodeQL
+        uses: github/codeql-action/init@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4 — pinned por SHA
+        with:
+          languages: javascript-typescript
+          # `security-and-quality` inclui as regras de qualidade além das de segurança. Vale a
+          # pena aqui: boa parte dos achados do review era invariante mal expressa, não CVE.
+          queries: security-and-quality
+      - name: Analisa
+        uses: github/codeql-action/analyze@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4 — pinned por SHA
+        with:
+          category: /language:javascript-typescript

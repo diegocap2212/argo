@@ -4,7 +4,9 @@
 // congelado (último commitado) caso o blob falhe/ainda não exista.
 import { get } from '@vercel/blob';
 import fallbackData from '../locavia-dashboard/src/data.json' with { type: 'json' };
-import fallbackMeta from '../locavia-dashboard/src/data-meta.json' with { type: 'json' };
+// `data-meta.json` NÃO é importado aqui de propósito. Ele é o heartbeat do último sync
+// (commitado a cada 30 min) e era usado como `syncedAt` do fallback — o que rotulava o
+// snapshot congelado de `data.json` como dado de hoje. Ver `getDataset()`.
 
 const BLOB_PATHNAME = 'jira-data.json';
 
@@ -51,7 +53,28 @@ async function isAuthed(req: ApiRequest): Promise<boolean> {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Dataset { items: unknown[]; syncedAt: string | null }
+/**
+ * Contrato de resposta do dataset.
+ *
+ * `source`/`stale` existem porque o fallback MENTIA. `src/data.json` é um array puro, SEM
+ * timestamp próprio; `src/data-meta.json` é commitado pelo workflow a cada 30 min. O
+ * fallback combinava os dois — itens congelados + `syncedAt` de hoje — e o ETag também
+ * dizia "fresco". Não era um risco eventual: sempre que o Blob falhava, a API afirmava que
+ * dado velho era atual, e o cliente não tinha como saber.
+ *
+ * Agora `syncedAt` descreve o dataset REALMENTE servido e é `null` quando desconhecido.
+ */
+interface Dataset {
+  items: unknown[];
+  /** Do próprio dataset servido. `null` = desconhecido (nunca emprestado de outra fonte). */
+  syncedAt: string | null;
+  source: 'blob' | 'fallback';
+  /** `true` quando não é o dataset publicado pelo sync. A UI deve avisar. */
+  stale: boolean;
+  count: number;
+  /** Impressão digital do conteúdo, gravada pelo sync. `null` em blob legado/fallback. */
+  hash: string | null;
+}
 
 async function loadFromBlob(): Promise<Dataset | null> {
   try {
@@ -59,8 +82,20 @@ async function loadFromBlob(): Promise<Dataset | null> {
     if (!res || res.statusCode !== 200) return null;
     const text = await new Response(res.stream).text();
     const parsed = JSON.parse(text);
-    if (Array.isArray(parsed?.items)) return { items: parsed.items, syncedAt: parsed.syncedAt ?? null };
-    if (Array.isArray(parsed)) return { items: parsed, syncedAt: null };
+    if (Array.isArray(parsed?.items)) {
+      return {
+        items: parsed.items,
+        syncedAt: parsed.syncedAt ?? null,
+        source: 'blob',
+        stale: false,
+        count: typeof parsed.count === 'number' ? parsed.count : parsed.items.length,
+        hash: typeof parsed.hash === 'string' ? parsed.hash : null,
+      };
+    }
+    // Blob legado: array puro, sem envelope.
+    if (Array.isArray(parsed)) {
+      return { items: parsed, syncedAt: null, source: 'blob', stale: false, count: parsed.length, hash: null };
+    }
     return null;
   } catch (e) {
     console.error('Blob read falhou, usando fallback:', e);
@@ -80,7 +115,15 @@ async function getDataset(): Promise<Dataset> {
   const blob = await loadFromBlob();
   const dataset: Dataset = blob ?? {
     items: fallbackData as unknown[],
-    syncedAt: (fallbackMeta as { syncedAt?: string }).syncedAt ?? null,
+    // NUNCA `fallbackMeta.syncedAt`. Aquele timestamp é o heartbeat do ÚLTIMO SYNC, não a
+    // data destes itens — o workflow commita `data-meta.json` a cada 30 min e não commita
+    // `data.json`. Emprestá-lo aqui era exatamente a mentira: dado congelado com data de
+    // hoje. `null` diz a verdade: não sabemos quando este snapshot foi gerado.
+    syncedAt: null,
+    source: 'fallback',
+    stale: true,
+    count: (fallbackData as unknown[]).length,
+    hash: null,
   };
   cached = { dataset, at: now };
   return dataset;
@@ -97,7 +140,10 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
 
   const dataset = await getDataset();
 
-  const etag = `W/"data-${dataset.syncedAt || 'fallback'}-${dataset.items.length}"`;
+  // ETag deriva de source+hash+count+syncedAt, nesta ordem. Antes era só
+  // `syncedAt`-`length`, e como o fallback herdava o syncedAt do heartbeat, dado velho e
+  // dado novo podiam gerar o MESMO ETag — o browser servia stale indefinidamente.
+  const etag = `W/"data-${dataset.source}-${dataset.hash ?? 'nohash'}-${dataset.count}-${dataset.syncedAt ?? 'unknown'}"`;
   // O dataset só muda quando o sync roda (≤30 min). Um max-age curto deixa o browser
   // reusar entre navegações/reloads sem round-trip; o ETag cobre a revalidação após expirar.
   res.setHeader('Cache-Control', 'private, max-age=300, stale-while-revalidate=900');

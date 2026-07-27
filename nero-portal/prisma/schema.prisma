@@ -1,6 +1,19 @@
 // Estado vivo do projeto (o "01_MEMORIA" como dados estruturados).
 // Postgres (Neon, integração com a Vercel) — ver datasource abaixo. Sem enums
 // (legado da fase SQLite) — usamos String + tipos em TS.
+//
+// ⚠️ CONSTRAINTS DE DOMÍNIO VIVEM NA MIGRATION, NÃO AQUI.
+// Os campos comentados como "a | b | c" abaixo (status, rag, severidade, statusVerdade,
+// operation, nivelAtual...) eram PROMESSA de TypeScript sobre coluna `text` livre: o banco
+// aceitava qualquer string. O review de 2026-07-27 (§7.7) contou 113 campos `String` e 0 enums.
+//
+// O Prisma não expressa CHECK no schema, então eles são criados em SQL na migration
+// `20260727170000_domain_constraints`. Estão como `NOT VALID` de propósito — a constraint vale
+// para toda escrita NOVA sem travar o deploy em cima de dado legado. Depois de limpar o que
+// estiver fora do domínio, rodar o `VALIDATE CONSTRAINT` listado no fim daquela migration.
+//
+// Consequência prática: `prisma migrate dev` pode reportar drift por não conhecer os CHECKs.
+// É esperado. Não remova as constraints para "resolver" o drift.
 
 generator client {
   provider = "prisma-client-js"
@@ -18,7 +31,7 @@ datasource db {
 /// statusVerdade carrega a distinção teoria × realidade.
 model StackItem {
   id            String   @id @default(cuid())
-  item          String
+  item          String   @unique // chave natural do upsert em setStackItem
   resposta      String?
   statusVerdade String   @default("lacuna") // template | assumido | confirmado | lacuna
   proveniencia  String? // fonte / quem confirmou / quando (texto livre)
@@ -31,7 +44,7 @@ model StackItem {
 /// (não armazenado) a partir de solicitadoEm — ver src/lib/state/aging.ts.
 model Dependency {
   id             String    @id @default(cuid())
-  codigo         String // D1, D2, ...
+  codigo         String    @unique // D1, D2, ... (unique: upsert idempotente, ver mutations.ts)
   descricao      String
   solicitadoEm   DateTime?
   status         String    @default("aguardando") // aguardando | recebido | cancelado
@@ -58,7 +71,7 @@ model Decision {
 /// Riscos & blockers (seção 8 do 01).
 model Risk {
   id         String   @id @default(cuid())
-  codigo     String
+  codigo     String   @unique // R1, R2, ... (unique: upsert idempotente)
   descricao  String
   severidade String   @default("Média") // Alta | Média | Baixa
   mitigacao  String?
@@ -73,7 +86,7 @@ model Risk {
 /// Estado por fase / epic (seção 6 do 01). Nós macro do roadmap.
 model PhaseStatus {
   id         String    @id @default(cuid())
-  fase       String
+  fase       String    @unique // chave natural do upsert em setPhase
   slug       String? // ex.: "fase-0" (rota do roadmap)
   gate       String? // ex.: "G0"
   janela     String? // ex.: "Semanas 1–2"
@@ -89,7 +102,7 @@ model PhaseStatus {
 /// Features do roadmap (micro) — derivadas do kit 03 (F*.*). % vem do checklist.
 model Feature {
   id             String          @id @default(cuid())
-  codigo         String // ex.: "F0.1"
+  codigo         String          @unique // ex.: "F0.1" (unique: upsert idempotente)
   titulo         String
   descricao      String?
   status         String          @default("nao_iniciada") // nao_iniciada | em_andamento | concluida | bloqueada
@@ -158,9 +171,18 @@ model UsageLog {
   cacheReadTokens Int      @default(0)
   cacheWriteTokens Int     @default(0)
   costUsd         Float    @default(0)
+  /// true = RESERVA (custo máximo estimado do turno, gravada ANTES da chamada); false =
+  /// consumo real reconciliado depois. A reserva existe porque o freio era só uma leitura:
+  /// requisições concorrentes liam o mesmo saldo e passavam todas juntas. Gravar antes torna
+  /// o gasto visível para os outros leitores no mesmo instante.
+  estimated       Boolean  @default(false)
+  /// QUEM gastou. Sem isto não existe teto por pessoa: o orçamento era só global, então uma
+  /// única pessoa podia consumir o mês inteiro do time. Null em geração sem request (script).
+  actorEmail      String?
   createdAt       DateTime @default(now())
 
   @@index([createdAt])
+  @@index([actorEmail, createdAt])
 }
 
 /// Report quinzenal persistido (kit 04): snapshot congelado das seções
@@ -274,8 +296,14 @@ model StateVersion {
   operation String // create | update | delete
   before    String? // snapshot JSON anterior
   after     String? // snapshot JSON posterior
-  actor     String   @default("nero") // nero | analista
+  actor     String   @default("nero") // TIPO de ator: nero | analista
+  /// QUEM: e-mail do operador, do cookie NEO validado pelo proxy. Null em escrita sem
+  /// request (seed, script) ou em sessão antiga sem e-mail no payload. `actor` sozinho não
+  /// distinguia duas pessoas — a trilha dizia "analista" e nada mais.
+  actorEmail String?
   resumo    String? // 1 linha legível do que mudou
   desfeito  Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  @@index([entity, entityId, createdAt])
 }

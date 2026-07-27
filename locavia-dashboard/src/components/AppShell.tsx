@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Building2, Car, FileCode2, Home, LayoutGrid, LogOut, Users } from 'lucide-react';
+import { AlertTriangle, Building2, Car, FileCode2, Home, LayoutGrid, LogOut, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { SM_CONFIGS } from '../config/sm-config';
 import { deriveTeams } from '../config/teams';
 import { teamLabel } from '../config/teamLabels';
 import { logout, redirectToHub } from '../services/authService';
-import { fetchData } from '../services/dataService';
+import { fetchData, getDatasetProvenance } from '../services/dataService';
 import Button from './ui/Button';
 import VeniceBadge from './VeniceBadge';
 
@@ -62,6 +62,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [teams, setTeams] = useState<string[]>([]);
+  const [stale, setStale] = useState(false);
   const activeSm = location.pathname.startsWith('/sm/') ? location.pathname.split('/sm/')[1] : null;
   const activeTeam = location.pathname.startsWith('/time/') ? decodeURIComponent(location.pathname.split('/time/')[1]) : null;
   const embedded = new URLSearchParams(location.search).get('embed') === '1';
@@ -69,7 +70,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (embedded) return;
     let alive = true;
-    fetchData().then(items => { if (alive) setTeams(deriveTeams(items)); }).catch(() => {});
+    fetchData().then(items => {
+      if (!alive) return;
+      setTeams(deriveTeams(items));
+      // Procedência declarada pelo servidor. Quando o Blob falha, o /api/data serve o
+      // snapshot congelado do repositório — antes isso vinha com o timestamp do último sync
+      // e era indistinguível de dado fresco. Agora a tela avisa.
+      setStale(getDatasetProvenance()?.stale === true);
+    }).catch(() => {});
     return () => { alive = false; };
   }, [embedded]);
 
@@ -100,6 +108,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Button variant="secondary" size="sm" onClick={handleLogout} title="Sair" icon={<LogOut size={15} />}>Sair</Button>
         </div>
       </header>
+      {stale && (
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '0.55rem',
+            padding: '0.6rem 1.75rem', fontSize: '0.82rem', lineHeight: 1.35,
+            background: 'var(--warn-surface, #3a2d10)', color: 'var(--warn-text, #f5d68a)',
+            borderBottom: '1px solid var(--warn-border, #5c4718)',
+          }}
+        >
+          <AlertTriangle size={15} aria-hidden="true" style={{ flexShrink: 0 }} />
+          <span>
+            <strong>Dado congelado.</strong> A sincronização não está disponível agora, então
+            estes números vêm do último snapshot versionado — não do sync mais recente. A data
+            de referência é desconhecida; trate como histórico, não como situação atual.
+          </span>
+        </div>
+      )}
       <main style={{ flex: 1, minWidth: 0 }}>{children}</main>
     </div>
   </div>;
