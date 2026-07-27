@@ -40,20 +40,49 @@ export function isScope(value: unknown): value is Scope {
 }
 
 // ── Sessão (inline; ver o aviso acima) ──
-function sign(payload: string, secret: string): string {
-  return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+
+/**
+ * Salt do HKDF — tem de bater EXATAMENTE com @neo/auth e as outras cópias autocontidas.
+ * O teste de contrato (`pnpm --filter @neo/auth test`) falha se divergir.
+ */
+const HKDF_SALT = 'neo-portal/token-subkey/v1';
+
+/**
+ * Propósito por cookie. ESTE arquivo é o que mais precisava da separação: ele LÊ o
+ * `neo_session` (para confirmar a identidade NEO antes de aceitar a senha) e EMITE
+ * `neo_tower`/`neo_nero`. Com um segredo só e verificador que olhava apenas assinatura +
+ * `exp`, o cookie de sessão passava na trava da Torre — o teste de contrato deste repo até
+ * afirmava isso como comportamento esperado.
+ */
+const PURPOSE_BY_COOKIE = {
+  neo_session: 'neo_session',
+  neo_tower: 'tower',
+  neo_nero: 'nero',
+} as const;
+
+type Purpose = (typeof PURPOSE_BY_COOKIE)[keyof typeof PURPOSE_BY_COOKIE];
+
+function subkey(secret: string, purpose: Purpose): Buffer {
+  return Buffer.from(crypto.hkdfSync('sha256', secret, HKDF_SALT, purpose, 32));
 }
 
-export function verifyToken(token: string, secret: string): boolean {
+function sign(payload: string, secret: string, purpose: Purpose): string {
+  return crypto.createHmac('sha256', subkey(secret, purpose)).update(payload).digest('base64url');
+}
+
+/** `purpose` é obrigatório: sem ele, este verificador voltaria a aceitar qualquer token. */
+export function verifyToken(token: string, secret: string, purpose: Purpose): boolean {
   const [payload, sig] = token.split('.');
   if (!payload || !sig) return false;
   const a = Buffer.from(sig);
-  const b = Buffer.from(sign(payload, secret));
+  const b = Buffer.from(sign(payload, secret, purpose));
   if (a.length !== b.length) return false;
   if (!crypto.timingSafeEqual(a, b)) return false;
   try {
-    const { exp } = JSON.parse(Buffer.from(payload, 'base64url').toString());
-    return typeof exp === 'number' && exp > Date.now();
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString());
+    if (typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) return false;
+    // A subchave já isola; conferir o campo mantém as duas camadas concordando.
+    return parsed.purpose === undefined || parsed.purpose === purpose;
   } catch {
     return false;
   }
@@ -189,8 +218,11 @@ async function verifyNeoIdentity(req: ApiRequest, secret: string): Promise<strin
     if (!(await verifyBearer(req))) return null;
     return decodeJwtEmail(auth.slice(7)) ?? '';
   }
+  // Propósito `neo_session` explícito: aqui só vale o cookie de SESSÃO. Um `neo_tower` (que a
+  // própria pessoa obteve digitando a senha da Torre) não pode servir como prova de identidade
+  // NEO para então liberar o Nero.
   const session = parseCookie(req.headers?.cookie, 'neo_session');
-  if (session && verifyToken(session, secret)) {
+  if (session && verifyToken(session, secret, PURPOSE_BY_COOKIE.neo_session)) {
     return payloadOf(session)?.email ?? '';
   }
   return null;
@@ -222,7 +254,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       return;
     }
     const token = parseCookie(req.headers?.cookie, cookie);
-    if (token && verifyToken(token, secret)) {
+    if (token && verifyToken(token, secret, PURPOSE_BY_COOKIE[cookie])) {
       res.status(204).end();
       return;
     }
@@ -276,12 +308,15 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       `[gate:${scope}] acesso concedido: ${email || 'e-mail desconhecido'} em ${new Date().toISOString()}`,
     );
 
-    const payload = Buffer.from(JSON.stringify({ email, exp: Date.now() + TTL_SECONDS * 1000 })).toString(
-      'base64url',
-    );
+    // Emitido com a subchave DO ESCOPO: o cookie da Torre não verifica como sessão nem como
+    // Nero, e vice-versa. `purpose` no payload deixa o motivo legível em log.
+    const purpose = PURPOSE_BY_COOKIE[cookie];
+    const payload = Buffer.from(
+      JSON.stringify({ email, exp: Date.now() + TTL_SECONDS * 1000, purpose }),
+    ).toString('base64url');
     res.setHeader(
       'Set-Cookie',
-      `${cookie}=${payload}.${sign(payload, secret)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`,
+      `${cookie}=${payload}.${sign(payload, secret, purpose)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`,
     );
     res.status(204).end();
     return;
