@@ -323,7 +323,11 @@
 .home-section-heading > div > span { color: #2be86b; font-size: 9px; font-weight: 600; letter-spacing: .15em; text-transform: uppercase; }
 .home-section-heading h2 { margin: 5px 0 0; font: 400 28px/1 var(--font-serif); }
 .home-section-heading > span { color: #849389; font-size: 10px; }
-.home-journey { position: relative; display: grid; grid-template-columns: repeat(4,1fr); padding-top: 5px; }
+/* Colunas derivadas da quantidade de etapas, não cravadas. Era `repeat(4,1fr)`, e quando a
+   jornada ganhou "Pré-sessão" (5 etapas) a quinta quebrava para uma segunda linha,
+   desalinhada sob a primeira. A fonte da verdade é CYCLE_JOURNEY em types/mma.ts; o CSS não
+   deve ter uma segunda opinião sobre quantas etapas existem. */
+.home-journey { position: relative; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding-top: 5px; }
 .home-journey:before { display: none; }
 .home-journey-step { position: relative; min-width: 0; padding-right: 12px; color: #849389; }
 .home-journey-step:not(:last-child):after { content: ""; position: absolute; z-index: 0; top: 21px; left: 44px; right: 10px; height: 1px; background: #b9c0b9; }
@@ -382,7 +386,10 @@
   .home-hero { padding: 42px 0 38px; }
   .home-intro h1 { font-size: 56px; }
   .home-next-action { padding: 23px; }
-  .home-journey { grid-template-columns: 1fr; gap: 0; }
+  /* `grid-auto-flow: row` é OBRIGATÓRIO aqui: o desktop usa `column` para não depender da
+     quantidade de etapas, e sem este reset os passos continuariam lado a lado no celular
+     (o grid criaria colunas implícitas, ignorando o `1fr` explícito). */
+  .home-journey { grid-auto-flow: row; grid-template-columns: 1fr; gap: 0; }
   .home-journey:before { content: ""; position: absolute; display: block; top: 23px; bottom: 25px; left: 21px; width: 1px; height: auto; background: #b9c0b9; }
   .home-journey-step:before,.home-journey-step:after { display: none; }
   .home-journey-step { display: grid; grid-template-columns: 55px 1fr; padding-bottom: 18px; }
