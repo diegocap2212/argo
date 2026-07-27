@@ -7,6 +7,16 @@ e onde estão as **restrições de plataforma que já custaram tempo a alguém**
 - Como rodar e deployar: [`ONBOARDING.md`](ONBOARDING.md)
 - Variáveis e segredos: [`SECRETS.md`](SECRETS.md)
 - Estado operacional corrente: [`HANDOFF.md`](HANDOFF.md)
+- Papéis e jornada do MMA: [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md)
+
+> **Sobre navegar esta documentação em graph (Obsidian).** Os `.md` deste repositório usam
+> **links markdown padrão** de propósito, para renderizarem no GitHub — onde a consultoria vai
+> lê-los. Isso **já é** um vault: abra a pasta `argo/` no Obsidian e o graph aparece, porque ele
+> resolve links markdown normalmente. **Zero mudança no repositório.**
+>
+> Converter para `[[wikilink]]` foi avaliado e recusado em 2026-07-26: quebraria a renderização no
+> GitHub, introduziria uma segunda sintaxe e acrescentaria pouco a ~20 documentos que já têm mapa
+> explícito (este arquivo aponta para os demais).
 
 ---
 

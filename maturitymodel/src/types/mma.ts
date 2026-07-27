@@ -3,7 +3,21 @@
 // ============================================================================
 
 export type AxisKey = "processo" | "produto" | "time";
-export type Role = "team" | "po" | "tl" | "sm" | "am";
+
+/**
+ * Papel DENTRO de um squad (`squad_members.role`). Só dois valores desde 2026-07-26:
+ * `po`/`tl`/`team` foram colapsados em `member` porque não tinham nenhuma consequência
+ * funcional (o voto individual morreu na sessão colaborativa e a sessão é gravada só
+ * pelo facilitador), e `am` virou papel GLOBAL do portal — ver `PortalRole`.
+ */
+export type Role = "sm" | "member";
+
+/**
+ * Papel GLOBAL no portal (`portal_roles.role`), concedido por e-mail pelo admin.
+ * `admin` faz tudo; `am` vê todos os squads e homologa, mas não reseta, não exclui
+ * e não gerencia membros. É o que resolve "não vejo o que preciso homologar".
+ */
+export type PortalRole = "admin" | "am";
 
 export type CycleStatus =
   | "pre_session"   // SM prepara a análise prévia (nota provisória + argumento) antes da sessão
@@ -38,7 +52,8 @@ export interface Dimension {
   name: string;
   description: string;
   narrative: string | null;
-  owner_roles: Role[];
+  /** Conteúdo do MODELO (quem é dono da dimensão: 'sm', 'po', 'tl'…), não permissão. */
+  owner_roles: string[];
   display_order: number;
 }
 
@@ -155,6 +170,10 @@ export interface QuarterComparisonRow extends Omit<CycleScore, "cycle_id" | "dim
 }
 
 // Máquina de estados do ciclo (transições válidas)
+//
+// Espelhada NO BANCO pelo trigger `cycle_transition_guard` (migration 20260726120000),
+// que também define QUEM pode fazer cada transição. Mudar este mapa sem mudar o trigger
+// deixa a UI oferecendo um caminho que o banco recusa — e vice-versa.
 export const CYCLE_TRANSITIONS: Record<CycleStatus, CycleStatus[]> = {
   pre_session:  ["session"],               // SM fecha as 10 pré-avaliações e inicia a sessão
   session:      ["homologation"],          // SM fecha as 10 notas de consenso e envia
@@ -162,3 +181,50 @@ export const CYCLE_TRANSITIONS: Record<CycleStatus, CycleStatus[]> = {
   official:     ["archived"],              // via RPC officialize_cycle apenas
   archived:     [],
 };
+
+/**
+ * A jornada como o usuário a lê, na ordem. Vive aqui — e não na home — porque um passo
+ * ausente aqui não é cosmético: `findIndex` devolve -1 e a etapa exibida fica ERRADA.
+ * Foi o que aconteceu com `pre_session`, que existia no banco desde 24/07 mas não nesta
+ * lista, então um ciclo em pré-sessão aparecia como "Sessão" na home.
+ *
+ * Invariante: todo `CycleStatus` aparece em exatamente um passo. O `satisfies` abaixo não
+ * garante isso sozinho, então o teste da matriz confere a cobertura.
+ */
+export const CYCLE_JOURNEY = [
+  { label: "Pré-sessão",  status: "pre_session",  detail: "Análise prévia do SM" },
+  { label: "Sessão",      status: "session",      detail: "Discussão colaborativa" },
+  { label: "Homologação", status: "homologation", detail: "Revisão do AM" },
+  { label: "Plano",       status: "official",     detail: "Kaizens priorizados" },
+  { label: "Evolução",    status: "archived",     detail: "Resultado do ciclo" },
+] as const satisfies ReadonlyArray<{ label: string; status: CycleStatus; detail: string }>;
+
+/** Ordem canônica dos estados. Derivada da jornada para as duas não poderem divergir. */
+export const CYCLE_ORDER: readonly CycleStatus[] = CYCLE_JOURNEY.map((s) => s.status);
+
+/** Índice do passo na jornada. -1 nunca escapa: status desconhecido cai no primeiro passo. */
+export function journeyStepOf(status: CycleStatus | null | undefined): number {
+  if (!status) return 0;
+  const i = CYCLE_JOURNEY.findIndex((s) => s.status === status);
+  return i === -1 ? 0 : i;
+}
+
+/**
+ * Rota do squad onde a etapa é executada. Único mapa status → tela: a home, a sub-nav e
+ * a trilha do ciclo apontavam para caminhos calculados em três lugares diferentes.
+ * `null` (squad sem ciclo) cai na Jornada, que é onde se inicia o assessment.
+ */
+export function squadRouteFor(teamId: string, status: CycleStatus | null | undefined): string {
+  switch (status) {
+    case "pre_session":
+    case "session":
+      return `/s/${teamId}/sessao`;
+    case "homologation":
+      return `/s/${teamId}/homologacao`;
+    case "official":
+    case "archived":
+      return `/s/${teamId}/plano`;
+    default:
+      return `/s/${teamId}`;
+  }
+}

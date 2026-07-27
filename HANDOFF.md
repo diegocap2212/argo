@@ -4,6 +4,136 @@
 > load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
 > **estado operacional corrente** — histórico e pendências.
 
+## Rodada 2026-07-26 (2ª) — Papéis do MMA + home real — ⏸️ **VERIFICADO EM POSTGRES, NÃO APLICADO**
+
+**Estado: pronto para aplicar.** A migration foi **executada de verdade** contra Postgres
+(PGlite/WASM, sem Docker/nuvem/credencial): 51 migrations aplicam em ordem, a migração de dados foi
+ensaiada e a matriz de papéis roda com **RLS real**.
+
+| Suíte | Resultado |
+|---|---|
+| `test:rls-local` — papéis, jornada e migração de dados com RLS real | **59/59** |
+| `test:migrations` — 51 migrations num Postgres limpo | **Schema OK** (50 aplicadas, 1 pulada: `pg_cron`) |
+| `test:journey` — contrato TS × SQL da jornada | **21/21** |
+| `lint` · `build` · `@neo/auth test` | 0 erros · ok · **77/77** |
+
+**Nada foi aplicado em banco real ainda.** A produção do MMA segue com o modelo de 15/07.
+
+### ⚠️ Bloqueio de credencial (precisa de você)
+
+`SUPABASE_ACCESS_TOKEN` está no ambiente mas devolve **401** na Management API — expirado ou
+revogado. Sem ele não dá para criar branch, ler a `service_role` nem regenerar `types.ts`. Docker
+também não está instalado, então `supabase start` não é alternativa. **Para destravar:** gerar um
+Personal Access Token novo em `supabase.com/dashboard/account/tokens` e exportar como
+`SUPABASE_ACCESS_TOKEN`. Foi por isso que o caminho de verificação virou PGlite — e acabou achando
+três defeitos que o branch teria achado mais tarde e mais caro.
+
+Documento completo do modelo: [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md).
+
+### O que motivou
+
+Relato: *"salesforce vendas já testou, mas não aparece pra mim que preciso homologar."* Diagnóstico:
+**seis causas somadas**, sendo a raiz o **AM ser papel por squad** — quem homologa só via os squads
+em que era membro. Detalhe na PAPEIS.md §1.
+
+### O modelo novo, em uma linha
+
+`portal_roles(email, role in ('admin','am'))` = papel **global**; `squad_members.role in ('sm','member')`
+= vínculo **local**. `po`/`tl`/`team` colapsados em `member` (não tinham consequência funcional: o voto
+individual morreu na sessão colaborativa). AM vê tudo e homologa; **não** reseta, **não** exclui,
+**não** gerencia membros.
+
+### Onde exatamente parou — retomar por aqui
+
+| # | Passo | Estado |
+|---|---|---|
+| 1 | Migration, rollback, front, 4 suítes de teste, docs | ✅ escrito |
+| 2 | Migration **executada** em Postgres limpo (PGlite) | ✅ Schema OK |
+| 3 | **Migração de dados ensaiada**: AM por squad → AM global, contagem confere | ✅ |
+| 4 | Matriz de papéis + jornada ida e volta com **RLS real** | ✅ **59/59** |
+| 5 | `types.ts` (editado à mão) conferido contra o schema real | ✅ asserção no `test:rls-local` |
+| 6 | `lint` · `build` · contrato da jornada · `@neo/auth` | ✅ |
+| 7 | Commitar (25+ arquivos, nada commitado ainda) | ⛔ **pendente** |
+| 8 | **Backup do Supabase de produção** | ⛔ **NÃO FEITO** |
+| 9 | Token novo do Supabase → aplicar em **branch** e conferir a contagem de AMs no dado REAL | ⛔ bloqueado (401) |
+| 10 | `pnpm -C maturitymodel test:rls` contra o branch (Supabase de verdade, com GoTrue) | ⛔ nunca rodou |
+| 11 | Roteiro manual das 4 personas + round trip na UI | ⛔ pendente |
+| 12 | Regenerar `types.ts` do branch e conferir contra a versão à mão | ⛔ pendente |
+| 13 | Preview → promover | ⛔ pendente |
+
+⚠️ **O passo 9 ainda é o que protege as pessoas.** O ensaio em PGlite prova que a *lógica* de
+migração converte todo AM por squad em AM global (`1 → 1` no cenário semeado) e que a migration
+**aborta sozinha** se algum AM não tiver e-mail em `profiles` — testado. O que ele não pode saber é
+**quantos AMs existem em produção**. Conferir no branch:
+`select count(distinct user_id) from squad_members where role='am'` **antes** ×
+`select count(*) from portal_roles where role='am'` **depois**.
+
+⚠️ **O que o PGlite não cobre:** GoTrue (login/OTP), Realtime, Storage, `pg_cron`, e se o estado da
+produção casa com a soma das migrations. Os passos 10 e 11 seguem necessários.
+
+### Arquivos desta rodada
+
+Novos: `maturitymodel/supabase/migrations/20260726120000_portal_roles.sql` ·
+`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` ·
+`maturitymodel/src/hooks/usePortalRole.ts` · `maturitymodel/tests/journey-contract.ts` ·
+`maturitymodel/tests/pg/{supabase-shim,apply-migrations,rls-local}.ts` ·
+`maturitymodel/docs/PAPEIS.md`
+
+**O harness `tests/pg/`** roda Postgres em WASM (PGlite) com uma camada mínima do Supabase
+(`auth.uid()`, `auth.users`, `auth.jwt()`, papéis `anon`/`authenticated`/`service_role`). Serve para
+qualquer trabalho futuro de RLS no MMA: `pnpm -C maturitymodel test:rls-local` exercita policies de
+verdade em ~10s, sem Docker e sem tocar em banco nenhum. Os 4 scripts estão no CI.
+
+Reescritos: `useMySquads.ts` · `useSquadRole.ts` · `useAdminData.ts` · `Inicio.tsx` · `AdminMMA.tsx` ·
+`ProtectedRoute.tsx` (`RequireManager` → **`RequireAdmin`**) · `AppShell.tsx` · `SquadSwitcher.tsx` ·
+`types/mma.ts` · `CycleJourney.tsx` · `tests/rls/rls-matrix.ts` · `ci.yml` · `App.tsx`
+
+Removido: `maturitymodel/src/hooks/useIsPortalAdmin.ts` (substituído por `usePortalRole`).
+
+### 🔒 Vazamento de privacidade achado e corrigido (pré-existente)
+
+A policy legada `profiles."Authenticated users can view all profiles"` (`auth.uid() is not null`)
+sobreviveu à limpeza de 15/07. **Policies somam com OR**, então ela **anulava** a `profiles_read`
+restritiva: qualquer usuário autenticado lia **e-mail e nome de todas as pessoas**. O "diretório
+fechado" registrado como IMPLEMENTADO em `ROLES-REDESIGN.md` nunca esteve fechado.
+
+Também corrigido: `"Admins can update any profile"` dependia de `is_admin()` sobre a tabela **legada**
+`user_roles` (não gerenciada) — uma linha esquecida ali dava poder de editar qualquer perfil. E as 4
+tabelas do Maturity Model antigo tinham `for all to public using (true)`, e `public` inclui **`anon`**:
+escrita com a chave anônima. Tabelas mortas (zero referências em `src/`), permissão fechada.
+
+Três asserções novas impedem a volta, incluindo **nenhuma policy de escrita alcança `public`/`anon`**
+em todo o schema.
+
+### Defeitos pré-existentes corrigidos de passagem
+
+- `restart_assessment` voltava para `'session'`, **pulando a pré-sessão** (que virou o início do ciclo em 24/07).
+- `officialize_cycle` chamado 2× **duplicava os kaizens** — agora a 2ª chamada é recusada.
+- `SquadSwitcher` mapeava status mortos (`voting`/`workshop`/`proposed`) e **não** tinha
+  `pre_session`/`session`: renderizava `undefined` como rótulo nos dois estados reais de hoje.
+
+### Dois erros MEUS que só a execução pegou
+
+- **Ordem do `CHECK` de `squad_members.role`**: o `update ... set role='member'` rodava **antes** de
+  derrubar o CHECK antigo, que não aceita `'member'` — falhava com `23514` e abortava a migration.
+  Eu havia raciocinado sobre o CHECK novo e esquecido que o velho também barra.
+- **`officialize_cycle` reescrito perdeu a geração de kaizens** (a etapa "Plano"), além da checagem de
+  completude e do `homologated_by`. Peguei relendo o original antes de aceitar a própria reescrita.
+
+Os dois viraram asserção. É o argumento a favor do harness em PGlite: revisão de código não pegou
+nenhum dos dois.
+
+### Defeito pré-existente NÃO corrigido (deliberado)
+
+**`pnpm -C maturitymodel typecheck` não checa nada** — `tsconfig.json` tem `"files": []` +
+`references`, e `tsc --noEmit` sem `--build` não compila projeto referenciado. Foi por isso que as
+lacunas de `pre_session` passaram. Apontando para `tsconfig.app.json` aparecem **214 erros**, ~135
+`TS2786` de `@types/react@19.2.17` vazando (nero-portal é React 19, MMA é React 18). **Nenhum é do
+código novo** — verificado arquivo por arquivo. Não mexi porque script vermelho treina o time a
+ignorar, e mexer na árvore de `@types/react` afeta os três apps. Diagnóstico pronto em PAPEIS.md §7.
+
+---
+
 ## Rodada 2026-07-26 — Nero vira a porta 03 + costuras unificadas
 
 Estado: **NO AR.** Cutover feito em 2026-07-26 ~21:45 UTC (domingo, janela de tráfego baixo).
@@ -168,6 +298,11 @@ DESATIVADO na conta do Diego (hoje só recebe 308). `/api/trigger-sync` no porta
 - Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), Torre sem rate-limit de senha, policies legadas de `teams` no MMA, monorepo sem espelho remoto (backup!).
 
 ## Roles do MMA — IMPLEMENTADO E NO AR (2026-07-15)
+
+> ⚠️ **É este modelo que está em produção hoje**, mas ele é **substituído** pela rodada de 26/07
+> (2ª), no topo deste arquivo — `portal_admins` → `portal_roles`, AM passa a ser global,
+> `po`/`tl`/`team` → `member`. O código novo está pronto e **não aplicado**. Não parta desta seção
+> para mexer em papéis: leia [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md).
 
 Migration `20260715120000_portal_admins_scoped_roles.sql` aplicada em produção (Management API) e
 front promovido (dpl `neo-m03zmhx8t`). Admins globais por e-mail de login: `ext.diego.caporusso@`

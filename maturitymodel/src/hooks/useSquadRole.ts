@@ -2,9 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { devWarn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { usePortalRole } from "@/hooks/usePortalRole";
 import type { Role } from "@/types/mma";
 
-/** Papéis do usuário atual num squad específico (squad_members é por-squad). */
+/** Papéis do usuário atual num squad específico (`squad_members`: 'sm' | 'member'). */
 export function useSquadRoles(teamId: string | undefined) {
   const { user } = useAuth();
 
@@ -28,29 +29,35 @@ export function useSquadRoles(teamId: string | undefined) {
   });
 }
 
-// Papéis funcionais antes do genérico "team" — usado quando alguém acumula
-// mais de um papel no mesmo squad e precisamos escolher um só (ex.: role_at_vote).
-const ROLE_PRIORITY: Role[] = ["po", "tl", "sm", "am", "team"];
-
-function primaryRoleOf(roles: Role[]): Role | null {
-  if (!roles.length) return null;
-  return [...roles].sort((a, b) => ROLE_PRIORITY.indexOf(a) - ROLE_PRIORITY.indexOf(b))[0];
-}
-
-/** Visão resolvida de acesso do usuário atual dentro de um squad. */
+/**
+ * Acesso resolvido do usuário atual DENTRO de um squad — a combinação dos dois níveis:
+ *
+ *   · `isSM`  vem do squad  (`squad_members`): o SM facilita o SEU squad.
+ *   · `isAM`  vem do portal (`portal_roles`):  o AM homologa QUALQUER squad.
+ *
+ * Compor aqui, e não em cada tela, é o que fez as telas de squad passarem a funcionar
+ * para o AM global sem mudar nenhuma delas: antes `isAM` era papel de squad, então quem
+ * homologava só conseguia abrir a homologação dos squads em que era membro.
+ *
+ * Removidos por não terem mais consequência: `isPO`, `isTL`, `canVote` (o voto individual
+ * morreu na sessão colaborativa) e `primaryRole` (existia para `votes.role_at_vote`).
+ */
 export function useSquadRole(teamId: string | undefined) {
-  const { data: roles = [], isLoading, ...rest } = useSquadRoles(teamId);
+  const { data: roles = [], isLoading: squadLoading, ...rest } = useSquadRoles(teamId);
+  const { isAM, isAdmin, isLoading: portalLoading } = usePortalRole();
 
-  const isAM = roles.includes("am");
   const isSM = roles.includes("sm");
-  const isPO = roles.includes("po");
-  const isTL = roles.includes("tl");
-  const isMember = roles.length > 0;
-  // AM não vota (é quem homologa) — regra do modelo, docs/03 §4.3.
-  const canVote = isMember && !isAM;
-  // Papel "mais específico" para registrar em contextos que exigem um único
-  // valor (ex.: votes.role_at_vote) — determinístico, não a ordem de retorno da query.
-  const primaryRole = primaryRoleOf(roles);
 
-  return { roles, isAM, isSM, isPO, isTL, isMember, canVote, primaryRole, isLoading, ...rest };
+  return {
+    roles,
+    isSM,
+    isAM,
+    isAdmin,
+    // O AM/admin abre as telas do squad sem ser membro — é o trabalho dele.
+    isMember: roles.length > 0 || isAM,
+    // Um só isLoading: separado, a tela renderizava "sem permissão" antes de o papel
+    // do portal chegar, e o usuário via um erro que não existia.
+    isLoading: squadLoading || portalLoading,
+    ...rest,
+  };
 }

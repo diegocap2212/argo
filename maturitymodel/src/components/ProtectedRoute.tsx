@@ -1,8 +1,7 @@
 import { Navigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
-import { useMySquads } from "@/hooks/useMySquads";
-import { useIsPortalAdmin } from "@/hooks/useIsPortalAdmin";
+import { usePortalRole } from "@/hooks/usePortalRole";
 
 function Interstitial({ message }: { message: string }) {
   return (
@@ -34,19 +33,19 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Gate do /admin: admin global do portal OU gestor (SM/AM) de pelo menos um squad.
- * O que cada um vê/gerencia lá dentro é decidido pela RLS + pelo modo da tela.
+ * Gate do /admin: SÓ admin global do portal.
+ *
+ * Antes era "admin OU gestor (SM/AM) de algum squad", porque SM/AM gerenciavam os
+ * membros do próprio squad. Desde 2026-07-26 estrutura da organização (quem existe, quem
+ * está em qual squad, quem tem papel global) é ação de admin — e o AM é GLOBAL, então
+ * "gerenciar o próprio squad" passaria a significar gerenciar todos. Deixar a tela
+ * acessível a quem a RLS recusa é pior que não mostrá-la: o formulário só falha no envio.
  */
-export function RequireManager({ children }: { children: React.ReactNode }) {
-  const { data: squads, isLoading } = useMySquads();
-  const { data: isAdmin, isLoading: adminLoading } = useIsPortalAdmin();
+export function RequireAdmin({ children }: { children: React.ReactNode }) {
+  const { isAdmin, isLoading } = usePortalRole();
 
-  if (isLoading || adminLoading) return null;
-
-  const isManagerAnywhere = (squads ?? []).some((s) => s.roles.includes("am") || s.roles.includes("sm"));
-  if (!isAdmin && !isManagerAnywhere) {
-    return <Navigate to="/" replace />;
-  }
+  if (isLoading) return null;
+  if (!isAdmin) return <Navigate to="/" replace />;
 
   return <>{children}</>;
 }

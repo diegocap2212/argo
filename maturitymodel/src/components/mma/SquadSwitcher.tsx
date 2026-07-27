@@ -12,19 +12,22 @@ import { useMySquads } from "@/hooks/useMySquads";
 import { cn } from "@/lib/utils";
 import type { CycleStatus } from "@/types/mma";
 
+// Estes dois mapas estavam presos no modelo ANTERIOR à sessão colaborativa: cobriam
+// 'voting'/'workshop'/'proposed' (mortos) e não tinham 'pre_session' nem 'session' — os
+// dois estados em que os ciclos realmente ficam hoje. Resultado: o switcher renderizava
+// `undefined` como classe do ponto e como rótulo. `Record<CycleStatus, …>` já acusava,
+// mas o script `typecheck` não checava nada (tsconfig com `files: []` e sem `--build`).
 const STATUS_LABEL: Record<CycleStatus, string> = {
-  voting: "Votação aberta",
-  workshop: "Workshop",
-  proposed: "Aguardando homologação",
-  homologation: "Homologação",
+  pre_session: "Pré-sessão",
+  session: "Sessão aberta",
+  homologation: "Aguardando homologação",
   official: "Ciclo oficial",
   archived: "Arquivado",
 };
 
 const STATUS_DOT: Record<CycleStatus, string> = {
-  voting: "bg-venice-warn",
-  workshop: "bg-venice-warn",
-  proposed: "bg-venice-warn",
+  pre_session: "bg-venice-warn",
+  session: "bg-venice-warn",
   homologation: "bg-venice-err",
   official: "bg-venice-ok",
   archived: "bg-venice-textTertiary",

@@ -809,6 +809,29 @@ export type Database = {
           },
         ]
       }
+      // Papéis GLOBAIS do portal (migration 20260726120000). Chaveada por E-MAIL, não por
+      // user_id: permite conceder papel antes do primeiro login da pessoa.
+      portal_roles: {
+        Row: {
+          email: string
+          role: string
+          note: string | null
+          created_at: string
+        }
+        Insert: {
+          email: string
+          role: string
+          note?: string | null
+          created_at?: string
+        }
+        Update: {
+          email?: string
+          role?: string
+          note?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           approved: boolean
@@ -1287,11 +1310,13 @@ export type Database = {
         Returns: { id: string; email: string | null; full_name: string | null }[]
       }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
-      is_am: { Args: { t: string }; Returns: boolean }
-      is_any_am: { Args: never; Returns: boolean }
       is_approved: { Args: { _user_id: string }; Returns: boolean }
       is_member: { Args: { t: string }; Returns: boolean }
       is_portal_admin: { Args: never; Returns: boolean }
+      // Papéis GLOBAIS (migration 20260726120000). `is_am(t)` saiu junto com o modelo
+      // de AM por squad — mantê-lo aqui permitiria chamar uma função que não existe mais.
+      is_portal_am: { Args: never; Returns: boolean }
+      my_portal_roles: { Args: never; Returns: string[] }
       is_sm: { Args: { t: string }; Returns: boolean }
       officialize_cycle: { Args: { p_cycle: string }; Returns: undefined }
     }

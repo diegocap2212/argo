@@ -1,26 +1,49 @@
 import { useState } from "react";
-import { useAdminTeams, useCreateTeam, useTeamMembers, useAddMember, useAddMemberById, useRemoveMember, useAdminTeamCycle, useRestartAssessment, useAdminProfiles, useDeleteSquad } from "@/hooks/useAdminData";
-import { useAuth } from "@/hooks/useAuth";
-import { useIsPortalAdmin } from "@/hooks/useIsPortalAdmin";
+import {
+  useAddMember,
+  useAddMemberById,
+  useAdminProfiles,
+  useAdminTeamCycle,
+  useAdminTeams,
+  useCreateTeam,
+  useDeleteSquad,
+  useGrantPortalRole,
+  usePortalRoleGrants,
+  useRemoveMember,
+  useRestartAssessment,
+  useRevokePortalRole,
+  useTeamMembers,
+} from "@/hooks/useAdminData";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { errMessage } from "@/lib/utils";
 import { RotateCcw, Trash2, X } from "lucide-react";
-import type { Role } from "@/types/mma";
+import type { PortalRole, Role } from "@/types/mma";
 
-// Papel 'am' só aparece para o admin global: conceder AM é onboarding de admin
-// (Diego/Tiago). A RLS (sqm_write) também barra SM de gravar role='am' — isto é
-// só a defesa em profundidade na UI para não oferecer uma ação que seria negada.
-const BASE_ROLES: Role[] = ["team", "po", "tl", "sm"];
+/**
+ * Administração — SÓ admin global (a rota é gated por RequireAdmin).
+ *
+ * A tela tem dois níveis, que antes viviam misturados num único seletor de papel:
+ *   · Papéis do PORTAL  (`portal_roles`): admin e AM, globais, por e-mail.
+ *   · Membros do SQUAD  (`squad_members`): sm e member.
+ *
+ * Misturar os dois era o que fazia "conceder AM" parecer uma ação local de squad —
+ * e é a origem de "não aparece pra mim que preciso homologar".
+ */
+
+const SQUAD_ROLES: Role[] = ["sm", "member"];
+const SQUAD_ROLE_LABEL: Record<Role, string> = {
+  sm: "SM — facilita este squad",
+  member: "Member — participa e acompanha",
+};
+const PORTAL_ROLE_LABEL: Record<PortalRole, string> = {
+  admin: "Admin geral — faz tudo",
+  am: "AM — vê todos os squads e homologa",
+};
 
 export default function AdminMMA() {
-  const { user, isAnonymous } = useAuth();
-  // Dois modos: admin global (tudo) × gestor SM/AM (só os squads dele — a RLS já
-  // escopa a lista de teams; aqui escondemos as ações que a RLS negaria).
-  const { data: isPortalAdmin = false } = useIsPortalAdmin();
-  const roles: Role[] = isPortalAdmin ? [...BASE_ROLES, "am"] : BASE_ROLES;
   const { data: teams = [], isLoading } = useAdminTeams();
   const createTeam = useCreateTeam();
   const [newTeamName, setNewTeamName] = useState("");
@@ -28,7 +51,7 @@ export default function AdminMMA() {
 
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null);
   const { data: members = [] } = useTeamMembers(selectedTeam ?? undefined);
-  const { data: profiles = [], isLoading: profilesLoading } = useAdminProfiles(isPortalAdmin);
+  const { data: profiles = [], isLoading: profilesLoading } = useAdminProfiles();
   const addMember = useAddMember(selectedTeam ?? "");
   const addMemberById = useAddMemberById(selectedTeam ?? "");
   const removeMember = useRemoveMember(selectedTeam ?? "");
@@ -38,36 +61,143 @@ export default function AdminMMA() {
   const selectedTeamName = teams.find((team) => team.id === selectedTeam)?.name ?? "";
   const [memberEmail, setMemberEmail] = useState("");
   const [selectedProfile, setSelectedProfile] = useState("");
-  const [memberRole, setMemberRole] = useState<Role>("team");
+  const [memberRole, setMemberRole] = useState<Role>("member");
+
+  const { data: grants = [] } = usePortalRoleGrants();
+  const grantRole = useGrantPortalRole();
+  const revokeRole = useRevokePortalRole();
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantRoleValue, setGrantRoleValue] = useState<PortalRole>("am");
 
   return (
     <div className="space-y-10">
       <div>
         <h2 className="font-serif text-3xl leading-tight tracking-[-0.015em]">Administração</h2>
         <p className="mt-1 text-sm text-venice-textSecondary">
-          {isPortalAdmin ? "Squads, membros e papéis do MMA — visão de admin do portal." : "Membros e papéis dos squads sob sua gestão."}
+          Squads, membros e papéis do portal — visão de admin.
         </p>
       </div>
 
+      {/* ─── Papéis globais ─────────────────────────────────────────────── */}
       <section>
-        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">Squads</h3>
-        {isPortalAdmin && (
-          <div className="mb-4 flex gap-2">
-            <Input placeholder="Nome do squad" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="max-w-xs" />
-            <Input placeholder="Torre" value={newTeamTower} onChange={(e) => setNewTeamTower(e.target.value)} className="max-w-[120px]" />
-            <Button
-              size="sm"
-              disabled={!newTeamName.trim() || createTeam.isPending}
-              onClick={async () => {
-                await createTeam.mutateAsync({ name: newTeamName.trim(), tower: newTeamTower.trim() });
-                setNewTeamName("");
-                toast({ title: "Squad criado" });
-              }}
+        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">
+          Papéis do portal
+        </h3>
+        <p className="mb-3 text-xs text-venice-textTertiary">
+          Valem em <b>todos</b> os squads. O AM vê todos os times e homologa, mas não reinicia
+          assessment, não exclui squad e não gerencia membros. Pode ser concedido antes do primeiro
+          login da pessoa — a chave é o e-mail corporativo.
+        </p>
+
+        <div className="mb-4 flex flex-wrap gap-2">
+          <Select value={grantRoleValue} onValueChange={(v) => setGrantRoleValue(v as PortalRole)}>
+            <SelectTrigger className="min-w-[260px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(PORTAL_ROLE_LABEL) as PortalRole[]).map((r) => (
+                <SelectItem key={r} value={r}>
+                  {PORTAL_ROLE_LABEL[r]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Input
+            placeholder="E-mail corporativo"
+            value={grantEmail}
+            onChange={(e) => setGrantEmail(e.target.value)}
+            className="max-w-xs"
+          />
+          <Button
+            size="sm"
+            disabled={!grantEmail.trim() || grantRole.isPending}
+            onClick={async () => {
+              try {
+                await grantRole.mutateAsync({ email: grantEmail, role: grantRoleValue });
+                setGrantEmail("");
+                toast({ title: "Papel concedido" });
+              } catch (e) {
+                toast({ title: "Não foi possível conceder", description: errMessage(e), variant: "destructive" });
+              }
+            }}
+          >
+            Conceder
+          </Button>
+        </div>
+
+        <div className="space-y-1.5">
+          {grants.map((g) => (
+            <div
+              key={`${g.email}-${g.role}`}
+              className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5"
             >
-              + Squad
-            </Button>
-          </div>
-        )}
+              <span className="min-w-0 flex-1 text-sm">{g.email}</span>
+              {g.note && <span className="text-xs text-venice-textTertiary">{g.note}</span>}
+              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium uppercase">
+                {g.role}
+              </span>
+              <button
+                aria-label={`Revogar ${g.role} de ${g.email}`}
+                onClick={async () => {
+                  // Revogar o próprio admin fecha a porta atrás de si — a RLS negaria a
+                  // próxima escrita e a única saída seria uma migration.
+                  if (
+                    g.role === "admin" &&
+                    !window.confirm(
+                      `Revogar o papel de admin de ${g.email}? Se for a sua própria conta, você perde o acesso a esta tela.`,
+                    )
+                  ) {
+                    return;
+                  }
+                  try {
+                    await revokeRole.mutateAsync({ email: g.email, role: g.role });
+                    toast({ title: "Papel revogado" });
+                  } catch (e) {
+                    toast({ title: "Não foi possível revogar", description: errMessage(e), variant: "destructive" });
+                  }
+                }}
+                className="text-venice-textTertiary hover:text-venice-err"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {grants.length === 0 && (
+            <p className="text-sm text-venice-textTertiary">Nenhum papel global concedido.</p>
+          )}
+        </div>
+      </section>
+
+      {/* ─── Squads ─────────────────────────────────────────────────────── */}
+      <section>
+        <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">
+          Squads
+        </h3>
+        <div className="mb-4 flex gap-2">
+          <Input
+            placeholder="Nome do squad"
+            value={newTeamName}
+            onChange={(e) => setNewTeamName(e.target.value)}
+            className="max-w-xs"
+          />
+          <Input
+            placeholder="Torre"
+            value={newTeamTower}
+            onChange={(e) => setNewTeamTower(e.target.value)}
+            className="max-w-[120px]"
+          />
+          <Button
+            size="sm"
+            disabled={!newTeamName.trim() || createTeam.isPending}
+            onClick={async () => {
+              await createTeam.mutateAsync({ name: newTeamName.trim(), tower: newTeamTower.trim() });
+              setNewTeamName("");
+              toast({ title: "Squad criado" });
+            }}
+          >
+            + Squad
+          </Button>
+        </div>
 
         {isLoading && <p className="text-sm text-venice-textTertiary">Carregando…</p>}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -97,18 +227,21 @@ export default function AdminMMA() {
                 {cycle ? `${cycle.quarter} · ${cycle.status}` : "Nenhum assessment iniciado para este squad."}
               </p>
             </div>
-            {isPortalAdmin && <Button
+            <Button
               variant="outline"
               size="sm"
               disabled={!cycle || restartAssessment.isPending}
               onClick={async () => {
                 const confirmed = window.confirm(
-                  `Reiniciar o assessment ${cycle?.quarter}? Todas as respostas, propostas, homologações, resultados oficiais e kaizens deste ciclo serão apagados.`
+                  `Reiniciar o assessment ${cycle?.quarter}? A análise prévia, as notas da sessão, as homologações, o resultado oficial e os kaizens deste ciclo serão apagados.`,
                 );
                 if (!confirmed) return;
                 try {
                   await restartAssessment.mutateAsync();
-                  toast({ title: "Assessment reiniciado", description: "O ciclo voltou vazio para a etapa de sessão." });
+                  toast({
+                    title: "Assessment reiniciado",
+                    description: "O ciclo voltou vazio para a pré-sessão.",
+                  });
                 } catch (e) {
                   toast({ title: "Não foi possível reiniciar", description: errMessage(e), variant: "destructive" });
                 }
@@ -116,22 +249,27 @@ export default function AdminMMA() {
             >
               <RotateCcw className="h-3.5 w-3.5" />
               {restartAssessment.isPending ? "Reiniciando…" : "Reiniciar assessment"}
-            </Button>}
+            </Button>
           </div>
 
-          {isPortalAdmin && <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-venice-err/30 bg-venice-errBg p-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-venice-err/30 bg-venice-errBg p-4">
             <div>
               <h3 className="text-sm font-semibold text-venice-errFg">Excluir squad permanentemente</h3>
-              <p className="mt-1 text-xs text-venice-errFg">Remove membros, assessments, métricas e planos vinculados. Esta ação não pode ser desfeita.</p>
+              <p className="mt-1 text-xs text-venice-errFg">
+                Remove membros, assessments, métricas e planos vinculados. Esta ação não pode ser desfeita.
+              </p>
             </div>
             <Button
               variant="destructive"
               size="sm"
               disabled={deleteSquad.isPending}
               onClick={async () => {
-                const typedName = window.prompt(`Para excluir, digite exatamente o nome do squad: ${selectedTeamName}`);
+                const typedName = window.prompt(
+                  `Para excluir, digite exatamente o nome do squad: ${selectedTeamName}`,
+                );
                 if (typedName !== selectedTeamName) {
-                  if (typedName !== null) toast({ title: "Nome incorreto", description: "O squad não foi excluído.", variant: "destructive" });
+                  if (typedName !== null)
+                    toast({ title: "Nome incorreto", description: "O squad não foi excluído.", variant: "destructive" });
                   return;
                 }
                 try {
@@ -146,24 +284,41 @@ export default function AdminMMA() {
               <Trash2 className="h-3.5 w-3.5" />
               {deleteSquad.isPending ? "Excluindo…" : "Excluir squad"}
             </Button>
-          </div>}
+          </div>
 
           <div>
-          <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">
-            Membros · {teams.find((t) => t.id === selectedTeam)?.name}
-          </h3>
+            <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.09em] text-venice-textTertiary">
+              Membros · {selectedTeamName}
+            </h3>
+            <p className="mb-3 text-xs text-venice-textTertiary">
+              Papel <b>dentro deste squad</b>. Para dar poder de homologar, use “Papéis do portal” acima.
+            </p>
 
-          {/* Diretório completo: só o admin do portal (a RLS fecha profiles para os demais). */}
-          {isPortalAdmin && (
             <div className="mb-3 flex flex-wrap gap-2">
+              <Select value={memberRole} onValueChange={(v) => setMemberRole(v as Role)}>
+                <SelectTrigger className="min-w-[240px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {SQUAD_ROLES.map((r) => (
+                    <SelectItem key={r} value={r}>
+                      {SQUAD_ROLE_LABEL[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={selectedProfile} onValueChange={setSelectedProfile}>
                 <SelectTrigger className="min-w-[280px] flex-1">
-                  <SelectValue placeholder={profilesLoading ? "Carregando pessoas…" : "Selecionar pessoa cadastrada"} />
+                  <SelectValue
+                    placeholder={profilesLoading ? "Carregando pessoas…" : "Selecionar pessoa cadastrada"}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {profiles.map((profile) => (
                     <SelectItem key={profile.id} value={profile.id}>
-                      {profile.is_am ? "AM · " : ""}{profile.full_name || profile.email || profile.id}
+                      {profile.portalRoles.length ? `${profile.portalRoles.join("/").toUpperCase()} · ` : ""}
+                      {profile.full_name || profile.email || profile.id}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -184,76 +339,54 @@ export default function AdminMMA() {
                 Adicionar pessoa
               </Button>
             </div>
-          )}
 
-          <div className="mb-4 flex flex-wrap gap-2 border-t border-border pt-3">
-            <Select value={memberRole} onValueChange={(v) => setMemberRole(v as Role)}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {roles.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder={isPortalAdmin ? "Ou informe um e-mail exato" : "E-mail exato de quem já logou no portal"}
-              value={memberEmail}
-              onChange={(e) => setMemberEmail(e.target.value)}
-              className="max-w-xs"
-            />
-            <Button
-              size="sm"
-              disabled={!memberEmail.trim() || addMember.isPending}
-              onClick={async () => {
-                try {
-                  await addMember.mutateAsync({ email: memberEmail, role: memberRole });
-                  setMemberEmail("");
-                  toast({ title: "Membro adicionado" });
-                } catch (e) {
-                  toast({ title: "Erro", description: errMessage(e), variant: "destructive" });
-                }
-              }}
-            >
-              + Membro
-            </Button>
-            {isAnonymous && (
+            <div className="mb-4 flex flex-wrap gap-2 border-t border-border pt-3">
+              <Input
+                placeholder="Ou informe um e-mail exato"
+                value={memberEmail}
+                onChange={(e) => setMemberEmail(e.target.value)}
+                className="max-w-xs"
+              />
               <Button
                 size="sm"
-                variant="outline"
-                disabled={addMemberById.isPending}
+                disabled={!memberEmail.trim() || addMember.isPending}
                 onClick={async () => {
-                  await addMemberById.mutateAsync({ userId: user!.id, role: memberRole });
-                  toast({ title: "Você foi adicionado a este squad" });
+                  try {
+                    await addMember.mutateAsync({ email: memberEmail, role: memberRole });
+                    setMemberEmail("");
+                    toast({ title: "Membro adicionado" });
+                  } catch (e) {
+                    toast({ title: "Erro", description: errMessage(e), variant: "destructive" });
+                  }
                 }}
               >
-                Adicionar a mim mesmo
+                + Membro
               </Button>
-            )}
-          </div>
+            </div>
 
-          <p className="mb-3 text-xs text-venice-textTertiary">
-            {isAnonymous
-              ? "Sua sessão é anônima (login ainda não definido) — use \"Adicionar a mim mesmo\" para testar como este papel, ou busque por email quem já tiver logado com conta real."
-              : isPortalAdmin
-              ? "A lista mostra quem já acessou o portal. Pessoas marcadas com AM já exercem esse papel em outro squad."
-              : "Adicione membros pelo e-mail corporativo exato — a pessoa precisa ter feito o primeiro login no portal."}
-          </p>
+            <p className="mb-3 text-xs text-venice-textTertiary">
+              A lista mostra quem já acessou o portal. O prefixo indica papel global (ADMIN/AM).
+            </p>
 
-          <div className="space-y-1.5">
-            {members.map((m) => (
-              <div key={`${m.user_id}-${m.role}`} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5">
-                <span className="min-w-0 flex-1 text-sm">{m.full_name || m.email || m.user_id}</span>
-                <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium">{m.role}</span>
-                <button
-                  onClick={() => removeMember.mutate({ userId: m.user_id, role: m.role })}
-                  className="text-venice-textTertiary hover:text-venice-err"
+            <div className="space-y-1.5">
+              {members.map((m) => (
+                <div
+                  key={`${m.user_id}-${m.role}`}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-2.5"
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-            {members.length === 0 && <p className="text-sm text-venice-textTertiary">Nenhum membro ainda.</p>}
-          </div>
+                  <span className="min-w-0 flex-1 text-sm">{m.full_name || m.email || m.user_id}</span>
+                  <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[11px] font-medium">{m.role}</span>
+                  <button
+                    aria-label={`Remover ${m.full_name || m.email} do squad`}
+                    onClick={() => removeMember.mutate({ userId: m.user_id, role: m.role })}
+                    className="text-venice-textTertiary hover:text-venice-err"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+              {members.length === 0 && <p className="text-sm text-venice-textTertiary">Nenhum membro ainda.</p>}
+            </div>
           </div>
         </section>
       )}

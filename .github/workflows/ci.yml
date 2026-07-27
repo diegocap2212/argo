@@ -54,6 +54,26 @@ jobs:
       - name: Testes de performance do Dash (lógica pura)
         run: pnpm --filter locavia-dashboard test:performance
 
+      # Guarda a máquina de estados do ciclo, escrita duas vezes por imposição de runtime
+      # (CYCLE_TRANSITIONS no TS × trigger cycle_transition_guard no Postgres). Divergir ali
+      # faz a UI oferecer caminho que o banco recusa — e já custou um bug: `pre_session`
+      # entrou no banco em 24/07 e ficou fora da jornada da home até 26/07.
+      # Lê o SQL como texto: não precisa de banco, roda em qualquer runner.
+      - name: Contrato da jornada do MMA (TS × SQL)
+        run: pnpm --filter maturitymodel test:journey
+
+      # As 51 migrations do MMA aplicadas num Postgres limpo (PGlite/WASM — sem Docker, sem
+      # nuvem, sem credencial). Responde "esta migration roda?" antes de tocar em banco real.
+      - name: Migrations do MMA aplicam em Postgres limpo
+        run: pnpm --filter maturitymodel test:migrations
+
+      # A matriz de papéis com RLS de verdade + o ensaio da migração de dados (todo AM por
+      # squad tem de virar AM global, senão alguém perde acesso). Achou dois defeitos que
+      # revisão de código não pegou: a ordem do CHECK de squad_members.role e o vazamento
+      # do diretório de profiles por policy legada.
+      - name: Papéis e jornada do MMA com RLS real
+        run: pnpm --filter maturitymodel test:rls-local
+
       # Guarda a lista de modelos liberados, que vive em 3 lugares (allowlist, tabela de
       # preços, seletor do cliente). Divergir ali distorce o custo em silêncio — e custo
       # errado só aparece na fatura.
