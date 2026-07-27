@@ -4,6 +4,92 @@
 > load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
 > **estado operacional corrente** — histórico e pendências.
 
+---
+
+# ▶ RETOMADA — o que atacar primeiro (escrito 2026-07-27, fim do dia)
+
+**Onde as coisas estão:** a onda de hardening do code review **está na `main` e o CI está
+inteiramente verde**. O que NÃO aconteceu: **deploy**. Nenhum dos dois projetos Vercel tem
+conexão git, então `main` ≠ produção neste momento — produção roda o código de antes do
+hardening. Isso é seguro e proposital, mas significa que **as correções não estão valendo
+para ninguém ainda**.
+
+Verificar o estado em 1 comando: `corepack pnpm verify` (sai 0; ~15 min).
+
+## A ordem importa — duas coisas quebram se invertidas
+
+**① Nero: migration ANTES do código.** `src/lib/nero/usage.ts` grava as colunas `estimated` e
+`actorEmail`, que só existem depois da migration `20260727160000`. Deployar o código primeiro
+quebra **todo turno de chat** com erro de coluna inexistente.
+
+```bash
+# backup primeiro, sempre
+neonctl branches create --name backup-pre-hardening
+pg_dump "$DATABASE_URL_UNPOOLED" -Fc -f backup-pre-hardening.dump
+# revisar o SQL das duas migrations antes de aplicar
+corepack pnpm --filter nero-portal db:migrate
+# só então o deploy do Nero
+```
+
+**② Maturity: a função ANTIGA ainda está no ar.** Apagar a pasta local **não fez undeploy**.
+Enquanto `sync-anchors` existir no Supabase, **o P0 do review continua aberto** — ela recebe
+`service_role` por env, autoriza com ela, e é acionável por qualquer portador da anon key
+(pública, e no histórico do git).
+
+```bash
+# Vault (SQL no Supabase): criar anchor_sync_url e anchor_sync_secret
+supabase secrets set ANCHOR_SYNC_CRON_SECRET=<mesmo valor de anchor_sync_secret> SB_ANON_KEY=<anon>
+supabase functions deploy sync-anchors-user
+supabase functions deploy sync-anchors-cron
+supabase functions delete sync-anchors      # ← o passo que fecha o P0
+```
+
+`anchor_sync_secret` (Vault) e `ANCHOR_SYNC_CRON_SECRET` (secret da função) **têm de ter o mesmo
+valor**, senão o cron toma 401 em silêncio.
+
+## Lista de retomada, em ordem
+
+| # | O quê | Por que está aberto | Quem fecha |
+|---|---|---|---|
+| 1 | **`supabase functions delete sync-anchors`** + deploy das 2 novas + Vault | apagar pasta local não faz undeploy — **o P0 segue no ar** | operador (Supabase) |
+| 2 | **Migrations do Prisma** (`20260727160000`, `20260727170000`) | exige acesso ao Neon; **antes** do deploy do Nero | operador (Neon) |
+| 3 | **Avisar o time**: a troca para subchaves HKDF **derruba toda sessão viva** | no deploy, todos caem no login juntos. Não é bug, é o custo de a chave ser a fronteira | você |
+| 4 | **Deploy do portal** `vercel deploy --target=production --skip-domain` → smoke → `vercel promote` | é o que faz `/api/data` parar de mentir sobre frescor e o HKDF valer | você |
+| 5 | `pnpm --filter nero-portal test:state` contra base **descartável** | **escreve no banco**; nunca rodou. Cobre reserva de orçamento, auditoria e undo | operador |
+| 6 | Definir `NERO_USER_MONTHLY_BUDGET_USD` | decisão de negócio (teto por pessoa; o global já existe) | você |
+| 7 | Rotações de segredo pendentes | ver [`SECRETS.md`](SECRETS.md) | você |
+| 8 | Backup/restore **testado**, RPO/RTO, retenção, preview isolado do Nero | exige console Neon/Vercel | operador |
+
+## O que sabidamente NÃO tem garantia (não é esquecimento)
+
+Registrado com detalhe em [`SECURITY.md`](SECURITY.md) §6:
+
+- **Fronteira HTTP das Edge Functions sem teste automatizado.** A matriz de papéis está provada
+  no banco (88 checks em Postgres efêmero); o `anon → 401`, `SM do squad → 200`,
+  `cron sem secret → 401` depende de deployment e não roda no CI.
+- **`sync-anchors` do Maturity segue com `expand: changelog`.** O Dashboard migrou para
+  `bulkfetch` (validado contra o Jira real: 6.371 issues, 7 lotes, **99,78%** com histórico
+  completo); o Maturity não. Mitigado (detecção de `everDone` robusta a truncamento), não
+  resolvido.
+- **Comentários do Dashboard não têm autoria** — qualquer usuário NEO escreve comentário de
+  qualquer squad. Decisão documentada no código, mas quem usa como registro precisa saber.
+- **`script-src 'unsafe-inline'`** no portal — remover exige nonce/hash no build composto.
+- **CodeQL não publica na aba Security**: repo privado sem GitHub Advanced Security (pago). O
+  gate funciona lendo o SARIF do arquivo, com baseline em `.codeql-baseline.json`.
+
+## Duas regras que custaram caro hoje
+
+1. **Cheque por código de saída, nunca por grep na saída.** Um `grep -ci '\berror\b'` reportou
+   "0 erros" enquanto o eslint **crashava** — `\berror\b` não casa dentro de `TypeError`.
+2. **Não conclua mecanismo sem ler o log do passo.** Declarei o achado do review sobre o
+   `hourly-sync` "empiricamente falso" porque o job estava verde; 3h depois ele quebrou pelo
+   motivo exato que o review apontava. O review falava da **configuração**; eu olhei o
+   **resultado daquele dia**. Ver `docs/FULL-CODE-REVIEW-2026-07-27.md` §0.5.
+
+**Rollback de tudo:** `git revert -m 1 7faf9a5`.
+
+---
+
 ## Rodada 2026-07-27 — Papéis do MMA + home real — ✅ **NO AR E NO GIT**
 
 Banco e front promovidos em 2026-07-27. Deployment de produção:

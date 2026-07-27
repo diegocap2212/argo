@@ -1,10 +1,23 @@
 # Hardening do code review — estado da execução
 
-**Branch:** `hardening/code-review-2026-07-27` (criada a partir de `main`, que é produção)
+> ## ✅ FECHADO E NA `main` — 2026-07-27
+>
+> **`main` = `bff3536`. CI inteiramente verde.** As ondas 0, 1, 2 e 3 estão mergeadas
+> (`git revert -m 1 7faf9a5` desfaz tudo). O que **falta é deploy e ação de operador** — e o
+> **P0 continua tecnicamente aberto** até `supabase functions delete sync-anchors` rodar.
+>
+> **Para retomar, leia a seção "▶ RETOMADA" no topo do [`HANDOFF.md`](../HANDOFF.md)** — ela tem
+> a lista em ordem de dependência e as duas armadilhas de ordem (migration antes do código do
+> Nero; a função antiga que ainda está no ar). Este documento continua sendo o registro do
+> *raciocínio* e dos achados; o HANDOFF é o que fazer amanhã.
+>
+> Verificação em um comando: `corepack pnpm verify` (exit 0, ~15 min).
+
+**Branch:** `hardening/code-review-2026-07-27` (criada a partir de `main`, que é produção) —
+**já mergeada** em `7faf9a5`, mais dois PRs de correção do CI (#43 e #46).
 **Base:** commit `371a038`
 **Plano completo:** `C:\Users\Usuario\.claude\plans\claude-valide-o-full-frolicking-quilt.md`
 **Review original:** `docs/FULL-CODE-REVIEW-2026-07-27.md`
-**Nada foi commitado** — 75 arquivos alterados na árvore de trabalho, aguardando sua revisão.
 
 ## ⚠️ Como verificar (aprendi errando)
 
@@ -26,7 +39,8 @@ o typecheck dele é real, verifiquei com sonda. Gap menor, registrado.
 
 ```bash
 cd c:/Users/Usuario/Desktop/Venice_LM_Hub/argo
-git branch --show-current      # hardening/code-review-2026-07-27
+git branch --show-current      # main (a branch de hardening já foi mergeada)
+corepack pnpm verify           # exit 0 = nada regrediu
 ```
 
 Ambiente (aprendido na marra, economiza tempo):
@@ -43,13 +57,18 @@ Ambiente (aprendido na marra, economiza tempo):
 | Typecheck da borda (`api/` + `middleware.ts`) | **OK** — não existia antes |
 | Typecheck dos 4 apps + packages | **OK** |
 | Lint global | **0 erros** |
-| `@neo/auth test` | 77/77 |
+| `@neo/auth test` | **96/96** |
 | `locavia-dashboard test:performance` | OK |
-| `locavia-dashboard test:sync` (novo) | 8/8 invariantes |
+| `locavia-dashboard test:sync` (novo) | **32 invariantes** |
 | `maturitymodel test:journey` | 21/21 |
-| `maturitymodel test:migrations` | 54 aplicadas, 2 puladas |
-| `maturitymodel test:rls-local` | **74/74** (eram 59) |
-| `nero-portal test:core` | **59/59** (eram 30) |
+| `maturitymodel test:anchors` (novo) | **17 verificações** |
+| `maturitymodel test:migrations` | 55 aplicadas, 2 puladas |
+| `maturitymodel test:rls-local` | **88/88** (eram 59) |
+| `nero-portal test:core` | **88/88** (eram 30) |
+
+> Números FINAIS, conferidos em 2026-07-27 pelo `corepack pnpm verify` (exit 0). A tabela
+> anterior guardava contagens do meio da execução (77, 8, 54, 74, 59) e passou a contradizer
+> `SECURITY.md` — que é o drift de documentação que esta própria rodada existe para eliminar.
 
 > **Baseline de métrica exige `AUDIT_NOW`.** `audit:performance` usa janela de 56 dias a
 > partir de `now`, então ela DESLIZA: com o dataset congelado e o código idêntico, medi
@@ -60,7 +79,7 @@ Ambiente (aprendido na marra, economiza tempo):
 
 **Não executável aqui:** `nero-portal test:state` (exige banco descartável — o script foi
 ampliado com os casos de undo, mas nunca rodou), build do Docker do Nero (sem Docker),
-`hourly-sync.yml` (só valida rodando no GitHub, e o workflow roda de `main`).
+~~`hourly-sync.yml`~~ — **validado em 2026-07-27**: rodou verde de `main` via `workflow_dispatch` e o `bulkFetchChangelogs` foi exercitado contra o Jira real (6.371 issues, 7 lotes, 99,78% com histórico completo).
 
 ---
 
@@ -364,3 +383,87 @@ Onda 3 (**COMPLETA**):
 - Opcional: `NERO_USER_MONTHLY_BUDGET_USD` para o teto por pessoa (sem ela, metade do global).
 - Rodar `pnpm --filter nero-portal test:state` contra um banco descartável.
 - Decidir se o Maturity migra para React 19 (removeria os `paths` de `tsconfig.app.json`).
+
+---
+
+## Depois do merge: o CI novo em contato com a realidade (2026-07-27, noite)
+
+Registrado porque as duas falhas foram **de projeto meu**, não de ambiente, e a segunda é o tipo
+de erro que se repete se o motivo não ficar escrito.
+
+### O que o CI novo achou de verdade na primeira execução
+
+Não foi cerimônia. O CodeQL pegou 3 achados, um deles em código escrito por este hardening:
+
+1. **`js/incomplete-sanitization` em `_shared/anchor-sync.ts`** — o escape de JQL era
+   `v.replace(/"/g, '\\"')`: escapava aspa e **não** barra invertida. Valor terminando em `\`
+   virava `"foo\"`, a barra escapava a aspa de fechamento, e o resto era lido como JQL. Hoje os
+   valores vêm do mapa `SQUAD_JIRA` hardcoded, então não era explorável — e é exatamente por isso
+   que valia corrigir: no dia em que o mapa vier da tabela `teams` (que SM edita), vira injeção,
+   e ninguém reabre aquela linha por conta própria.
+2. **`devWarn` não usado** em `usePortalRole.ts`. Detalhe que vale guardar: o nome aparece DUAS
+   vezes no arquivo, e a segunda é **dentro de um comentário**. Um guard por `grep -c devWarn`
+   responderia "está em uso" — a mesma classe de erro do `grep -ci '\berror\b'` acima. Análise
+   que entende a linguagem vê o que busca textual não vê.
+3. **`serializeCookie` não usado** em `tests/fixtures.ts`.
+
+Os itens 2 e 3 **não estavam em escopo de lint nenhum** (`tests/` da raiz não entra em nenhum
+job). O CodeQL cobre lacuna real do tooling, não repete o eslint.
+
+### Falha nº 1: escrevi um job cuja última etapa exige licença que o repo não tem
+
+CodeQL analisou 290/290 arquivos TS e 10/10 JS, gerou o SARIF, e **morreu no upload**:
+`Code scanning is not enabled for this repository (403)`. Publicar no Code Scanning exige o
+produto habilitado, e em repositório **privado** isso exige **GitHub Advanced Security**, que é
+pago. Não é setting: `gh api .../code-scanning/default-setup` também responde 403.
+
+Correção: `upload: false` + `output: codeql-results`, e o SARIF é consumido do arquivo. Perde-se a
+aba Security (triage, histórico, dismiss, anotação em PR); **não** se perde o gate.
+`security-events: write` saiu das permissões dos dois jobs — sem publicação, não havia o que
+escrever, era permissão a troco de nada.
+
+### Falha nº 2: construí exatamente o que eu havia condenado por escrito
+
+A primeira versão do gate falhava em **qualquer** achado. Passou no PR e **quebrou a `main`** —
+por uma diferença que eu não conhecia: em `pull_request` o CodeQL v3 faz análise
+**diff-informed** (só o que o PR toca) e em `push` varre o repositório inteiro. Apareceram **6
+pré-existentes** que o PR nunca mostrou.
+
+Li os 6 um a um; nenhum é defeito (SHA-256 nos dois lados para igualar comprimento antes de
+`timingSafeEqual`, sem hash armazenado e sem banco de senhas; scripts de operador que leem `.sql`
+de `argv`; o sync gravando resposta do Jira em caminho **constante**, com escrita atômica). Falhar
+neles deixaria a `main` vermelha para sempre — e eu havia escrito no próprio `ci.yml` que
+*"vermelho permanente treina o time a ignorar CI vermelho"*.
+
+Correção: `.codeql-baseline.json`, chave `ruleId|arquivo` (sem linha — linha muda a cada edição),
+com contagem esperada e **motivo obrigatório**. Motivo obrigatório é o que separa baseline de
+allowlist: se não dá para escrever por que não é defeito, então é defeito. A lógica virou
+`scripts/check-codeql-sarif.mjs` (script, não bash inline) para ser testável fora do CI. Cinco
+comportamentos provados antes do commit — baseline exato passa · regra nova falha · mesma
+regra/arquivo com contagem maior falha · SARIF ausente falha · contagem **menor** passa avisando,
+para o baseline encolher junto e não apodrecer — mais validação contra o **SARIF real** da
+varredura que havia falhado.
+
+### Falha de ambiente (não minha): gitleaks em pull_request
+
+Em `pull_request` a action entra em `ScanPullRequest` e chama `GET /repos/.../pulls/{n}/commits`
+para enumerar o range. Sem `pull-requests: read` isso é 403 e derruba o job em **todo** PR, mesmo
+sem achado — o próprio GitHub diz o que falta no header
+(`x-accepted-github-permissions: pull_requests=read`). Concedido só **leitura**; escrever no PR
+(comentário) fica desligado por `GITLEAKS_ENABLE_COMMENTS: false`, porque o achado já vai para o
+log e já falha o job, e token de CI com escrita no PR é superfície a mais.
+
+Só apareceu porque a correção foi por PR: em `push` o caminho é `ScanPush`, que não toca a API de
+PRs. **O primeiro PR do repo com o CI novo é que exercitou esse ramo** — é um argumento concreto
+a favor de mudar CI por PR, não por push direto.
+
+### O sync, resolvido e verificado contra o Jira real
+
+Depois do merge, `workflow_dispatch` manual: **verde**. E foi a **primeira execução real do
+`bulkFetchChangelogs`**, que até então só tinha typecheck e invariantes — nunca API:
+
+- 6.371 issues, **7 lotes** de até 1.000 (12, 23, 28, 25, 27, 20 e 9 páginas de changelog);
+- **changelog completo para 6.357 — 99,78%**; os 14 restantes ficam marcados
+  `historyComplete: false`, que é o comportamento correto;
+- contrato do dataset não bloqueou nada; publicado no Blob (hash `dd960f28d9e1fb76`);
+- `syncedAt` destravou de **11:32** para **21:25 UTC**, e o baseline foi atualizado para 6.371.
