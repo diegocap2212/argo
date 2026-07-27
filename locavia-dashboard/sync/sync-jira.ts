@@ -1,11 +1,14 @@
 import 'dotenv/config';
 import fs from 'fs/promises';
 import path from 'path';
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { put } from '@vercel/blob';
 import { JiraClient } from './jira-client';
 import { mapJiraIssueToDashboardItem } from './field-mapper';
 import { calculateMetrics } from './metrics-calculator';
+import { baselineFrom, checkDatasetContract, type DatasetBaseline } from './dataset-contract';
+import type { StatusTransition } from '../src/types/jira';
 
 // Pathname fixo do dataset no Vercel Blob (privado). /api/data lê por este mesmo nome.
 const BLOB_PATHNAME = 'jira-data.json';
@@ -77,13 +80,86 @@ async function main() {
       process.exit(1);
     }
 
-    const dashboardItems = issues.map(issue => calculateMetrics(mapJiraIssueToDashboardItem(issue), issue));
+    /**
+     * CHANGELOG COMPLETO antes de calcular métricas (achado 5.6).
+     *
+     * `searchIssues` traz `expand: 'changelog'`, que devolve histórico PARCIAL por issue e não
+     * avisa que cortou. E é desse histórico que saem `TimeInStatus` (cycle time por etapa) e
+     * `TimeInTodo` — reconstruídos transição por transição. Com histórico truncado, os dois
+     * saem errados parecendo certos.
+     *
+     * O bulkfetch substitui o changelog de cada issue pelo completo. Se a busca falhar, o sync
+     * NÃO aborta: segue com o parcial e MARCA os itens, porque métrica marcada como incerta é
+     * melhor que sync sem dado nenhum — e muito melhor que métrica errada sem marca.
+     */
+    let changelogs = new Map<string, { histories: StatusTransition[]; total: number; complete: boolean }>();
+    let changelogCompleto = true;
+    try {
+      console.log(`Buscando changelog completo de ${issues.length} issues (bulkfetch)...`);
+      changelogs = await client.bulkFetchChangelogs(issues.map(i => i.id).filter(Boolean));
+      console.log(`Changelog completo obtido para ${changelogs.size} issues.`);
+    } catch (e) {
+      changelogCompleto = false;
+      console.error(
+        '⚠️  bulkfetch de changelog falhou — seguindo com o histórico PARCIAL da busca. ' +
+          'TimeInStatus e TimeInTodo ficam marcados como incertos:',
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+
+    const dashboardItems = issues.map(issue => {
+      const completo = changelogs.get(issue.id);
+      // Substitui o changelog parcial pelo completo ANTES de calcular as métricas.
+      const enriquecido = completo
+        ? { ...issue, changelog: { histories: completo.histories } }
+        : issue;
+      const item = calculateMetrics(mapJiraIssueToDashboardItem(enriquecido), enriquecido);
+      // Marca a procedência do histórico: a métrica derivada dele deixa de parecer confiável
+      // quando não é.
+      item.DataQuality.historyComplete = changelogCompleto && (completo?.complete ?? false);
+      return item;
+    });
 
     // Validação de schema: se os itens normalizados não baterem, ABORTA (não sobrescreve dado bom).
     const parsed = z.array(ItemSchema).safeParse(dashboardItems);
     if (!parsed.success) {
       console.error("❌ ERRO: dados normalizados inválidos — sync abortado para não corromper o dataset.");
       console.error(parsed.error.issues.slice(0, 5));
+      process.exit(1);
+    }
+
+    /**
+     * CONTRATO DO CONJUNTO — o schema acima valida item por item; isto valida o dataset.
+     *
+     * Os erros que machucam não são estruturais, são de conjunto: volume que despencou porque
+     * a credencial mudou, time que desapareceu porque o campo foi renomeado no Jira, Key
+     * duplicada por paginação repetida, custom field que virou `undefined` e levou 100% dos
+     * Releases com ele. Nenhum desses viola o schema — todos publicam um dataset "válido" que
+     * descreve uma realidade falsa, sobrescrevem o Blob e ninguém tem como saber.
+     *
+     * Comparar com o dataset ANTERIOR é o que dá sentido a "despencou": sem baseline, queda de
+     * 90% é indistinguível de trimestre fraco.
+     */
+    const baselinePath = path.resolve(process.cwd(), 'src/data-baseline.json');
+    let baseline: DatasetBaseline | null = null;
+    try {
+      baseline = JSON.parse(await fs.readFile(baselinePath, 'utf-8')) as DatasetBaseline;
+    } catch {
+      console.warn('⚠️  Sem baseline anterior — as regras comparativas ficam de fora neste sync.');
+    }
+
+    const violacoes = checkDatasetContract(dashboardItems, baseline);
+    const bloqueios = violacoes.filter((v) => v.severidade === 'bloqueia');
+    for (const v of violacoes) {
+      const marca = v.severidade === 'bloqueia' ? '❌' : '⚠️ ';
+      console.error(`${marca} [${v.regra}] ${v.detalhe}`);
+    }
+    if (bloqueios.length) {
+      console.error(
+        `\n❌ Contrato do dataset violado (${bloqueios.length} bloqueio(s)) — sync ABORTADO.\n` +
+          `   O Blob NÃO foi tocado: o dashboard segue com o último dataset bom.\n` +
+          `   Se a mudança for legítima (time novo, JQL ampliado), atualize src/data-baseline.json.`,
+      );
       process.exit(1);
     }
 
@@ -102,18 +178,33 @@ async function main() {
         console.error("❌ ERRO: BLOB_READ_WRITE_TOKEN ausente — não dá para gravar o dataset no Blob.");
         process.exit(1);
       }
-      await put(BLOB_PATHNAME, JSON.stringify({ items: dashboardItems, syncedAt }), {
-        access: 'private',
-        addRandomSuffix: false,
-        allowOverwrite: true,
-        contentType: 'application/json',
-      });
-      console.log(`☁️  Dataset gravado no Blob (${BLOB_PATHNAME}): ${dashboardItems.length} itens.`);
+      // `count` e `hash` fazem parte do envelope para o /api/data poder DECLARAR o que está
+      // servindo (source/stale/hash/count) em vez de o cliente inferir. Antes, quando o Blob
+      // falhava, o endpoint devolvia o `src/data.json` congelado com o `syncedAt` do
+      // heartbeat — dado velho rotulado como fresco, ETag incluído.
+      const itemsJson = JSON.stringify(dashboardItems);
+      const hash = createHash('sha256').update(itemsJson).digest('hex').slice(0, 16);
+      await put(
+        BLOB_PATHNAME,
+        JSON.stringify({ items: dashboardItems, syncedAt, count: dashboardItems.length, hash }),
+        {
+          access: 'private',
+          addRandomSuffix: false,
+          allowOverwrite: true,
+          contentType: 'application/json',
+        },
+      );
+      console.log(`☁️  Dataset gravado no Blob (${BLOB_PATHNAME}): ${dashboardItems.length} itens, hash ${hash}.`);
     }
 
     // Timestamp do sync (tiny) — mantém o header dos SMs e serve de heartbeat.
     const metaPath = path.resolve(process.cwd(), 'src/data-meta.json');
     await writeAtomic(metaPath, JSON.stringify({ syncedAt }, null, 2));
+
+    // Baseline para o PRÓXIMO sync comparar. Gravado só depois de tudo dar certo: se este sync
+    // abortou, o baseline continua sendo o do último dataset bom — senão um sync ruim viraria a
+    // nova referência e legitimaria a queda que ele mesmo causou.
+    await writeAtomic(baselinePath, JSON.stringify(baselineFrom(dashboardItems), null, 2));
 
     console.log(`✅ Sucesso! ${dashboardItems.length} itens sincronizados.`);
     
