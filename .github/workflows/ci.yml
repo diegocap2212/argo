@@ -245,8 +245,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
-      actions: read
+      actions: read # `security-events: write` saiu com o upload: sem GHAS não há onde publicar
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA
       - name: Inicializa CodeQL
@@ -256,7 +255,57 @@ jobs:
           # `security-and-quality` inclui as regras de qualidade além das de segurança. Vale a
           # pena aqui: boa parte dos achados do review era invariante mal expressa, não CVE.
           queries: security-and-quality
+      # `upload: false` NÃO é para silenciar o job — é porque o upload EXIGE Code Scanning
+      # habilitado, e Code Scanning em repositório PRIVADO exige GitHub Advanced Security
+      # (pago). Sem GHAS o passo de upload responde 403 ("Code scanning is not enabled for
+      # this repository") e derruba a `main` mesmo tendo a análise passado: na primeira
+      # execução real o CodeQL varreu 290/290 arquivos TS e 10/10 JS e gerou o SARIF — só não
+      # conseguiu publicar.
+      #
+      # Então o resultado é consumido AQUI, do arquivo, em vez de na aba Security. Perde-se a
+      # UI, o histórico entre execuções e o triage; NÃO se perde o gate: achado novo pinta a
+      # `main` de vermelho e imprime regra, arquivo e linha no log.
+      #
+      # Se um dia houver GHAS: trocar por `upload: true`, remover o passo abaixo e apagar este
+      # comentário. Enquanto não houver, `upload: true` é pior que inútil — é vermelho
+      # permanente que treina o time a ignorar CI vermelho.
       - name: Analisa
         uses: github/codeql-action/analyze@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4 — pinned por SHA
         with:
           category: /language:javascript-typescript
+          upload: false
+          output: codeql-results
+
+      - name: Falha se o CodeQL achou algo
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          arquivos=(codeql-results/*.sarif)
+          if [ ${#arquivos[@]} -eq 0 ]; then
+            echo "::error::nenhum SARIF gerado — a análise não rodou, e um job de SAST que não" \
+                 "analisa nada não pode passar."
+            exit 1
+          fi
+          total=0
+          for f in "${arquivos[@]}"; do
+            n=$(jq '[.runs[].results[]?] | length' "$f")
+            total=$((total + n))
+            if [ "$n" -gt 0 ]; then
+              echo "── $n achado(s) em $f"
+              jq -r '.runs[].results[]? |
+                "  [\(.level // "warning")] \(.ruleId)\n    \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine // 0)\n    \(.message.text)"' "$f"
+            fi
+          done
+          if [ "$total" -gt 0 ]; then
+            echo "::error::CodeQL: $total achado(s). Detalhe acima (sem aba Security: repo privado sem GHAS)."
+            exit 1
+          fi
+          echo "✅ CodeQL: 0 achados em ${#arquivos[@]} arquivo(s) SARIF."
+
+      - name: Guarda o SARIF como artefato
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 — pinned por SHA
+        with:
+          name: codeql-sarif
+          path: codeql-results/
+          retention-days: 30

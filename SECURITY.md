@@ -99,9 +99,21 @@ corrigida para descrever o que o sistema faz — não o contrário.
 | Propriedade | Onde | Teste |
 |---|---|---|
 | Nenhum segredo entra no bundle ou no repositório | `.gitleaks.toml` + job no CI | `.github/workflows/ci.yml` (gitleaks) |
-| SAST em todo push/PR | CodeQL (js/ts) | `ci.yml` |
+| SAST em todo push/PR | CodeQL (js/ts), `security-and-quality` | `ci.yml` — achado **falha o job**, mas **não aparece na aba Security** (ver abaixo) |
 | CVEs conhecidos são vistos | `pnpm audit` + SBOM | `ci.yml` |
 | Actions fixadas por SHA | `.github/workflows/*` | revisão de código |
+
+**Limitação do CodeQL neste repositório.** A análise roda e cobre tudo (na primeira execução
+real: 290/290 arquivos TS e 10/10 JS), mas **o resultado não vai para a aba Security**: publicar
+exige Code Scanning habilitado, e Code Scanning em repositório **privado** exige **GitHub
+Advanced Security**, que é pago. O SARIF é então consumido pelo próprio job — achado novo **falha
+o CI** e imprime regra, arquivo e linha no log, e o arquivo fica como artefato por 30 dias.
+
+O que se perde sem GHAS: a UI de triage, o histórico entre execuções, o "dismiss" com
+justificativa, e alerta em PR na linha do código. O que **não** se perde: o gate. Se o GHAS for
+contratado, trocar para `upload: true` e remover o passo de checagem local (instruções no próprio
+`ci.yml`). Deixar `upload: true` sem GHAS é pior que não ter o job — é vermelho permanente, que
+ensina o time a ignorar CI vermelho.
 
 **Aberto por decisão, não por descuido:** `vite >=6.4.3` (dev-server only, major 5→6) e
 `react-router >=8.3.0` (CSRF em RSC; o app não usa RSC, major 6→8). Reavaliar em janela de upgrade.
