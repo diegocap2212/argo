@@ -19,14 +19,58 @@ ensaiada e a matriz de papéis roda com **RLS real**.
 
 **Nada foi aplicado em banco real ainda.** A produção do MMA segue com o modelo de 15/07.
 
-### ⚠️ Bloqueio de credencial (precisa de você)
+### Como aplicar (um comando)
 
-`SUPABASE_ACCESS_TOKEN` está no ambiente mas devolve **401** na Management API — expirado ou
-revogado. Sem ele não dá para criar branch, ler a `service_role` nem regenerar `types.ts`. Docker
-também não está instalado, então `supabase start` não é alternativa. **Para destravar:** gerar um
-Personal Access Token novo em `supabase.com/dashboard/account/tokens` e exportar como
-`SUPABASE_ACCESS_TOKEN`. Foi por isso que o caminho de verificação virou PGlite — e acabou achando
-três defeitos que o branch teria achado mais tarde e mais caro.
+```bash
+cd maturitymodel
+export SUPABASE_ACCESS_TOKEN=...                      # PAT: supabase.com/dashboard/account/tokens
+node scripts/apply-papeis.mjs cvkcngrmnfwupstyrpsd --check   # só leitura, seguro
+node scripts/apply-papeis.mjs cvkcngrmnfwupstyrpsd --apply
+```
+
+`--check` já rodou contra produção em 2026-07-26 e passou: **4 AMs por squad** (em 32 vínculos),
+**2 admins**, **0 AMs órfãos**. O `--apply` aplica a migration e depois confere 11 pós-condições,
+incluindo `4 → 4` em `portal_roles(role='am')` e "nenhum vínculo de squad perdido (41 → 41)".
+Ele **recusa** aplicar se houver AM sem e-mail, listando quem é.
+
+A migration é **atômica** por este canal: sonda de `begin/create/commit` + `begin/create/rollback`
+confirmou que a Management API honra controle transacional (2026-07-26). Se qualquer passo falhar,
+nada é aplicado.
+
+Backup do que a migration altera de forma destrutiva já está feito, no scratchpad da sessão:
+`backup-pre-papeis/{squad_members_restore.sql, portal_admins_restore.sql, policies-antes.json}`
+(41 linhas, 2 linhas, 62 policies). **Copie para um lugar durável** — o SO limpa o scratchpad.
+
+Depois de aplicar: regenerar `src/integrations/supabase/types.ts` e deployar o front (a UI nova
+chama `my_portal_roles()`).
+
+### 🧨 Histórico de migrations dessincronizado (achado 2026-07-26)
+
+`supabase_migrations.schema_migrations` em produção tem **46 registros**, e **6 migrations do repo
+não estão nele**:
+
+```
+20260713120000_neo_access_allowlist          20260723120000_qualidade_software
+20260715120000_portal_admins_scoped_roles    20260724130000_pre_session
+20260715150000_fix_sm_am_privilege_escalation 20260726120000_portal_roles (ainda não aplicada)
+```
+
+As cinco primeiras **estão aplicadas** (verificado objeto por objeto), mas foram aplicadas por SQL
+direto via Management API — caminho que não registra histórico. Há também `20260725113124`
+registrada em produção e ausente do repo: é o **mesmo conteúdo** do `20260724130000_pre_session`,
+aplicado pelo CLI com outro timestamp. Não é drift de schema, é divergência de numeração.
+
+**Consequência prática: `supabase db push` está minado.** Ele tentaria reaplicar as cinco. O
+`apply-papeis.mjs --apply` registra as seis no fim, deixando o histórico honesto e o `db push`
+utilizável pela consultoria. Enquanto isso não rodar, **não use `db push` neste projeto.**
+
+### Verificação de drift feita (produção × migrations)
+
+Era a lacuna que o PGlite não fecha. Conferido objeto por objeto contra produção: `portal_admins`,
+`pre_session_assessments`, `is_member`, `is_sm`, `is_am`, `shares_squad_with`,
+`squad_members_role_check` — todos presentes como a migration assume; `portal_roles` ainda não
+existe. **E o vazamento de diretório foi confirmado LIVE em produção** (a policy
+`"Authenticated users can view all profiles"` existe), não era artefato do replay.
 
 Documento completo do modelo: [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md).
 
@@ -53,13 +97,20 @@ individual morreu na sessão colaborativa). AM vê tudo e homologa; **não** res
 | 4 | Matriz de papéis + jornada ida e volta com **RLS real** | ✅ **59/59** |
 | 5 | `types.ts` (editado à mão) conferido contra o schema real | ✅ asserção no `test:rls-local` |
 | 6 | `lint` · `build` · contrato da jornada · `@neo/auth` | ✅ |
-| 7 | Commitar (25+ arquivos, nada commitado ainda) | ⛔ **pendente** |
-| 8 | **Backup do Supabase de produção** | ⛔ **NÃO FEITO** |
-| 9 | Token novo do Supabase → aplicar em **branch** e conferir a contagem de AMs no dado REAL | ⛔ bloqueado (401) |
-| 10 | `pnpm -C maturitymodel test:rls` contra o branch (Supabase de verdade, com GoTrue) | ⛔ nunca rodou |
-| 11 | Roteiro manual das 4 personas + round trip na UI | ⛔ pendente |
-| 12 | Regenerar `types.ts` do branch e conferir contra a versão à mão | ⛔ pendente |
-| 13 | Preview → promover | ⛔ pendente |
+| 7 | Commitado em `feat/mma-papeis-globais` | ✅ 3 commits |
+| 8 | **Backup** de `squad_members` + `portal_admins` + snapshot das 62 policies | ✅ (no scratchpad — **copiar para lugar durável**) |
+| 9 | Drift produção × migrations conferido objeto por objeto | ✅ casa |
+| 10 | Contagem de AMs no dado REAL (`--check`) | ✅ **4 AMs, 2 admins, 0 órfãos** |
+| 11 | **Aplicar em produção** (`--apply`) | ⛔ **bloqueado pelo classificador** — escrita em banco de produção exige sua aprovação |
+| 12 | Registrar as 6 migrations no histórico (o `--apply` faz) | ⛔ junto do 11 |
+| 13 | Regenerar `types.ts` e conferir contra a versão à mão | ⛔ depois do 11 |
+| 14 | Roteiro manual das 4 personas + round trip na UI | ⛔ depois do 11 |
+| 15 | Deploy do front (a UI chama `my_portal_roles()`) | ⛔ depois do 11 |
+
+⚠️ **Ordem entre 11 e 15 importa:** a UI nova chama `my_portal_roles()`, que só existe depois da
+migration. Deployar o front antes deixaria a home fail-closed (o hook devolve `[]`, ninguém vê papel
+global). Aplicar a migration antes do deploy é o caminho seguro — o front antigo não conhece
+`portal_roles` e continua funcionando com `is_portal_admin()`, cuja assinatura não mudou.
 
 ⚠️ **O passo 9 ainda é o que protege as pessoas.** O ensaio em PGlite prova que a *lógica* de
 migração converte todo AM por squad em AM global (`1 → 1` no cenário semeado) e que a migration
