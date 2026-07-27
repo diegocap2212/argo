@@ -289,31 +289,21 @@ jobs:
           upload: false
           output: codeql-results
 
-      - name: Falha se o CodeQL achou algo
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          arquivos=(codeql-results/*.sarif)
-          if [ ${#arquivos[@]} -eq 0 ]; then
-            echo "::error::nenhum SARIF gerado — a análise não rodou, e um job de SAST que não" \
-                 "analisa nada não pode passar."
-            exit 1
-          fi
-          total=0
-          for f in "${arquivos[@]}"; do
-            n=$(jq '[.runs[].results[]?] | length' "$f")
-            total=$((total + n))
-            if [ "$n" -gt 0 ]; then
-              echo "── $n achado(s) em $f"
-              jq -r '.runs[].results[]? |
-                "  [\(.level // "warning")] \(.ruleId)\n    \(.locations[0].physicalLocation.artifactLocation.uri):\(.locations[0].physicalLocation.region.startLine // 0)\n    \(.message.text)"' "$f"
-            fi
-          done
-          if [ "$total" -gt 0 ]; then
-            echo "::error::CodeQL: $total achado(s). Detalhe acima (sem aba Security: repo privado sem GHAS)."
-            exit 1
-          fi
-          echo "✅ CodeQL: 0 achados em ${#arquivos[@]} arquivo(s) SARIF."
+      # Falha em achado NOVO, não em achado existente — e a diferença não é conveniência.
+      #
+      # A primeira versão falhava em QUALQUER achado. Passou no PR e quebrou na `main`, porque
+      # em `pull_request` o CodeQL v3 faz análise *diff-informed* (só o que o PR toca) e em
+      # `push` varre o repositório inteiro: apareceram 6 pré-existentes que o PR nunca mostrou.
+      # Os 6 foram lidos um a um e nenhum é defeito (SHA-256 para igualar comprimento antes de
+      # `timingSafeEqual`; scripts de operador que leem `.sql` de argv; o sync gravando a
+      # resposta do Jira em caminho CONSTANTE). Falhar neles deixaria a `main` vermelha para
+      # sempre — o exato "vermelho permanente" que o comentário acima condena.
+      #
+      # Então: `.codeql-baseline.json` guarda os conhecidos COM MOTIVO, e o gate só reclama do
+      # que passou disso. A lógica tem os 5 comportamentos testados fora do CI (baseline exato,
+      # regra nova, contagem maior, SARIF ausente, baseline que encolheu).
+      - name: Falha se o CodeQL achou algo NOVO
+        run: node scripts/check-codeql-sarif.mjs codeql-results .codeql-baseline.json
 
       - name: Guarda o SARIF como artefato
         if: always()

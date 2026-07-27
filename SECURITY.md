@@ -115,6 +115,18 @@ contratado, trocar para `upload: true` e remover o passo de checagem local (inst
 `ci.yml`). Deixar `upload: true` sem GHAS é pior que não ter o job — é vermelho permanente, que
 ensina o time a ignorar CI vermelho.
 
+**O gate falha em achado NOVO, não em achado existente.** Os 6 pré-existentes estão em
+[`.codeql-baseline.json`](.codeql-baseline.json), **cada um com o motivo de ser aceito** — foram
+lidos um a um e nenhum é defeito (SHA-256 para igualar comprimento antes de `timingSafeEqual`;
+scripts de operador que leem `.sql` vindo de `argv`; o sync gravando a resposta do Jira em caminho
+constante, com escrita atômica). Se não dá para escrever o motivo, é defeito e se corrige — não se
+baselina. Quando a contagem real fica **menor** que o baseline, o CI **avisa** (não falha) para a
+entrada encolher junto: baseline que nunca encolhe apodrece até virar allowlist geral.
+
+Duas coisas que o CodeQL pegou e o resto do tooling não pegaria, e que justificam ele existir aqui:
+um import morto num arquivo (`tests/` da raiz) que **não está em nenhum escopo de lint**, e outro
+cujo nome aparecia num **comentário** — um guard por `grep -c` responderia "está em uso".
+
 **Aberto por decisão, não por descuido:** `vite >=6.4.3` (dev-server only, major 5→6) e
 `react-router >=8.3.0` (CSRF em RSC; o app não usa RSC, major 6→8). Reavaliar em janela de upgrade.
 
