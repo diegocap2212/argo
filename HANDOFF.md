@@ -38,10 +38,36 @@ de assinatura — certo sobre a função, **errado sobre o efeito**. Para mudan�
 a migration remove. O caminho seguro é a migration ser retrocompatível (manter o valor antigo
 lendo em paralelo) ou fazer os dois na mesma janela.
 
-### Falta fazer (só com login real)
+### Personas verificadas contra produção (2026-07-27)
 
-O roteiro das 4 personas na UI. Nenhum teste automatizado cobre isto, porque forjar o cookie
-HMAC do portal não cria sessão do Supabase — a home lê o papel via RPC autenticado:
+`node maturitymodel/scripts/verify-personas.mjs cvkcngrmnfwupstyrpsd` — assume a identidade de
+cada persona real (`set local role authenticated` + `request.jwt.claims` dentro de
+`begin … rollback`) e mede o que ela **de fato** enxerga sob RLS. Não escreve nada.
+
+Verdade absoluta: 10 squads · 7 ciclos · 3 em homologação · 32 pessoas.
+
+| persona | papéis | squads | fila homolog. | diretório |
+|---|---|---|---|---|
+| admin | `["admin","am"]` | 10/10 | 3 | 32/32 |
+| **AM** | `["am"]` | **10/10** | **3** | 32/32 |
+| SM | `[]` | **3/10** | 2 (só dos dele) | **5/32** |
+| sem vínculo | `[]` | **0/10** | 0 | **1/32** |
+
+É a medição do bug original: antes o AM só via os squads em que era membro. Sem problema de
+escopo, sem escalação (SM e member não satisfazem `is_portal_am()`), sem vazamento de diretório.
+
+**Não existe persona `member` puro em produção**: as 4 pessoas com `member` são exatamente os 4
+AMs, porque o colapso converteu as linhas `am` delas. Se aparecer um `member` sem papel global,
+o script passa a cobri-lo automaticamente.
+
+### Falta fazer: só a camada VISUAL
+
+O que sobrou não é autorização nem dado — é renderização: fonte, layout, se o texto faz sentido
+para quem lê. Nenhum teste automatizado cobre, e não é por preguiça: forjar o cookie HMAC do
+portal não cria sessão do Supabase, e a home lê o papel por RPC autenticado. Emitir sessão exige
+a `service_role` key.
+
+Roteiro (o que verificar em cada tela):
 
 1. **admin** (Diego/Tiago) — vê "Fila do AM", "Todos os squads" e "Administração"; consegue
    reiniciar assessment e excluir squad; em `/admin`, a área "Papéis do portal".
