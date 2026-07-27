@@ -33,7 +33,7 @@ jobs:
     name: Tipos, lint, contrato e builds
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 — pinned por SHA (supply chain)
       - run: corepack enable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
@@ -117,7 +117,7 @@ jobs:
     if: github.event_name != 'push' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 — pinned por SHA (supply chain)
       - run: corepack enable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
@@ -139,7 +139,7 @@ jobs:
     name: E2E do Dash
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 — pinned por SHA (supply chain)
       - run: corepack enable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
@@ -182,7 +182,7 @@ jobs:
       # `security-events: write` saiu: sem GHAS não existe aba Security neste repo privado,
       # então não havia upload nenhum acontecendo — era permissão concedida a troco de nada.
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 — pinned por SHA (supply chain)
         with:
           # gitleaks precisa do histórico: segredo commitado e removido depois continua no
           # histórico, e é exatamente o caso do repo (ver a anon key na migration do cron).
@@ -260,7 +260,7 @@ jobs:
       contents: read
       actions: read # `security-events: write` saiu com o upload: sem GHAS não há onde publicar
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.3.1 — pinned por SHA
       - name: Inicializa CodeQL
         uses: github/codeql-action/init@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4 — pinned por SHA
         with:
