@@ -1,0 +1,211 @@
+# QA / Code review — Portal Nero
+
+> Primeira revisão do Nero. O `argo` já tinha `docs/QA-PLAN.md` e `docs/SECURITY-PLAN.md`
+> com "Status final" no topo; o Nero nunca passou por isso. Mesmo formato: o que foi
+> **corrigido**, o que foi **avaliado e aceito**, e o que segue **pendente** — com quem
+> decide.
+
+## Status final (2026-07-26)
+
+| # | Achado | Severidade | Estado |
+|---|---|---|---|
+| 1 | `NERO_MONTHLY_BUDGET_USD` era medidor, não freio | **Crítico (financeiro)** | ✅ Corrigido |
+| 2 | Allowlist de modelos uma geração atrás | Médio | ✅ Corrigido |
+| 3 | Entrada de preço inalcançável (`claude-opus-4-8`) | Baixo | ✅ Corrigido |
+| 4 | `FALLBACK` de preço quebrável em silêncio | **Alto (financeiro)** | ✅ Corrigido (erro de compilação) |
+| 5 | Login por senha única, cookie de 30 dias sem expiração real | **Crítico (segurança)** | ✅ Corrigido na Fase 4 |
+| 6 | `vercel-build` rodava `prisma db push` (preview escrevia em produção) | **Alto** | ✅ Corrigido |
+| 7 | Invariante de `mutations.ts` só em comentário | Médio | ⬜ Pendente |
+| 8 | Prompt injection pela Biblioteca | Médio | ⬜ Pendente — avaliar |
+| 9 | Gate fecha se o Upstash cair | Médio | ⬜ Aceito por ora — confirmar |
+| 10 | Sanitização do full-text (`to_tsquery`) | A verificar | ⬜ Pendente |
+| 11 | `DEMO_SEED_ALLOWED` | Baixo | ⬜ Pendente |
+| 12 | Rate-limit se auto-renovava (15 min viravam indefinido) | **Alto (usabilidade)** | ✅ Corrigido |
+
+---
+
+## Corrigidos
+
+### 1. O orçamento não freava nada (crítico, financeiro)
+
+`getMonthUsage()` calculava `pct` para o `BudgetMeter` do header e **nada** impedia a chamada
+seguinte. Um laço agêntico com até 8 turnos × 16k `max_tokens` podia passar do teto sem
+obstáculo nenhum. Era o risco financeiro nº 1 do produto: o medidor mostrava 180% e o Nero
+continuava gastando.
+
+**Correção:** `assertWithinBudget()` em `src/lib/nero/usage.ts`, chamado por `streamTurn` —
+o **único ponto de IA do portal**. Isso importa: o chat (`api/chat/route.ts`) e a geração
+do report (`lib/nero/generate.ts`) passam os dois por `streamTurn`, então um guarda cobre
+todas as chamadas ao modelo. A rota de chat também checa antes de abrir o stream, para o
+estouro virar **429 legível** em vez de texto de erro dentro de um 200.
+
+Duas decisões conscientes registradas no código:
+
+- **Memo de 30s do gasto do mês.** Sem isso seriam 8 agregações por conversa. O TTL limita a
+  carga no banco *e* o quanto o gasto pode passar do teto antes do freio perceber; a rota
+  invalida o memo depois de gravar cada `UsageLog`.
+- **Fail-OPEN se a leitura do gasto falhar.** O oposto transformaria uma indisponibilidade do
+  Postgres em "o Nero parou". O teto é controle de **custo**, não de segurança — diferente do
+  gate de acesso, que fecha. A falha é logada em nível de erro.
+
+### 2 e 3. Allowlist de modelos e entrada morta
+
+A allowlist liberava `claude-sonnet-4-6`, sucedido por `claude-sonnet-5` — mesmo preço de
+tabela ($3/$15 por 1M) com qualidade bem maior em tarefa densa, e em **preço promocional
+($2/$10) até 2026-08-31**. E `claude-opus-4-8` estava na tabela de preços sem nunca ser
+alcançável (`resolveModel` aceita só haiku|sonnet): entrada morta.
+
+**Atenção ao operar:** o Sonnet 5 usa tokenizer novo — **~30% mais tokens para o mesmo
+texto**. O preço por token é igual, então o custo por turno sobe mesmo sem mudança de tabela.
+É exatamente o tipo de surpresa que o freio do item 1 existe para conter.
+
+### 4. `FALLBACK` de preço quebrável em silêncio (alto, financeiro)
+
+Ao trocar o Sonnet, `FALLBACK = PRICES["claude-sonnet-4-6"]` virou `undefined` e `costOfTurn`
+passou a lançar `TypeError`. **Eu cometi esse bug durante esta própria revisão** — o que é o
+melhor argumento para a correção: `Record<string, Rates>` faz o TypeScript tipar
+`PRICES["chave-inexistente"]` como `Rates` (e não `Rates | undefined`), então o compilador
+não vê nada e o erro só aparece em runtime. Pior: se tivesse virado `NaN` em vez de lançar,
+o custo iria a lixo **silenciosamente** e afrouxaria o freio — e custo errado não quebra
+nada visível, só aparece na fatura.
+
+**Correção em duas camadas:**
+
+- `PRICES` passa a ser `as const satisfies Record<string, Rates>`. Chave errada agora é
+  **erro de compilação** (`TS2551: Property 'claude-sonnet-4-6' does not exist. Did you mean
+  'claude-sonnet-5'?`), verificado empiricamente.
+- `scripts/test-nero-core.ts` (novo, 30 asserções, no CI) guarda o que o compilador não
+  pega: a lista de modelos vive em **três** lugares que precisam concordar — a allowlist
+  (`core.ts`), a tabela de preços (`pricing.ts`) e o seletor do cliente (`nero-chat.tsx`,
+  separado de propósito para não arrastar o SDK da Anthropic para o bundle do browser). O
+  teste também cobre a aritmética de cache (0,1× leitura / 1,25× escrita) e env de orçamento
+  malformada (`""`, `"abc"`, `"0"`, `"-5"`, `"NaN"` → teto padrão finito, nunca infinito).
+
+### 5. Login próprio (crítico, segurança) — corrigido na Fase 4
+
+Era senha única compartilhada (`APP_PASSWORD`), cookie de **30 dias**, e o token era o
+HMAC de uma **constante** — sem payload nem `exp`, então **não expirava de fato**; e sem
+rate-limit. Substituído pelo gate do portal: identidade do NEO (`neo_session`, com e-mail
+para auditoria) + senha própria do Nero com TTL 12h, rate-limit no Redis e log de quem
+entrou. Detalhes em `argo/HANDOFF.md`.
+
+---
+
+## Pendentes
+
+### 6. `prisma db push` a cada deploy (alto) — ✅ CORRIGIDO
+
+`vercel-build` é `prisma generate && prisma db push && next build`. Isso aplica schema
+**sem trilha de migração**: drift silencioso, sem histórico do que mudou, sem rollback a não
+ser restaurar backup. O `DEPLOY.md` compensa com ritual manual (branch Neon + `pg_dump` +
+revisar `migrate diff`), o que é frágil por depender de disciplina — e a Fase 7 já removeu o
+`db:reset` justamente porque foot-gun documentado não protege ninguém.
+
+**Deixou de ser teórico — medido em 2026-07-26.** Um deploy de **PREVIEW** do `nero-portal`
+(feito só para validar o Root Directory) rodou contra o banco de **PRODUÇÃO**:
+
+```
+Running "pnpm run vercel-build"
+$ prisma generate && prisma db push && next build
+Datasource "db": PostgreSQL database "neondb", schema "public"
+The database is already in sync with the Prisma schema.
+```
+
+Sem dano — o schema estava idêntico, então foi no-op. Mas o mecanismo está provado: **preview
+escreve schema em produção**. Se a branch tivesse qualquer alteração de schema, o preview a
+teria aplicado em produção em silêncio, sem backup e sem trilha, disparada por um deploy que
+ninguém considera arriscado. Duas causas somadas: `vercel-build` faz `db push`, e o projeto
+não separa banco de Preview do de Production (as envs `POSTGRES_*` estão em
+`Production, Preview`).
+
+**Corrigido em 2026-07-26.** `vercel-build` passou a ser `prisma generate && next build`; schema
+muda por `db:migrate` (`prisma migrate deploy`), e `db:push` foi **removido** do package.json.
+Baseline `0_init` (17 tabelas, 0 DROP) aplicado em produção com backup
+(`backup-pre-migrate-baseline`) e dados conferidos antes e depois (198/10/212 idênticos). O
+procedimento foi ensaiado antes na branch `preview`, então produção não foi o primeiro teste.
+Runbook em [`../DEPLOY.md`](../DEPLOY.md).
+
+**Segue em aberto (menor):** as envs `POSTGRES_*` continuam em `Production, Preview`, ou seja
+preview e produção **compartilham banco**. Com o `db push` fora do build isso deixou de poder
+alterar schema, mas um preview ainda **lê e escreve dado** em produção. Apontar o Preview para a
+branch `preview` do Neon exige o dashboard (catch-22 da CLI 54 — ver `ONBOARDING.md`).
+
+### 7. Invariante de `mutations.ts` (médio)
+
+Entidade nova exige registro em `modelOf()` **e** em `ENTITY_DATE_FIELDS` no mesmo commit,
+senão o **undo quebra**. Hoje isso é só um comentário. O sintoma seria auditoria que não
+desfaz — descoberto em produção, no pior momento.
+**Recomendação:** guarda em runtime (`modelOf` lança se a entidade não estiver nos dois
+mapas) + caso em `scripts/test-state.ts`.
+
+### 8. Prompt injection pela Biblioteca (médio)
+
+`consultar_biblioteca` e `ler_documento` injetam conteúdo da tabela `Document` no contexto —
+e o Nero tem **16 tools que escrevem estado**. Um documento com instruções embutidas é lido
+como dado pelo modelo. O risco é limitado hoje porque quem popula a Biblioteca é a própria
+equipe (não é upload de terceiro) e toda escrita é auditável/undoable via `StateVersion`.
+**Recomendação:** delimitar o conteúdo recuperado com marcação explícita de "isto é dado,
+não instrução" no prompt, e reavaliar antes de abrir upload para o cliente.
+
+### 12. Rate-limit se auto-renovava e transformava 15 min em indefinido (✅ corrigido)
+
+`consumeAttempt` rodava `EXPIRE` em **toda** tentativa, inclusive nas já bloqueadas. A
+justificativa original era válida — `INCR` e `EXPIRE` são operações separadas, e se o `INCR`
+criasse a chave e o `EXPIRE` falhasse, ela ficaria sem TTL e travaria o IP para sempre — mas o
+efeito colateral era pior:
+
+**Quem já estava bloqueado empurrava o próprio desbloqueio 15 minutos para frente a cada
+retry.** E a reação natural de quem lê "muitas tentativas" é tentar de novo. Bloqueio de 15
+minutos virava, na prática, indefinido.
+
+Aconteceu em produção em 2026-07-26, e a origem foi **a própria suíte e2e**: o caso "senha
+errada com sessão válida" gasta uma tentativa, o rate-limit é **por IP**, e rodar a suíte
+quatro vezes contra produção consumiu o orçamento de uma pessoa real na mesma rede.
+
+Duas correções:
+
+- `api/gate.ts` define a janela só na primeira tentativa; `ttl < 0` (-1 sem TTL, -2 inexistente)
+  cobre a preocupação original sem renovar a janela de quem já está bloqueado.
+- `tests/gate.spec.ts` pula esse caso a menos que `NEO_ALLOW_RATE_LIMIT_BURN=1`. **Teste não
+  deve consumir recurso compartilhado com usuário real.**
+
+Fica em aberto para avaliação: o rate-limit é por IP, então NAT corporativo agrupa pessoas
+diferentes na mesma chave (já registrado como aceito no HANDOFF). Com a janela não-renovável o
+prejuízo é limitado a 15 min, mas se o LM tiver saída NAT única vale trocar a chave por
+`IP + e-mail` — o e-mail já está disponível na identidade validada.
+
+### 9. Gate fecha se o Upstash cair (médio) — confirmar
+
+`api/gate.ts` devolve **503** quando o rate-limit não está disponível, em vez de validar
+senha sem proteção anti-brute-force. Comportamento herdado do `api/tower.ts`. Medido nesta
+revisão: com Upstash ausente, `POST /api/gate?scope=nero` → `503 {"error":"Proteção contra
+tentativas indisponível"}`.
+
+É defensável (não abrir mão do anti-brute-force), mas o efeito prático é que **uma queda do
+Upstash tranca o Nero e a Torre**. Disponibilidade trocada por segurança — vale sua
+confirmação explícita, e vale monitorar.
+
+### 10. Sanitização do full-text (a verificar)
+
+`lib/biblioteca/search.ts` monta busca full-text `portuguese` do Postgres. Confirmar como a
+entrada do usuário chega ao `to_tsquery` (query malformada derruba a busca; `plainto_tsquery`
+ou `websearch_to_tsquery` são as formas seguras).
+
+### 11. `DEMO_SEED_ALLOWED` (baixo)
+
+`prisma/seed-demo.ts` aborta sem a flag. Confirmar que a env não está setada em produção.
+
+---
+
+## Como rodar os gates
+
+```bash
+pnpm typecheck                         # 7 pacotes
+pnpm lint
+pnpm --filter @neo/auth test           # contrato de sessão (77 asserções)
+pnpm --filter nero-portal test:core    # modelos, preços, orçamento (30 asserções)
+npx tsx scripts/test-state.ts          # versionamento + undo — EXIGE branch Neon, não produção
+```
+
+Os quatro primeiros rodam no CI (`.github/workflows/ci.yml`). O `test-state.ts` é destrutivo
+e fica de fora de propósito.

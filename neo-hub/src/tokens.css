@@ -1,0 +1,12 @@
+/* Tokens do design system NEO vêm do pacote compartilhado — ver packages/neo-design.
+   O hub mapeia os nomes canônicos (--neo-*) para os nomes curtos que o CSS do index.html
+   já usava, então nenhuma regra de layout precisou mudar. */
+@import '@neo/design/tokens.css';
+
+:root {
+  --ink: var(--neo-ink);
+  --green: var(--neo-brand);
+  --paper: var(--neo-paper);
+  --muted: var(--neo-muted-ink);
+  --line: var(--neo-line);
+}

@@ -1,12 +1,17 @@
 # NEO — Núcleo de Evolução e Operação · Venice by Blite × LM Mobilidade
 
-Monorepo do **Portal NEO**: as três aplicações da parceria Venice/LM Mobilidade servidas numa **única origem** (`https://neo-lm.vercel.app`), com login único e acesso garantido só pelo hub.
+> **Assumindo o projeto?** [`ARCHITECTURE.md`](ARCHITECTURE.md) (o mapa e o que é
+> load-bearing) → [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy) →
+> [`SECRETS.md`](SECRETS.md) (variáveis) → [`HANDOFF.md`](HANDOFF.md) (estado corrente).
+
+Monorepo do **Portal NEO**: as quatro aplicações da parceria Venice/LM Mobilidade servidas numa **única origem** (`https://neo-lm.vercel.app`), com login único e acesso garantido só pelo hub.
 
 | App | Pasta | Rota em produção | O que é |
 |---|---|---|---|
 | **NEO Hub** | [`neo-hub/`](neo-hub/) | `/` | Login (Magic Link/OTP) + portas para as aplicações. |
 | **Performance Dash** | [`locavia-dashboard/`](locavia-dashboard/) | `/dash/**` | Fluxo, entrega e previsibilidade por time/período (Jira + SFMKT). |
 | **Maturity Model (Portal MMA)** | [`maturitymodel/`](maturitymodel/) | `/maturity/**` | Ciclos de avaliação de maturidade por squad. |
+| **Nero** | [`nero-portal/`](nero-portal/) | `/nero/**` | Advisor de governança de dados (DAMA). **Acesso restrito**: exige a sessão NEO *e* senha própria. |
 
 As functions serverless vivem em [`api/`](api/) na raiz (`/api/**`) e o [`middleware.ts`](middleware.ts) protege as rotas das apps na borda.
 
@@ -17,6 +22,7 @@ As functions serverless vivem em [`api/`](api/) na raiz (`/api/**`) e o [`middle
   usuário ──► /            NEO Hub — login OTP + portas (público)
               /dash/**     Performance Dash ─┐  bloqueados na borda pelo
               /maturity/** Portal MMA       ─┤  middleware.ts sem o cookie
+              /nero/**     Nero (rewrite p/ projeto Vercel separado) ─┘  + senha própria
               /api/**      functions (Bearer + allowlist; fora do middleware)
                                              │
   login no hub ──► POST /api/session ──► cookie neo_session (HMAC 12h, HttpOnly)

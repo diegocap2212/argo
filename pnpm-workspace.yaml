@@ -1,0 +1,26 @@
+# Workspace do monorepo NEO. Um `pnpm install` na raiz instala os 4 apps + os pacotes
+# compartilhados — é o primeiro passo do ONBOARDING.md.
+#
+# POR QUE pnpm E NÃO npm workspaces: o hoisting do npm aninhava o rollup de um dos apps
+# Vite e o npm derrubava o binário nativo da plataforma (npm#4828) no builder Linux da
+# Vercel. O node_modules isolado do pnpm não faz esse hoisting, então o bug não tem como
+# aparecer. Antes disso cada app tinha o próprio package-lock (5 lockfiles, 5 installs).
+packages:
+  - 'neo-hub'
+  - 'locavia-dashboard'
+  - 'maturitymodel'
+  - 'nero-portal'
+  - 'packages/*'
+
+# Scripts de instalação (postinstall) — o pnpm bloqueia todos por padrão e exige
+# aprovação explícita. Cada linha é uma decisão, não um "liberar tudo": só entram os
+# que precisam baixar/linkar binário nativo ou gerar código para o build funcionar.
+allowBuilds:
+  esbuild: true # binário nativo da plataforma; sem ele o Vite não builda
+  '@prisma/client': true # gera o client tipado a partir do schema
+  '@prisma/engines': true # engines nativas do Prisma
+  prisma: true # CLI (usada por db:push/seed)
+  '@swc/core': true # binário nativo do compilador do Next
+  sharp: true # binário nativo de imagem, usado pelo Next
+  unrs-resolver: true # binário nativo do resolver do ESLint
+  '@scarf/scarf': false # telemetria/analytics de terceiro; nada do build depende disso

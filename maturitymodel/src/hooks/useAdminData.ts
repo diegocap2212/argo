@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { Role } from "@/types/mma";
+import type { CycleStatus, PortalRole, Role } from "@/types/mma";
 
 export interface AdminTeam {
   id: string;
@@ -37,7 +37,9 @@ export interface AdminCycle {
   id: string;
   team_id: string;
   quarter: string;
-  status: "session" | "homologation" | "official" | "archived";
+  // Reusa CycleStatus em vez de repetir a união: esta lista estava sem 'pre_session'
+  // desde 24/07, então a tela de admin exibia um status que o TypeScript dizia impossível.
+  status: CycleStatus;
   workshop_at: string | null;
 }
 
@@ -110,13 +112,17 @@ export interface AdminProfile {
   id: string;
   email: string | null;
   full_name: string | null;
-  is_am: boolean;
+  /** Papéis GLOBAIS desta pessoa (portal_roles), casados por e-mail. */
+  portalRoles: PortalRole[];
 }
 
 /**
- * Diretório de pessoas que já acessaram o portal; AMs aparecem destacados.
- * Só o admin do portal enxerga o diretório completo (RLS de profiles) — passe
- * `enabled=false` para gestores de squad, que adicionam por e-mail exato via RPC.
+ * Diretório de pessoas que já acessaram o portal, com o papel global de cada uma.
+ * Só o admin enxerga o diretório completo (RLS de profiles).
+ *
+ * O destaque de AM passou a vir de `portal_roles` e não de `squad_members.role='am'`:
+ * o papel deixou de ser por squad, então a antiga marcação ("já é AM em outro squad")
+ * perdeu sentido — e era ela que fazia parecer que AM era coisa local.
  */
 export function useAdminProfiles(enabled = true) {
   return useQuery({
@@ -124,18 +130,93 @@ export function useAdminProfiles(enabled = true) {
     enabled,
     staleTime: 30_000,
     queryFn: async (): Promise<AdminProfile[]> => {
-      const [{ data: profiles, error: profileError }, { data: amMemberships, error: memberError }] = await Promise.all([
-        supabase.from("profiles").select("id, email, full_name").order("email"),
-        supabase.from("squad_members").select("user_id").eq("role", "am"),
-      ]);
+      const [{ data: profiles, error: profileError }, { data: roles, error: rolesError }] =
+        await Promise.all([
+          supabase.from("profiles").select("id, email, full_name").order("email"),
+          supabase.from("portal_roles").select("email, role"),
+        ]);
       if (profileError) throw profileError;
-      if (memberError) throw memberError;
+      if (rolesError) throw rolesError;
 
-      const amIds = new Set((amMemberships ?? []).map((membership) => membership.user_id));
+      const byEmail = new Map<string, PortalRole[]>();
+      for (const r of (roles ?? []) as { email: string; role: PortalRole }[]) {
+        byEmail.set(r.email, [...(byEmail.get(r.email) ?? []), r.role]);
+      }
+
+      const weight = (p: PortalRole[]) => (p.includes("admin") ? 2 : p.includes("am") ? 1 : 0);
       return (profiles ?? [])
-        .map((profile) => ({ ...profile, is_am: amIds.has(profile.id) }))
-        .sort((a, b) => Number(b.is_am) - Number(a.is_am) || (a.full_name ?? a.email ?? "").localeCompare(b.full_name ?? b.email ?? ""));
+        .map((profile) => ({
+          ...profile,
+          portalRoles: byEmail.get((profile.email ?? "").toLowerCase()) ?? [],
+        }))
+        .sort(
+          (a, b) =>
+            weight(b.portalRoles) - weight(a.portalRoles) ||
+            (a.full_name ?? a.email ?? "").localeCompare(b.full_name ?? b.email ?? ""),
+        );
     },
+  });
+}
+
+export interface PortalRoleRow {
+  email: string;
+  role: PortalRole;
+  note: string | null;
+}
+
+/** Todas as concessões de papel global. Admin-only pela RLS de portal_roles. */
+export function usePortalRoleGrants() {
+  return useQuery({
+    queryKey: ["portal-role-grants"],
+    staleTime: 15_000,
+    queryFn: async (): Promise<PortalRoleRow[]> => {
+      const { data, error } = await supabase
+        .from("portal_roles")
+        .select("email, role, note")
+        .order("role")
+        .order("email");
+      if (error) throw error;
+      return (data ?? []) as PortalRoleRow[];
+    },
+  });
+}
+
+function invalidatePortalRoles(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["portal-role-grants"] });
+  qc.invalidateQueries({ queryKey: ["admin-profiles"] });
+  // O papel decide o ESCOPO da home e das telas de squad — sem isto quem acabou de
+  // receber AM continuaria vendo só os próprios squads até um reload.
+  qc.invalidateQueries({ queryKey: ["portal-roles"] });
+  qc.invalidateQueries({ queryKey: ["my-squads"] });
+}
+
+export function useGrantPortalRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ email, role, note }: { email: string; role: PortalRole; note?: string }) => {
+      // lower() é CHECK na tabela: gravar com maiúscula falharia no banco, e o e-mail do
+      // JWT também é comparado em minúsculas.
+      const { error } = await supabase
+        .from("portal_roles")
+        .insert({ email: email.trim().toLowerCase(), role, note: note?.trim() || null });
+      if (error) throw error;
+    },
+    onSuccess: () => invalidatePortalRoles(qc),
+  });
+}
+
+export function useRevokePortalRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ email, role }: { email: string; role: PortalRole }) => {
+      const { error } = await supabase
+        .from("portal_roles")
+        .delete()
+        .eq("email", email.toLowerCase())
+        .eq("role", role);
+      if (error) throw error;
+    },
+    onSuccess: () => invalidatePortalRoles(qc),
   });
 }
 

@@ -1,5 +1,402 @@
 # HANDOFF — NEO (Núcleo de Evolução e Operação)
 
+> **Novo no projeto?** Comece por [`ARCHITECTURE.md`](ARCHITECTURE.md) (o mapa e o que é
+> load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
+> **estado operacional corrente** — histórico e pendências.
+
+## Rodada 2026-07-27 — Papéis do MMA + home real — ✅ **NO AR**
+
+Banco e front promovidos em 2026-07-27. Deployment de produção:
+`dpl_CbMZHZVXrUkcyWSopMXufw7KWgvj` (`neo-9lraqnl33`).
+
+Rollback, se necessário: `vercel promote https://neo-k3c6lu88z-diegocaporusso-2820s-projects.vercel.app`
+(o último anterior a esta rodada). **Atenção:** voltar só o front deixa o estado invertido —
+o front antigo lê `squad_members.role='am'`, que não existe mais, e a homologação desaparece da
+UI. Para reverter de verdade, rode também
+`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` e restaure
+`squad_members` do backup. Isso **reabre o vazamento de diretório** — pense duas vezes.
+
+### Verificado em produção
+
+| | |
+|---|---|
+Migration, 11 pós-condições | **4 → 4** AMs globais · **2 → 2** admins · **41 → 41** vínculos |
+Conferência independente | `portal_roles` 4 am + 2 admin · `squad_members` 32 member + 9 sm |
+E2E do portal contra produção | **20/21** (o pulado é o que queima rate-limit, de propósito) |
+Matriz de gate | `/` 200 · `/dash/` 302 · `/maturity/` 302 · `/nero/` 302 · `/api/data` 401 |
+Bundle em produção | `my_portal_roles` presente · `is_portal_admin` **ausente** · home com "Fila do AM" |
+
+### ⚠️ A janela entre migration e deploy (lição registrada)
+
+Entre aplicar o banco e promover o front, **a homologação ficou indisponível na UI**: o front
+antigo decide "é AM?" lendo `squad_members.role='am'`, valor que a migration eliminou. O banco
+permitia (as policies usam `is_portal_am()`), a interface não.
+
+Eu havia afirmado que o front antigo seguiria funcionando porque `is_portal_admin()` não mudou
+de assinatura — certo sobre a função, **errado sobre o efeito**. Para mudanças futuras de papel:
+**deployar o front ANTES ou junto**, nunca depois, quando o front antigo depende de um valor que
+a migration remove. O caminho seguro é a migration ser retrocompatível (manter o valor antigo
+lendo em paralelo) ou fazer os dois na mesma janela.
+
+### Personas verificadas contra produção (2026-07-27)
+
+`node maturitymodel/scripts/verify-personas.mjs cvkcngrmnfwupstyrpsd` — assume a identidade de
+cada persona real (`set local role authenticated` + `request.jwt.claims` dentro de
+`begin … rollback`) e mede o que ela **de fato** enxerga sob RLS. Não escreve nada.
+
+Verdade absoluta: 10 squads · 7 ciclos · 3 em homologação · 32 pessoas.
+
+| persona | papéis | squads | fila homolog. | diretório |
+|---|---|---|---|---|
+| admin | `["admin","am"]` | 10/10 | 3 | 32/32 |
+| **AM** | `["am"]` | **10/10** | **3** | 32/32 |
+| SM | `[]` | **3/10** | 2 (só dos dele) | **5/32** |
+| sem vínculo | `[]` | **0/10** | 0 | **1/32** |
+
+É a medição do bug original: antes o AM só via os squads em que era membro. Sem problema de
+escopo, sem escalação (SM e member não satisfazem `is_portal_am()`), sem vazamento de diretório.
+
+**Não existe persona `member` puro em produção**: as 4 pessoas com `member` são exatamente os 4
+AMs, porque o colapso converteu as linhas `am` delas. Se aparecer um `member` sem papel global,
+o script passa a cobri-lo automaticamente.
+
+### Camada visual — verificada, e achou um bug (2026-07-27)
+
+O Diego abriu a home logado como admin e mandou screenshot. A home entrega o que devia:
+"Homologar o pacote · SF Vendas" como próxima ação, **"Precisa de você · 3 pendências"** listando
+SF Vendas, Gol e Parati, a jornada com "Pré-sessão ✓" e o contador **3/5 etapas**, "Aguardando
+homologação" e "Administração". Badge de 3 na sidebar. É o relato original resolvido.
+
+**E revelou um defeito que nenhum teste automatizado pegaria:** a trilha da jornada quebrava em
+duas linhas — `"05 Evolução"` caía desalinhado sob "Pré-sessão". Causa: `.home-journey` tinha
+`grid-template-columns: repeat(4,1fr)` cravado, e a jornada passou a ter 5 etapas.
+
+Corrigido com `grid-auto-flow: column` + `grid-auto-columns: 1fr` (as colunas derivam da
+quantidade de etapas) e `grid-auto-flow: row` no `@media (max-width: 720px)` — sem esse reset os
+passos ficariam lado a lado no celular. Medido no browser contra o CSS compilado: desktop 1440px
+= 5 passos numa linha, colunas de 258px; mobile 390px = 5 linhas empilhadas, sem transbordo.
+Confirmado no CSS servido em produção. Deployment `dpl_5zZQKzim74tSL6jZ3ykcJs5PQGQs`.
+
+**Lição:** a jornada tinha o CSS como uma quarta opinião sobre "quantas etapas existem", além de
+`CYCLE_JOURNEY`, `CYCLE_TRANSITIONS` e o trigger. As três primeiras já estão amarradas por
+contrato (`test:journey`); o CSS agora simplesmente não opina.
+
+### Falta fazer: as outras três personas na tela
+
+Verificado por dado e autorização (tabela acima), **não** por renderização. Emitir sessão para
+outra pessoa exige a `service_role` key, que ignora RLS — não vale o risco só para tirar
+screenshot. O que ver ao logar como cada uma:
+
+1. **admin** (Diego/Tiago) — vê "Fila do AM", "Todos os squads" e "Administração"; consegue
+   reiniciar assessment e excluir squad; em `/admin`, a área "Papéis do portal".
+2. **AM** (os 4 promovidos) — vê todos os squads e a fila; homologa; **não** vê `/admin`;
+   reiniciar/excluir devem falhar.
+3. **SM** — vê só os squads dele; roda pré-sessão e sessão; **não** vê a aba Homologação.
+4. **member** — leitura do próprio squad, sem ação.
+5. **Round trip**: pré-sessão → sessão → homologação → **devolver para sessão** (só AM) →
+   homologar → oficializar → arquivar.
+
+---
+
+## Rodada 2026-07-26 (2ª) — detalhe técnico dos papéis do MMA
+
+**Estado: pronto para aplicar.** A migration foi **executada de verdade** contra Postgres
+(PGlite/WASM, sem Docker/nuvem/credencial): 51 migrations aplicam em ordem, a migração de dados foi
+ensaiada e a matriz de papéis roda com **RLS real**.
+
+| Suíte | Resultado |
+|---|---|
+| `test:rls-local` — papéis, jornada e migração de dados com RLS real | **59/59** |
+| `test:migrations` — 51 migrations num Postgres limpo | **Schema OK** (50 aplicadas, 1 pulada: `pg_cron`) |
+| `test:journey` — contrato TS × SQL da jornada | **21/21** |
+| `lint` · `build` · `@neo/auth test` | 0 erros · ok · **77/77** |
+
+**Nada foi aplicado em banco real ainda.** A produção do MMA segue com o modelo de 15/07.
+
+### Como aplicar (um comando)
+
+```bash
+cd maturitymodel
+export SUPABASE_ACCESS_TOKEN=...                      # PAT: supabase.com/dashboard/account/tokens
+node scripts/apply-papeis.mjs cvkcngrmnfwupstyrpsd --check   # só leitura, seguro
+node scripts/apply-papeis.mjs cvkcngrmnfwupstyrpsd --apply
+```
+
+`--check` já rodou contra produção em 2026-07-26 e passou: **4 AMs por squad** (em 32 vínculos),
+**2 admins**, **0 AMs órfãos**. O `--apply` aplica a migration e depois confere 11 pós-condições,
+incluindo `4 → 4` em `portal_roles(role='am')` e "nenhum vínculo de squad perdido (41 → 41)".
+Ele **recusa** aplicar se houver AM sem e-mail, listando quem é.
+
+A migration é **atômica** por este canal: sonda de `begin/create/commit` + `begin/create/rollback`
+confirmou que a Management API honra controle transacional (2026-07-26). Se qualquer passo falhar,
+nada é aplicado.
+
+Backup do que a migration altera de forma destrutiva já está feito, no scratchpad da sessão:
+`backup-pre-papeis/{squad_members_restore.sql, portal_admins_restore.sql, policies-antes.json}`
+(41 linhas, 2 linhas, 62 policies). **Copie para um lugar durável** — o SO limpa o scratchpad.
+
+Depois de aplicar: regenerar `src/integrations/supabase/types.ts` e deployar o front (a UI nova
+chama `my_portal_roles()`).
+
+### 🧨 Histórico de migrations dessincronizado (achado 2026-07-26)
+
+`supabase_migrations.schema_migrations` em produção tem **46 registros**, e **6 migrations do repo
+não estão nele**:
+
+```
+20260713120000_neo_access_allowlist          20260723120000_qualidade_software
+20260715120000_portal_admins_scoped_roles    20260724130000_pre_session
+20260715150000_fix_sm_am_privilege_escalation 20260726120000_portal_roles (ainda não aplicada)
+```
+
+As cinco primeiras **estão aplicadas** (verificado objeto por objeto), mas foram aplicadas por SQL
+direto via Management API — caminho que não registra histórico. Há também `20260725113124`
+registrada em produção e ausente do repo: é o **mesmo conteúdo** do `20260724130000_pre_session`,
+aplicado pelo CLI com outro timestamp. Não é drift de schema, é divergência de numeração.
+
+**Consequência prática: `supabase db push` está minado.** Ele tentaria reaplicar as cinco. O
+`apply-papeis.mjs --apply` registra as seis no fim, deixando o histórico honesto e o `db push`
+utilizável pela consultoria. Enquanto isso não rodar, **não use `db push` neste projeto.**
+
+### Verificação de drift feita (produção × migrations)
+
+Era a lacuna que o PGlite não fecha. Conferido objeto por objeto contra produção: `portal_admins`,
+`pre_session_assessments`, `is_member`, `is_sm`, `is_am`, `shares_squad_with`,
+`squad_members_role_check` — todos presentes como a migration assume; `portal_roles` ainda não
+existe. **E o vazamento de diretório foi confirmado LIVE em produção** (a policy
+`"Authenticated users can view all profiles"` existe), não era artefato do replay.
+
+Documento completo do modelo: [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md).
+
+### O que motivou
+
+Relato: *"salesforce vendas já testou, mas não aparece pra mim que preciso homologar."* Diagnóstico:
+**seis causas somadas**, sendo a raiz o **AM ser papel por squad** — quem homologa só via os squads
+em que era membro. Detalhe na PAPEIS.md §1.
+
+### O modelo novo, em uma linha
+
+`portal_roles(email, role in ('admin','am'))` = papel **global**; `squad_members.role in ('sm','member')`
+= vínculo **local**. `po`/`tl`/`team` colapsados em `member` (não tinham consequência funcional: o voto
+individual morreu na sessão colaborativa). AM vê tudo e homologa; **não** reseta, **não** exclui,
+**não** gerencia membros.
+
+### Onde exatamente parou — retomar por aqui
+
+| # | Passo | Estado |
+|---|---|---|
+| 1 | Migration, rollback, front, 4 suítes de teste, docs | ✅ escrito |
+| 2 | Migration **executada** em Postgres limpo (PGlite) | ✅ Schema OK |
+| 3 | **Migração de dados ensaiada**: AM por squad → AM global, contagem confere | ✅ |
+| 4 | Matriz de papéis + jornada ida e volta com **RLS real** | ✅ **59/59** |
+| 5 | `types.ts` (editado à mão) conferido contra o schema real | ✅ asserção no `test:rls-local` |
+| 6 | `lint` · `build` · contrato da jornada · `@neo/auth` | ✅ |
+| 7 | Commitado em `feat/mma-papeis-globais` | ✅ 3 commits |
+| 8 | **Backup** de `squad_members` + `portal_admins` + snapshot das 62 policies | ✅ (no scratchpad — **copiar para lugar durável**) |
+| 9 | Drift produção × migrations conferido objeto por objeto | ✅ casa |
+| 10 | Contagem de AMs no dado REAL (`--check`) | ✅ **4 AMs, 2 admins, 0 órfãos** |
+| 11 | **Aplicar em produção** (`--apply`) | ⛔ **bloqueado pelo classificador** — escrita em banco de produção exige sua aprovação |
+| 12 | Registrar as 6 migrations no histórico (o `--apply` faz) | ⛔ junto do 11 |
+| 13 | Regenerar `types.ts` e conferir contra a versão à mão | ⛔ depois do 11 |
+| 14 | Roteiro manual das 4 personas + round trip na UI | ⛔ depois do 11 |
+| 15 | Deploy do front (a UI chama `my_portal_roles()`) | ⛔ depois do 11 |
+
+⚠️ **Ordem entre 11 e 15 importa:** a UI nova chama `my_portal_roles()`, que só existe depois da
+migration. Deployar o front antes deixaria a home fail-closed (o hook devolve `[]`, ninguém vê papel
+global). Aplicar a migration antes do deploy é o caminho seguro — o front antigo não conhece
+`portal_roles` e continua funcionando com `is_portal_admin()`, cuja assinatura não mudou.
+
+⚠️ **O passo 9 ainda é o que protege as pessoas.** O ensaio em PGlite prova que a *lógica* de
+migração converte todo AM por squad em AM global (`1 → 1` no cenário semeado) e que a migration
+**aborta sozinha** se algum AM não tiver e-mail em `profiles` — testado. O que ele não pode saber é
+**quantos AMs existem em produção**. Conferir no branch:
+`select count(distinct user_id) from squad_members where role='am'` **antes** ×
+`select count(*) from portal_roles where role='am'` **depois**.
+
+⚠️ **O que o PGlite não cobre:** GoTrue (login/OTP), Realtime, Storage, `pg_cron`, e se o estado da
+produção casa com a soma das migrations. Os passos 10 e 11 seguem necessários.
+
+### Arquivos desta rodada
+
+Novos: `maturitymodel/supabase/migrations/20260726120000_portal_roles.sql` ·
+`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` ·
+`maturitymodel/src/hooks/usePortalRole.ts` · `maturitymodel/tests/journey-contract.ts` ·
+`maturitymodel/tests/pg/{supabase-shim,apply-migrations,rls-local}.ts` ·
+`maturitymodel/docs/PAPEIS.md`
+
+**O harness `tests/pg/`** roda Postgres em WASM (PGlite) com uma camada mínima do Supabase
+(`auth.uid()`, `auth.users`, `auth.jwt()`, papéis `anon`/`authenticated`/`service_role`). Serve para
+qualquer trabalho futuro de RLS no MMA: `pnpm -C maturitymodel test:rls-local` exercita policies de
+verdade em ~10s, sem Docker e sem tocar em banco nenhum. Os 4 scripts estão no CI.
+
+Reescritos: `useMySquads.ts` · `useSquadRole.ts` · `useAdminData.ts` · `Inicio.tsx` · `AdminMMA.tsx` ·
+`ProtectedRoute.tsx` (`RequireManager` → **`RequireAdmin`**) · `AppShell.tsx` · `SquadSwitcher.tsx` ·
+`types/mma.ts` · `CycleJourney.tsx` · `tests/rls/rls-matrix.ts` · `ci.yml` · `App.tsx`
+
+Removido: `maturitymodel/src/hooks/useIsPortalAdmin.ts` (substituído por `usePortalRole`).
+
+### 🔒 Vazamento de privacidade achado e corrigido (pré-existente)
+
+A policy legada `profiles."Authenticated users can view all profiles"` (`auth.uid() is not null`)
+sobreviveu à limpeza de 15/07. **Policies somam com OR**, então ela **anulava** a `profiles_read`
+restritiva: qualquer usuário autenticado lia **e-mail e nome de todas as pessoas**. O "diretório
+fechado" registrado como IMPLEMENTADO em `ROLES-REDESIGN.md` nunca esteve fechado.
+
+Também corrigido: `"Admins can update any profile"` dependia de `is_admin()` sobre a tabela **legada**
+`user_roles` (não gerenciada) — uma linha esquecida ali dava poder de editar qualquer perfil. E as 4
+tabelas do Maturity Model antigo tinham `for all to public using (true)`, e `public` inclui **`anon`**:
+escrita com a chave anônima. Tabelas mortas (zero referências em `src/`), permissão fechada.
+
+Três asserções novas impedem a volta, incluindo **nenhuma policy de escrita alcança `public`/`anon`**
+em todo o schema.
+
+### Defeitos pré-existentes corrigidos de passagem
+
+- `restart_assessment` voltava para `'session'`, **pulando a pré-sessão** (que virou o início do ciclo em 24/07).
+- `officialize_cycle` chamado 2× **duplicava os kaizens** — agora a 2ª chamada é recusada.
+- `SquadSwitcher` mapeava status mortos (`voting`/`workshop`/`proposed`) e **não** tinha
+  `pre_session`/`session`: renderizava `undefined` como rótulo nos dois estados reais de hoje.
+
+### Dois erros MEUS que só a execução pegou
+
+- **Ordem do `CHECK` de `squad_members.role`**: o `update ... set role='member'` rodava **antes** de
+  derrubar o CHECK antigo, que não aceita `'member'` — falhava com `23514` e abortava a migration.
+  Eu havia raciocinado sobre o CHECK novo e esquecido que o velho também barra.
+- **`officialize_cycle` reescrito perdeu a geração de kaizens** (a etapa "Plano"), além da checagem de
+  completude e do `homologated_by`. Peguei relendo o original antes de aceitar a própria reescrita.
+
+Os dois viraram asserção. É o argumento a favor do harness em PGlite: revisão de código não pegou
+nenhum dos dois.
+
+### Defeito pré-existente NÃO corrigido (deliberado)
+
+**`pnpm -C maturitymodel typecheck` não checa nada** — `tsconfig.json` tem `"files": []` +
+`references`, e `tsc --noEmit` sem `--build` não compila projeto referenciado. Foi por isso que as
+lacunas de `pre_session` passaram. Apontando para `tsconfig.app.json` aparecem **214 erros**, ~135
+`TS2786` de `@types/react@19.2.17` vazando (nero-portal é React 19, MMA é React 18). **Nenhum é do
+código novo** — verificado arquivo por arquivo. Não mexi porque script vermelho treina o time a
+ignorar, e mexer na árvore de `@types/react` afeta os três apps. Diagnóstico pronto em PAPEIS.md §7.
+
+---
+
+## Rodada 2026-07-26 — Nero vira a porta 03 + costuras unificadas
+
+Estado: **NO AR.** Cutover feito em 2026-07-26 ~21:45 UTC (domingo, janela de tráfego baixo).
+`neo-lm.vercel.app` serve hub (`/`), Dash (`/dash`), Maturity (`/maturity`) e **Nero (`/nero`)**.
+E2E contra produção: **21/21**.
+
+Rollback, se necessário: `vercel promote https://neo-5cctm6lzl-diegocaporusso-2820s-projects.vercel.app`
+(deployment de 25/07, o último anterior a esta rodada). **Não** usar os deployments marcados
+"Production" de 6h antes do cutover — são staging `--skip-domain` e um deles tem o código da
+Fase 2 que dá 500 em runtime.
+
+### Dois bugs encontrados no cutover — pelo e2e, em produção
+
+Ambos escaparam de todas as validações anteriores porque só aparecem com o **portal e o Nero
+servindo juntos**, o que nenhum ambiente parcial reproduzia.
+
+**1. `/nero/` servia o HUB.** O caminho com barra final não casava nem `/nero` nem
+`/nero/:path*`, caía no catch-all `/((?!api/).*)` → `/index.html`. E a porta 03 aponta
+exatamente para `/nero/`, então o Nero ficava inalcançável pelo caminho normal. Sem exposição
+de dado (servia o hub). Corrigido com uma regra explícita `/nero/` no `vercel.json`.
+
+**2. BYPASS DO GATE na rota índice do Nero.** `/nero/` com apenas `neo_session` servia a home
+do Nero (24KB, título "Portal Nero"), **sem a senha**. Causa: o matcher do proxy
+`/((?!...).*)`  **não casa a rota índice** — pegadinha conhecida do Next. As demais rotas,
+estáticas e dinâmicas, redirecionavam corretamente (`/privacidade` e `/academia` são estáticas
+e estavam certas), então não era estático vs dinâmico: era só o índice. A API já estava
+protegida (401). Corrigido com `matcher: ["/", "/((?!...).*)"]`  — **não remover o `"/"`**.
+
+A lição: o e2e pegou o bypass e o teste estava certo enquanto o código estava errado. Sem a
+matriz logada rodando contra produção, isso teria ficado aberto para qualquer usuário
+@lmmobilidade.
+
+### O que mudou
+
+| Frente | Resultado |
+|---|---|
+| **pnpm workspaces** | 5 lockfiles/installs → 1. Resolve a *causa* do npm#4828 (o `node_modules` isolado não faz o hoisting que derrubava o binário do rollup) em vez de contorná-la. Validado no builder Linux |
+| **`@neo/auth`** | Contrato de sessão canônico (Web Crypto: roda em Edge, Node e Next) + **arnês de contrato** com 77 asserções |
+| **Nero no monorepo** | `git subtree` (história preservada) + rewrite `/nero/**` + `basePath` |
+| **Gate** | `api/tower.ts` → `api/gate.ts` com escopo (`tower`\|`nero`). Nero exige `neo_session` **E** `neo_nero` |
+| **Porta 03** | Layout 2+1 no hub, selo "Acesso restrito", zero JS novo |
+| **`@neo/design`** | Tokens compartilhados (só tokens, sem componentes) |
+| **Review do Nero** | Primeiro da história dele: `docs/QA-REVIEW.md`, 5 corrigidos / 6 pendentes |
+| **E2E do portal** | 20 casos de matriz de gate; gate pós-deploy, não por commit |
+| **Migrations** | `db push` fora do build; baseline aplicado em produção com backup |
+| **Docs** | `ARCHITECTURE.md`, `ONBOARDING.md`, `SECRETS.md` novos |
+
+### O que morreu
+
+- **Login próprio do Nero** (`APP_PASSWORD`): senha única compartilhada, cookie de 30 dias, e
+  o token era HMAC de uma **constante** — sem `exp`, logo **não expirava de fato**. Sem
+  rate-limit. Substituído por identidade do NEO + senha com TTL 12h, rate-limit e auditoria.
+- **`api/tower.ts`**, absorvido pelo `api/gate.ts`.
+- **`prisma db push` no deploy** — ver incidente evitado abaixo.
+- **Gatilho de deploy no repo arquivado**: o projeto `nero-portal` ainda deployava de
+  `diegocap2212/nero-portal`. Um push lá subiria o código antigo, que lê a `APP_PASSWORD`
+  removida — Nero quebrado disparado por push num repo que todos consideram morto. Git
+  desconectado.
+- **`.gitignore` furado**: listava só `.env`, `.env.local` e `.env.private` nominalmente, então
+  `.env.test.local` **não era ignorado**. Trocado por `.env*` + `!.env.example`.
+
+### Incidente evitado: preview escrevendo em produção
+
+Um deploy de **preview** do `nero-portal` rodou `prisma db push` **contra o banco de
+produção**. Sem dano (schema idêntico → no-op), mas o mecanismo está provado: se a branch
+tivesse mudança de schema, o preview a aplicaria em produção em silêncio, sem backup e sem
+trilha. Duas causas somadas: `vercel-build` fazia `db push`, e as envs `POSTGRES_*` estão em
+`Production, Preview` (mesmo banco nos dois ambientes).
+
+Corrigido na raiz: `vercel-build` é `prisma generate && next build`, e schema muda por
+`db:migrate`. Baseline `0_init` (17 tabelas, 0 DROP) aplicado em produção com backup
+(`backup-pre-migrate-baseline`) e dados conferidos antes e depois (198/10/212 idênticos).
+
+### Restrições de plataforma medidas (não folclore)
+
+- **Funções da Vercel não resolvem código compartilhado.** Edge Middleware falha no deploy
+  ("unsupported modules") tanto com bare specifier quanto com caminho relativo; function Node
+  **passa no build e quebra em runtime** com `ERR_MODULE_NOT_FOUND`. Por isso `middleware.ts`,
+  `api/session.ts` e `api/gate.ts` são autocontidos — e o arnês de contrato é o que impede as
+  cópias de divergirem.
+- **Streaming atravessa rewrite externa** sem buffering (medido: chunks incrementais,
+  `chunked` e `no-store` preservados, ~150ms no primeiro byte). Era o risco que poderia ter
+  invalidado a arquitetura toda.
+- **`vercel env add ... preview` é impossível não-interativamente** na CLI 54: sem branch dá
+  `git_branch_required`; com branch dá `branch_not_found`; com o Git desconectado, de novo
+  `git_branch_required`. A CLI sugere um comando que ela própria rejeita.
+- **`vercel env rm NOME preview` apaga a variável inteira**, produção incluída. Produção é
+  write-only. Quase virou incidente — só não virou porque as URLs eram reconstituíveis pelo
+  `neonctl`.
+- **Deploy do Nero exige `--local-config nero-portal/vercel.json`**, senão a CLI usa o
+  `vercel.json` da raiz e roda o build do portal dentro do projeto do Nero.
+
+### Custo real do Nero (primeira medição)
+
+**US$ 6,91 no mês corrente, 80 turnos → ~US$ 0,086/turno**, 34,5% do teto de US$ 20. Base de
+198 registros em `UsageLog`. É o número que ancora o modelo de custo do blueprint enterprise.
+
+### Antes de promover
+
+1. Deployar o `nero-portal` com o código novo (`--local-config`), depois o portal.
+2. Rodar o e2e com `NEO_FULL_STACK=1` (3 casos hoje pulados dependem disso).
+3. Fluxos logados manuais: OTP → 3 portas → Nero pede senha → chat/estado/catálogo/report →
+   logout.
+4. Regressão da Torre (mudou de `api/tower` para `api/gate`).
+5. **A rotação do `SESSION_SECRET` faz todos refazerem login no primeiro deploy do `neo-lm`.**
+
+### Pendências desta rodada
+
+- Envs de **Preview** do `nero-portal` apontando para a branch `preview` do Neon — exige
+  dashboard (catch-22 da CLI). Deixou de ser urgente com o `db push` fora do build; hoje é
+  defesa em profundidade.
+- Arquivar `diegocap2212/nero-portal` no GitHub (o Vercel já não deploya de lá).
+- Remover o projeto Vercel descartável `neo-lm-verify` (harness de validação desta rodada).
+- Os 6 itens abertos em `nero-portal/docs/QA-REVIEW.md`.
+
+---
+
+
 > Plano corrente: `C:\Users\Usuario\.claude\plans\fable-precisamos-sincronizar-essas-frolicking-rainbow.md` (Portal unificado).
 > **Estado (2026-07-14): PORTAL UNIFICADO NO AR — cutover concluído.** `https://neo-lm.vercel.app` serve hub (`/`), Dash (`/dash`) e MMA (`/maturity`); domínios antigos respondem 308 para as rotas novas.
 
@@ -46,6 +443,11 @@ DESATIVADO na conta do Diego (hoje só recebe 308). `/api/trigger-sync` no porta
 - Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), Torre sem rate-limit de senha, policies legadas de `teams` no MMA, monorepo sem espelho remoto (backup!).
 
 ## Roles do MMA — IMPLEMENTADO E NO AR (2026-07-15)
+
+> ⚠️ **É este modelo que está em produção hoje**, mas ele é **substituído** pela rodada de 26/07
+> (2ª), no topo deste arquivo — `portal_admins` → `portal_roles`, AM passa a ser global,
+> `po`/`tl`/`team` → `member`. O código novo está pronto e **não aplicado**. Não parta desta seção
+> para mexer em papéis: leia [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md).
 
 Migration `20260715120000_portal_admins_scoped_roles.sql` aplicada em produção (Management API) e
 front promovido (dpl `neo-m03zmhx8t`). Admins globais por e-mail de login: `ext.diego.caporusso@`

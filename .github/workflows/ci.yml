@@ -1,83 +1,139 @@
 name: CI
 
-# Gate de qualidade em push/PR. Cada app tem seu próprio package-lock (sem npm workspaces —
-# ver HANDOFF), então rodamos `npm ci` dentro de cada pasta. NUNCA `npm run build` do Dash no
-# CI: ele roda `sync:sfmkt` e exige credenciais do Jira/Salesforce; usamos `tsc -b && vite build`.
+# Gate de qualidade em push/PR do monorepo NEO (4 apps + packages/*).
+#
+# UM `pnpm install` cobre tudo (pnpm workspaces — ver pnpm-workspace.yaml). Antes eram 4
+# jobs com 4 `npm ci`, um por app, porque cada um tinha o próprio package-lock.
+#
+# pnpm vem por COREPACK (lê `packageManager` do package.json) em vez de uma action de
+# terceiro — menos superfície de supply chain e uma peça a menos para manter.
+#
+# NUNCA rodar `npm run build` do Dash aqui: ele chama sync:sfmkt e exige credenciais do
+# Jira/Salesforce. O build:portal usa `vite build` direto, sem sync.
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  # Para o job e2e-portal, que verifica um DEPLOYMENT e não o código do commit:
+  workflow_dispatch: # rodar à mão depois de promover
+  schedule:
+    - cron: '0 9 * * *' # 09:00 UTC — pega gate que abriu sem ninguém notar
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+
 jobs:
-  dash:
-    name: Dash (locavia-dashboard)
+  checks:
+    name: Tipos, lint, contrato e builds
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: locavia-dashboard
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: locavia-dashboard/package-lock.json
-      - run: npm ci
-      - name: Typecheck
-        run: npx tsc -b
+          node-version: 24 # paridade com o runtime dos projetos Vercel (24.x)
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (4 apps + packages)
+        run: pnpm typecheck
       - name: Lint
-        run: npm run lint
-      - name: Testes de performance (lógica pura)
-        run: npm run test:performance
-      - name: Build (sem sync:sfmkt)
-        run: npx vite build
-      - name: Instala navegador do Playwright
-        run: npx playwright install --with-deps chromium
-      - name: E2E (fallback local de dados)
-        run: npx playwright test --project=chromium
+        run: pnpm lint
+
+      # Guarda as cópias autocontidas do HMAC (middleware.ts e api/session.ts): a Vercel não
+      # deixa compartilhar módulo entre Edge Middleware/functions, então o contrato é testado.
+      - name: Contrato de sessão (@neo/auth × middleware × api/session)
+        run: pnpm --filter @neo/auth test
+
+      - name: Testes de performance do Dash (lógica pura)
+        run: pnpm --filter locavia-dashboard test:performance
+
+      # Guarda a máquina de estados do ciclo, escrita duas vezes por imposição de runtime
+      # (CYCLE_TRANSITIONS no TS × trigger cycle_transition_guard no Postgres). Divergir ali
+      # faz a UI oferecer caminho que o banco recusa — e já custou um bug: `pre_session`
+      # entrou no banco em 24/07 e ficou fora da jornada da home até 26/07.
+      # Lê o SQL como texto: não precisa de banco, roda em qualquer runner.
+      - name: Contrato da jornada do MMA (TS × SQL)
+        run: pnpm --filter maturitymodel test:journey
+
+      # As 51 migrations do MMA aplicadas num Postgres limpo (PGlite/WASM — sem Docker, sem
+      # nuvem, sem credencial). Responde "esta migration roda?" antes de tocar em banco real.
+      - name: Migrations do MMA aplicam em Postgres limpo
+        run: pnpm --filter maturitymodel test:migrations
+
+      # A matriz de papéis com RLS de verdade + o ensaio da migração de dados (todo AM por
+      # squad tem de virar AM global, senão alguém perde acesso). Achou dois defeitos que
+      # revisão de código não pegou: a ordem do CHECK de squad_members.role e o vazamento
+      # do diretório de profiles por policy legada.
+      - name: Papéis e jornada do MMA com RLS real
+        run: pnpm --filter maturitymodel test:rls-local
+
+      # Guarda a lista de modelos liberados, que vive em 3 lugares (allowlist, tabela de
+      # preços, seletor do cliente). Divergir ali distorce o custo em silêncio — e custo
+      # errado só aparece na fatura.
+      - name: Modelos e preços do Nero (lógica pura)
+        run: pnpm --filter nero-portal test:core
+
+      - name: Build do portal (hub + dash + maturity, composto)
+        run: pnpm build:portal
+
+      - name: Build do Nero (Next, projeto Vercel separado)
+        run: pnpm --filter nero-portal build
         env:
-          VITE_API_TARGET: ""
+          # O build não toca o banco (todas as páginas são force-dynamic), mas o Prisma
+          # exige a URL definida para gerar o client.
+          POSTGRES_PRISMA_URL: postgres://user:pass@localhost:5432/db
+          DATABASE_URL_UNPOOLED: postgres://user:pass@localhost:5432/db
 
-  mma:
-    name: MMA (maturitymodel)
+  # NÃO roda em push/PR de propósito. Esta suíte afirma o estado de um DEPLOYMENT, e o deploy
+  # aqui é por CLI (Git desconectado — ver HANDOFF): entre o merge e o deploy existe uma janela
+  # em que main já tem os testes novos e produção ainda tem o código antigo. Rodando em push,
+  # o CI ficaria vermelho nessa janela por motivo certo e conclusão errada, e o time aprenderia
+  # a ignorar. Como gate pós-deploy + verificação diária, o vermelho sempre significa algo real:
+  # uma porta que abriu.
+  e2e-portal:
+    name: E2E do portal (matriz de gate contra produção)
+    if: github.event_name != 'push' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: maturitymodel
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: maturitymodel/package-lock.json
-      - run: npm ci
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Lint
-        run: npm run lint
-      - name: Build
-        run: npx vite build
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      # SEM segredo de propósito: essa metade da suíte só verifica que porta fechada continua
+      # fechada (302/401/400/405), o que não exige forjar cookie. É a checagem que vale rodar
+      # continuamente contra produção — um gate que abriu por acidente aparece aqui.
+      # A metade logada (cookie forjado) exige NEO_SESSION_SECRET e roda contra staging antes
+      # de promover — ver ONBOARDING.md.
+      - name: Matriz sem sessão
+        run: pnpm run test:portal
+        env:
+          NEO_BASE_URL: https://neo-lm.vercel.app
 
-  hub:
-    name: Hub (neo-hub)
+  e2e-dash:
+    name: E2E do Dash
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: neo-hub
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
+      - run: corepack enable
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA (supply chain)
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: neo-hub/package-lock.json
-      - run: npm ci
-      - name: Typecheck + build
-        run: npm run build
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Instala o navegador do Playwright
+        run: pnpm --filter locavia-dashboard exec playwright install --with-deps chromium
+      - name: E2E (fallback local de dados)
+        run: pnpm --filter locavia-dashboard exec playwright test --project=chromium
+        env:
+          VITE_API_TARGET: ''

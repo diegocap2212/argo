@@ -13,9 +13,11 @@ type GateState = 'checking' | 'locked' | 'open';
 
 /**
  * Visão restrita "Torre": comparativo entre agilistas (SM × SM e time × time).
- * A senha é validada server-side em /api/tower (env TOWER_PASSWORD) e vira um cookie
- * HttpOnly de 12h — nada de segredo no bundle. Sem a env configurada (dev), abre direto.
+ * A senha é validada server-side em /api/gate?scope=tower (env TOWER_PASSWORD) e vira o
+ * cookie HttpOnly neo_tower de 12h — nada de segredo no bundle. Sem a env configurada
+ * (dev), abre direto. O mesmo endpoint atende ?scope=nero (a porta 03 do portal).
  */
+const GATE_URL = '/api/gate?scope=tower';
 export default function TowerView() {
   const [gate, setGate] = useState<GateState>('checking');
   const [password, setPassword] = useState('');
@@ -24,7 +26,7 @@ export default function TowerView() {
   const [weeks, setWeeks] = useState(8);
 
   useEffect(() => {
-    fetch('/api/tower')
+    fetch(GATE_URL)
       .then(r => setGate(r.ok ? 'open' : 'locked'))
       .catch(() => setGate('locked'));
   }, []);
@@ -36,7 +38,7 @@ export default function TowerView() {
     setGateError('');
     try {
       const headers = { 'Content-Type': 'application/json', ...(await authHeaders()) };
-      const r = await fetch('/api/tower', { method: 'POST', headers, body: JSON.stringify({ password }) });
+      const r = await fetch(GATE_URL, { method: 'POST', headers, body: JSON.stringify({ password }) });
       if (r.ok) setGate('open');
       else setGateError(r.status === 403 ? 'Senha incorreta.' : 'Não foi possível validar agora. Tente de novo.');
     } catch {

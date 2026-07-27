@@ -1,5 +1,18 @@
 # Redesenho de papéis — Portal MMA
 
+> ## ⚠️ SUPERADO em 2026-07-26 — leia [`PAPEIS.md`](PAPEIS.md) primeiro
+>
+> Este documento descreve o modelo de **15/07**: `portal_admins` + AM **por squad**.
+> Em 26/07 o AM virou papel **global** (`portal_roles`) e `po`/`tl`/`team` foram colapsados em
+> `member` — porque o AM por squad era a causa direta de *"salesforce vendas já testou, mas não
+> aparece pra mim que preciso homologar"*.
+>
+> **O que continua válido e não se reabre:** a análise da §1 sobre `is_any_am()` como vetor de
+> escalação de privilégio. O modelo novo NÃO o ressuscita: poder global agora é uma linha
+> explícita numa tabela, concedida por admin, e não algo derivado de um vínculo de squad.
+>
+> Mantido como registro histórico do raciocínio.
+
 > **STATUS: IMPLEMENTADO em 2026-07-15** — migration `20260715120000_portal_admins_scoped_roles.sql`
 > aplicada em produção; front em `RequireManager`/`useIsPortalAdmin`/AdminMMA em dois modos.
 > Decisões finais do Diego: restart/exclusão = só admin global; SM edita metadados do próprio squad;

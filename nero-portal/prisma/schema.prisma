@@ -1,0 +1,281 @@
+// Estado vivo do projeto (o "01_MEMORIA" como dados estruturados).
+// Postgres (Neon, integração com a Vercel) — ver datasource abaixo. Sem enums
+// (legado da fase SQLite) — usamos String + tipos em TS.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Nomes injetados pela integração Neon↔Vercel:
+  // POSTGRES_PRISMA_URL = pooled c/ pgbouncer (runtime); DATABASE_URL_UNPOOLED = direto (migração/db push).
+  url       = env("POSTGRES_PRISMA_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+/// Itens de stack/ambiente do Data Lake (seção 2 do 01).
+/// statusVerdade carrega a distinção teoria × realidade.
+model StackItem {
+  id            String   @id @default(cuid())
+  item          String
+  resposta      String?
+  statusVerdade String   @default("lacuna") // template | assumido | confirmado | lacuna
+  proveniencia  String? // fonte / quem confirmou / quando (texto livre)
+  ordem         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Registro de Dependências do Cliente LM (seção 7 do 01). Aging é CALCULADO
+/// (não armazenado) a partir de solicitadoEm — ver src/lib/state/aging.ts.
+model Dependency {
+  id             String    @id @default(cuid())
+  codigo         String // D1, D2, ...
+  descricao      String
+  solicitadoEm   DateTime?
+  status         String    @default("aguardando") // aguardando | recebido | cancelado
+  trilhoParalelo String?
+  decisaoPedida  String?
+  resolvidoEm    DateTime?
+  faseId         String? // liga a dependência a uma fase do roadmap (opcional)
+  ordem          Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+/// Log de decisões (seção 4 do 01).
+model Decision {
+  id        String   @id @default(cuid())
+  data      DateTime @default(now())
+  decisao   String
+  porque    String?
+  quem      String?
+  faseId    String? // liga a decisão a uma fase do roadmap (opcional)
+  createdAt DateTime @default(now())
+}
+
+/// Riscos & blockers (seção 8 do 01).
+model Risk {
+  id         String   @id @default(cuid())
+  codigo     String
+  descricao  String
+  severidade String   @default("Média") // Alta | Média | Baixa
+  mitigacao  String?
+  dono       String?
+  ativo      Boolean  @default(true)
+  faseId     String? // liga o risco a uma fase do roadmap (opcional)
+  featureId  String? // liga o risco a um epic/feature específico (opcional; FK solto, como faseId)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// Estado por fase / epic (seção 6 do 01). Nós macro do roadmap.
+model PhaseStatus {
+  id         String    @id @default(cuid())
+  fase       String
+  slug       String? // ex.: "fase-0" (rota do roadmap)
+  gate       String? // ex.: "G0"
+  janela     String? // ex.: "Semanas 1–2"
+  foco       String? // resumo curto do foco da fase
+  rag        String    @default("cinza") // cinza | amarelo | verde | vermelho
+  pct        Int       @default(0) // override manual; o % exibido é derivado das features
+  comentario String?
+  ordem      Int       @default(0)
+  updatedAt  DateTime  @updatedAt
+  features   Feature[]
+}
+
+/// Features do roadmap (micro) — derivadas do kit 03 (F*.*). % vem do checklist.
+model Feature {
+  id             String          @id @default(cuid())
+  codigo         String // ex.: "F0.1"
+  titulo         String
+  descricao      String?
+  status         String          @default("nao_iniciada") // nao_iniciada | em_andamento | concluida | bloqueada
+  dependeLM      Boolean         @default(false)
+  trilhoParalelo String?
+  areaDama       String?
+  ordem          Int             @default(0)
+  faseId         String
+  fase           PhaseStatus     @relation(fields: [faseId], references: [id], onDelete: Cascade)
+  checklist      ChecklistItem[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
+/// Itens de checklist de uma feature (definição de pronto).
+model ChecklistItem {
+  id        String  @id @default(cuid())
+  texto     String
+  done      Boolean @default(false)
+  ordem     Int     @default(0)
+  featureId String
+  feature   Feature @relation(fields: [featureId], references: [id], onDelete: Cascade)
+
+  // Impede checklist duplicado na mesma feature (rede final contra corrida de
+  // escritas concorrentes — vários usuários editando o estado ao mesmo tempo).
+  @@unique([featureId, texto])
+}
+
+/// Stakeholders & RACI (seção 3 do 01).
+model Stakeholder {
+  id               String @id @default(cuid())
+  nome             String?
+  papel            String
+  lado             String? // LM | Blite
+  responsabilidade String?
+  ordem            Int    @default(0)
+}
+
+/// Baseline de adoção (seção 10 do 01).
+model BaselineMetric {
+  id           String    @id @default(cuid())
+  metrica      String
+  valorInicial String?
+  atual        String?
+  data         DateTime?
+  fonte        String?
+  ordem        Int       @default(0)
+}
+
+/// Seções de texto livre da memória do projeto (§0 metadados, §1 resumo, §5 premissas,
+/// §9 próximas ações, §11 glossário). O Nero edita via tool editar_memoria. O renderer
+/// (buildMemoriaContext) usa estes valores quando presentes; senão cai em defaults estáticos.
+model ProjectNote {
+  id        String   @id @default(cuid())
+  secao     String   @unique // metadados | resumo | premissas | proximas_acoes | glossario
+  conteudo  String
+  updatedAt DateTime @updatedAt
+}
+
+/// Consumo da API por turno do chat — base do medidor de budget.
+model UsageLog {
+  id              String   @id @default(cuid())
+  model           String
+  inputTokens     Int      @default(0)
+  outputTokens    Int      @default(0)
+  cacheReadTokens Int      @default(0)
+  cacheWriteTokens Int     @default(0)
+  costUsd         Float    @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Report quinzenal persistido (kit 04): snapshot congelado das seções
+/// estruturadas + narrativas geradas pelo Nero. Habilita histórico e
+/// comparação quinzena a quinzena.
+model Report {
+  id               String   @id @default(cuid())
+  numero           Int      @unique // Q1..Q12
+  periodoInicio    DateTime
+  periodoFim       DateTime
+  statusGeral      String   @default("amarelo") // verde | amarelo | vermelho
+  snapshot         String // JSON: dados estruturados das seções (entregas, deps, riscos, baseline...)
+  sumarioExecutivo String? // narrativa (Nero)
+  notaAdvisor      String? // narrativa (Nero)
+  saudeFrentes     String? // JSON [{frente, rag, comentario}]
+  geradoEm         DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// Avaliação de maturidade DAMA (kit 08 §1 + §5) — 1 registro por área da
+/// Roda DAMA (11 áreas, validadas em TS — src/lib/state/dama.ts).
+model MaturityAssessment {
+  id            String    @id @default(cuid())
+  area          String    @unique
+  nivelAtual    Int? // 1–5 (Inicial..Otimizado)
+  nivelMeta     Int? // 1–5
+  justificativa String?
+  statusVerdade String    @default("lacuna") // template | assumido | confirmado | lacuna
+  proveniencia  String? // fonte / quem confirmou / quando
+  avaliadoEm    DateTime?
+  ordem         Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+/// Entrada de catálogo nível tabela — padrão Golden Example (kit 09 §A/C/D/E).
+model CatalogAsset {
+  id                  String      @id @default(cuid())
+  nome                String      @unique // ex.: gold.vendas.fato_pedidos
+  camada              String? // bronze | silver | gold | ...
+  dominio             String?
+  descricao           String?
+  owner               String?
+  steward             String?
+  grao                String? // grão da tabela (1 linha = ...)
+  atualizacao         String? // frequência/janela de atualização
+  volumeAprox         String?
+  sensibilidade       String? // publico | interno | pessoal | pessoal_sensivel (kit 06 §2.2)
+  baseLegal           String? // LGPD — obrigatória quando sensibilidade = pessoal*
+  sistemasOrigem      String?
+  tabelasRelacionadas String?
+  lineage             String? // v1: texto livre "origem → destino" (kit 09 §C)
+  notasQualidade      String? // kit 09 §E
+  validadoPor         String? // owner que validou a documentação
+  validadoEm          DateTime?
+  statusVerdade       String      @default("lacuna")
+  proveniencia        String?
+  ordem               Int         @default(0)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+  campos              DataField[]
+}
+
+/// Dicionário de dados nível campo (kit 09 §B).
+model DataField {
+  id             String       @id @default(cuid())
+  nome           String
+  tipo           String?
+  descricao      String?
+  regra          String? // regra de negócio/cálculo
+  dominioValores String?
+  nullable       Boolean?
+  sensibilidade  String? // sensibilidade LGPD do campo
+  ordem          Int          @default(0)
+  assetId        String
+  asset          CatalogAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  // Impede campo duplicado no mesmo ativo (rede contra escrita concorrente,
+  // espelha ChecklistItem).
+  @@unique([assetId, nome])
+}
+
+/// Tabela LEGADA preservada: "documentos gerados" de uma versão anterior da
+/// schema (removida do código quando o estado migrou p/ o banco, mas nunca dropada
+/// de produção — havia 10 documentos reais `confirmado`). Modelada aqui de propósito
+/// para que `prisma db push` NÃO a apague. Não é escrita pelas tools atuais (não
+/// entra em modelOf()/ENTITY_DATE_FIELDS). Candidata a virar seed da Academia/catálogo.
+model Document {
+  id            String   @id
+  titulo        String
+  tipo          String   @default("documento")
+  conteudo      String
+  resumo        String?
+  statusVerdade String   @default("template")
+  faseId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime
+
+  @@index([createdAt])
+}
+
+/// Histórico/versionamento das escritas no estado (para auditoria + undo).
+/// Toda alteração que o Nero (ou o analista) faz no estado grava uma versão.
+model StateVersion {
+  id        String   @id @default(cuid())
+  entity    String // "Dependency" | "Decision" | "Risk" | ...
+  entityId  String
+  operation String // create | update | delete
+  before    String? // snapshot JSON anterior
+  after     String? // snapshot JSON posterior
+  actor     String   @default("nero") // nero | analista
+  resumo    String? // 1 linha legível do que mudou
+  desfeito  Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

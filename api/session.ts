@@ -1,14 +1,27 @@
 // Emite/remove o cookie de sessão do Portal NEO (neo_session), consumido pelo middleware
-// que protege /dash/** e /maturity/** (HTML e assets) na borda.
+// que protege /dash/**, /maturity/** e /nero/** (HTML e assets) na borda.
 // POST: valida o Bearer do Supabase + allowlist (RPC is_neo_allowed) e grava o cookie HMAC.
 // DELETE: expira o cookie (logout).
+//
+// ⚠️ AUTOCONTIDO POR IMPOSIÇÃO DA PLATAFORMA — NÃO IMPORTE @neo/auth AQUI.
+// As functions de api/ na Vercel não resolvem código compartilhado. Testados em deployment
+// real (2026-07-26), os dois formatos morrem com ERR_MODULE_NOT_FOUND em RUNTIME (o build
+// passa, o que engana):
+//   import ... from '@neo/auth'                          → o builder copia o pacote e cria
+//     um filePathMap, mas o `exports` do pacote aponta .ts e o emitido é .js
+//   import ... from '../packages/neo-auth/src/index.ts'  → 500 FUNCTION_INVOCATION_FAILED
+// É a mesma pegadinha que o HANDOFF registrou com `./_session`.
+//
+// A duplicação é INTENCIONAL mas guardada: packages/neo-auth/test.ts importa as funções
+// exportadas abaixo e exige que concordem com o pacote. Mexeu aqui? Rode:
+//   pnpm --filter @neo/auth test
 import crypto from 'crypto';
 
 const COOKIE = 'neo_session';
 const TTL_SECONDS = 12 * 60 * 60; // 12h; o hub re-emite a cada visita autenticada.
 
-// ── Sessão (inline; a Vercel não empacota imports relativos entre functions) ──
-function sign(payload: string, secret: string): string {
+// ── Sessão (inline; ver o aviso acima) ──
+export function sign(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
 }
 // Tipos mínimos do handler serverless (evita `any` e não exige @vercel/node).
@@ -25,7 +38,7 @@ interface ApiResponse {
 
 // Autentica (JWT do Supabase via Authorization: Bearer) E autoriza (allowlist do NEO) numa
 // única chamada ao RPC is_neo_allowed — mesmo padrão de api/data.ts.
-async function verifyBearer(req: ApiRequest): Promise<boolean> {
+export async function verifyBearer(req: ApiRequest): Promise<boolean> {
   const url = process.env.SUPABASE_URL;
   const anon = process.env.SUPABASE_ANON_KEY;
   if (!url || !anon) return false;
@@ -44,13 +57,19 @@ async function verifyBearer(req: ApiRequest): Promise<boolean> {
 }
 
 /** E-mail do JWT (já validado pelo RPC) — vai no payload do cookie para auditoria/depuração. */
-function emailFromJwt(bearer: string): string {
+export function emailFromJwt(bearer: string): string {
   try {
     const payload = JSON.parse(Buffer.from(bearer.split('.')[1], 'base64url').toString());
     return typeof payload.email === 'string' ? payload.email : '';
   } catch {
     return '';
   }
+}
+
+/** Monta o token `payload.assinatura` — mesmo formato de @neo/auth e do middleware. */
+export function makeToken(payload: object, secret: string): string {
+  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  return `${encoded}.${sign(encoded, secret)}`;
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -68,10 +87,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     }
     const auth = req.headers?.authorization || '';
     const email = emailFromJwt(auth.startsWith('Bearer ') ? auth.slice(7) : '');
-    const payload = Buffer.from(
-      JSON.stringify({ email, exp: Date.now() + TTL_SECONDS * 1000 }),
-    ).toString('base64url');
-    const token = `${payload}.${sign(payload, secret)}`;
+    const token = makeToken({ email, exp: Date.now() + TTL_SECONDS * 1000 }, secret);
     res.setHeader(
       'Set-Cookie',
       `${COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${TTL_SECONDS}`,

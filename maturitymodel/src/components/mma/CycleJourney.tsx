@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import type { CycleStatus } from "@/types/mma";
+import { CYCLE_ORDER, type CycleStatus } from "@/types/mma";
 
 interface Station {
   key: string;
@@ -16,7 +16,10 @@ const STATIONS: Station[] = [
   { key: "plano", label: "Plano", path: "plano", statuses: ["official", "archived"] },
 ];
 
-const ORDER: CycleStatus[] = ["pre_session", "session", "homologation", "official", "archived"];
+// Derivada de CYCLE_JOURNEY (types/mma.ts). Estas estações agrupam official+archived em
+// "Plano" — granularidade da navegação do squad —, mas a ORDEM não pode divergir da
+// jornada, e era divergindo em três arquivos que `pre_session` acabou fora da home.
+const ORDER = CYCLE_ORDER;
 
 export function CycleJourney({ teamId, status }: { teamId: string; status: CycleStatus }) {
   const currentIndex = ORDER.indexOf(status);

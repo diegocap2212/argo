@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import { useMySquads } from "@/hooks/useMySquads";
-import { useIsPortalAdmin } from "@/hooks/useIsPortalAdmin";
+import { usePortalRole } from "@/hooks/usePortalRole";
 import { cn } from "@/lib/utils";
 
 const GLOBAL_TITLES: Record<string, { eyebrow: string; title: string }> = {
@@ -44,10 +44,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { teamId } = useParams<{ teamId: string }>();
   const { user, signOut, redirectToHub } = useAuth();
   const { data: squads = [] } = useMySquads();
-  const { data: isPortalAdmin = false } = useIsPortalAdmin();
-  // Administração: admin global do portal ou gestor (SM/AM) de algum squad.
-  const isManagerAnywhere = isPortalAdmin || squads.some((s) => s.roles.includes("am") || s.roles.includes("sm"));
+  const { isAdmin } = usePortalRole();
   const pendingCount = squads.filter((s) => s.pending).length;
+  // "Meu squad" tem de ser um squad DELE: para o AM/admin a lista traz todos, e o
+  // primeiro seria um squad qualquer da ordem alfabética.
+  const mySquad = squads.find((s) => s.isMine) ?? squads[0];
   const inSquadContext = Boolean(teamId);
   const globalTitle = GLOBAL_TITLES[location.pathname];
   const initials = (user?.email ?? "MA").slice(0, 2).toUpperCase();
@@ -66,9 +67,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Tooltip>
           <RailLink to="/" label="Início" icon={<Home />} badge={pendingCount} />
           <RailLink to="/torre" label="Torre de squads" icon={<Building2 />} />
-          {squads[0] && <RailLink to={`/s/${squads[0].team_id}`} label="Meu squad" icon={<Users />} />}
+          {mySquad && <RailLink to={`/s/${mySquad.team_id}`} label="Meu squad" icon={<Users />} />}
           <RailLink to="/guia" label="Guia do modelo" icon={<BookOpen />} />
-          {isManagerAnywhere && <RailLink to="/admin" label="Administração" icon={<Settings />} />}
+          {isAdmin && <RailLink to="/admin" label="Administração" icon={<Settings />} />}
         </nav>
         <div className="editorial-rail-footer">
           <Tooltip delayDuration={120}>
