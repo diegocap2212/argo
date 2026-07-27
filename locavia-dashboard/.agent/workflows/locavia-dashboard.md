@@ -13,7 +13,9 @@ Se você estiver baixando este projeto pela primeira vez em uma nova máquina, s
 1. **Instalar Node.js:** Certifique-se de ter o Node.js v18 ou superior instalado.
 2. **Instalar Dependências:**
    // turbo
-   Execute `npm install` na raiz do projeto (`locavia-dashboard`).
+   Execute `corepack pnpm install --frozen-lockfile` na **raiz do monorepo `argo`** — não nesta
+   pasta. Este app é um workspace pnpm: há um único lockfile na raiz e nenhum
+   `package-lock.json`. `npm install` aqui monta um `node_modules` divergente.
 3. **Verificar Dados:** O arquivo `src/data.json` deve conter os dados exportados do Jira.
 
 ## 🚀 Como Rodar o Dashboard Localmente

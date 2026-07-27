@@ -50,9 +50,13 @@ convenção (`src/lib/state/provenance.ts`).
 
 - **Next.js 16** (App Router, Turbopack) + TypeScript · Tailwind v4 + shadcn/ui
 - `@anthropic-ai/sdk` — Claude. Allowlist: **`claude-haiku-4-5`** (padrão) e
-  **`claude-sonnet-4-6`** (`src/lib/nero/core.ts`).
-- **Postgres (Neon)** via Prisma. `vercel-build` roda `prisma db push` no deploy —
-  mudanças de schema **só aditivas**; backup antes (ver [DEPLOY.md](DEPLOY.md)).
+  **`claude-sonnet-5`**. Fonte de verdade: `NERO_MODELS` em `src/lib/nero/core.ts`
+  (predicado único `isNeroModelId`). `NERO_MODEL` fora da lista **aborta o startup em
+  produção**. *(Este README dizia `claude-sonnet-4-6` depois de o código migrar.)*
+- **Postgres (Neon)** via Prisma. `vercel-build` é **`prisma generate && next build`** —
+  **não** aplica schema. Mudanças vão por migration versionada em `prisma/migrations/`,
+  aplicada por um operador com backup antes (ver [DEPLOY.md](DEPLOY.md)). *(Antes o build
+  rodava `prisma db push` sozinho; foi a causa do incidente de preview tocando produção.)*
 - Fontes (design system NEO): Inter · Newsreader · JetBrains Mono, via `next/font`.
 
 ## Comandos

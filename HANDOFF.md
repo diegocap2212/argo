@@ -419,10 +419,11 @@ Corrigido na raiz: `vercel-build` é `prisma generate && next build`, e schema m
 ## Portal único (arquitetura nova)
 
 - **1 projeto Vercel (`neo-lm`), deploy da RAIZ do monorepo.** Hub em `/`, Dash em `/dash/**`, MMA em `/maturity/**`, functions em `/api/**` (movidas da pasta do dash para a raiz), `middleware.ts` (Edge) na raiz.
-- **Build composto:** `npm run build:portal` (`scripts/build-portal.mjs`) — 3 Vite builds (`--base=/dash/`, `--base=/maturity/`) compostos em `dist/`. **SEM npm workspaces** (hoisting quebrava binário linux do rollup — npm#4828); na Vercel cada app roda `npm ci` com o próprio lock.
+- **Build composto:** `corepack pnpm build:portal` (`scripts/build-portal.mjs`) — 3 Vite builds (`--base=/dash/`, `--base=/maturity/`) compostos em `dist/`.
+- **Workspace pnpm** (`pnpm@11.17.0` em `packageManager`): UM lockfile na raiz (`pnpm-lock.yaml`), `pnpm-workspace.yaml` declarando os apps e `packages/`. `pnpm` não está no PATH — use `corepack pnpm`. ~~SEM npm workspaces (hoisting quebrava binário linux do rollup — npm#4828); na Vercel cada app roda `npm ci` com o próprio lock.~~ **Obsoleto desde a migração para pnpm**: não existe nenhum `package-lock.json` no repo (removido no commit `c5393c2`), e `npm ci` numa pasta de app cria `node_modules` divergente do lockfile.
 - **Auth same-origin:** sessão Supabase única no localStorage da origem. Fragment handoff (`#neo_at`) e postMessage do iframe REMOVIDOS. Iframe Metricas → `/dash/time/:id?embed=1` same-origin.
 - **Gate server-side:** login no hub → `POST /api/session` → cookie `neo_session` (HMAC, 12h, HttpOnly). `middleware.ts` exige o cookie para TUDO sob `/dash`/`/maturity` (HTML+assets); sem ele → 302 `/?next=`. Hub segue `?next` interno após login. Logout = `DELETE /api/session` (hub, dash e MMA).
-- **Torre restrita:** `/dash/torre` (comparativo SM×SM/time×time, saiu da home) — senha na env `TOWER_PASSWORD` validada em `api/tower.ts` → cookie `neo_tower` 12h. Senha de produção gerada em 2026-07-14 (mostrada 1x ao Diego).
+- **Torre restrita:** `/dash/torre` (comparativo SM×SM/time×time, saiu da home) — senha na env `TOWER_PASSWORD` validada em `api/gate.ts` (`POST /api/gate?scope=tower`; era `api/tower.ts`, unificado) → cookie `neo_tower` 12h, assinado com subchave HKDF de propósito `tower`. Senha de produção gerada em 2026-07-14 (mostrada 1x ao Diego).
 
 ## Cutover — CONCLUÍDO (2026-07-14)
 

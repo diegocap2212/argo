@@ -49,10 +49,18 @@ schema é `db:migrate:new` → revisar o SQL → `db:migrate`.
 
 ## Histórico — checklist da v2 (report + radar + catálogo + academia)
 
+> **⚠️ SEÇÃO HISTÓRICA — NÃO EXECUTAR COMO ESCRITA.** Ela descreve o mundo em que o
+> `vercel-build` aplicava schema sozinho. Hoje `vercel-build` é
+> `prisma generate && next build` e **`db:push` não existe mais no `package.json`** —
+> os comandos `npm run db:push` abaixo simplesmente falham. Substitua por
+> `pnpm --filter nero-portal db:migrate` (migration versionada, revisada antes).
+> O passo de **backup continua obrigatório**: é a única parte desta seção que vale
+> literalmente. Ver "Como aplicar schema hoje" no topo do arquivo.
+
 Esta versão adiciona 4 modelos NOVOS ao banco (`Report`, `MaturityAssessment`,
 `CatalogAsset`, `DataField`). A mudança é **100% aditiva** (nenhuma tabela/coluna
-existente é alterada ou removida) — mas o `vercel-build` roda `prisma db push`
-sozinho no deploy, então o backup vem **ANTES** do push/merge.
+existente é alterada ou removida). Na época o `vercel-build` rodava `prisma db push`
+sozinho no deploy, e por isso o backup vinha **ANTES** do push/merge.
 
 ## 1. Backup (obrigatório — nada do que está no Nero pode se perder)
 
@@ -81,14 +89,17 @@ Nunca usar `db:reset` / `--force-reset` / `--accept-data-loss`.
 ## 3. Aplicar e semear
 
 ```bash
-npm run db:push     # aplica o schema (aditivo)
-npm run db:seed     # idempotente: cria as 11 áreas DAMA como "lacuna"; não toca no resto
+# HISTÓRICO: era `npm run db:push`. Hoje o script não existe — use a migration versionada:
+corepack pnpm --filter nero-portal db:migrate   # aplica prisma/migrations/ (revisar o SQL antes)
+corepack pnpm --filter nero-portal db:seed      # idempotente: cria as 11 áreas DAMA como "lacuna"; não toca no resto
 ```
 
 ## 4. Verificar (com o banco real)
 
 ```bash
-npx tsx scripts/test-state.ts   # versionamento + undo, incl. entidades novas (deve: 0 fail)
+# ESCREVE no banco apontado pelas envs — só contra branch descartável, NUNCA produção.
+corepack pnpm --filter nero-portal test:state   # versionamento + undo + reserva de orçamento (deve: 0 fail)
+corepack pnpm --filter nero-portal test:core    # 88 checks sem banco (modelo, preço, PII, tools, input)
 ```
 
 Depois, no portal:
@@ -105,13 +116,43 @@ Depois, no portal:
 
 ```bash
 # criar branch "demo" no Neon e apontar POSTGRES_PRISMA_URL/DATABASE_URL_UNPOOLED para ela
-npm run db:seed
-DEMO_SEED_ALLOWED=true npm run db:seed:demo   # aborta sem a flag, por segurança
+corepack pnpm --filter nero-portal db:seed
+DEMO_SEED_ALLOWED=true corepack pnpm --filter nero-portal db:seed:demo   # aborta sem a flag, por segurança
 ```
 
 Roteiro do apresentador: `content/demo-roteiro.md`.
 
 ## Variáveis de ambiente
 
-Sem novidades: `ANTHROPIC_API_KEY`, `POSTGRES_PRISMA_URL`, `DATABASE_URL_UNPOOLED`,
-`APP_PASSWORD`, `SESSION_SECRET` (e opcionais `NERO_MODEL`, `NERO_MONTHLY_BUDGET_USD`).
+`ANTHROPIC_API_KEY`, `POSTGRES_PRISMA_URL`, `DATABASE_URL_UNPOOLED`, `SESSION_SECRET`,
+`NEO_ORIGIN`. Opcionais: `NERO_MODEL` (fora da allowlist **aborta** o startup em produção),
+`NERO_MONTHLY_BUDGET_USD` (teto global), `NERO_USER_MONTHLY_BUDGET_USD` (teto por identidade).
+
+**`APP_PASSWORD` foi removida** e não deve ser reintroduzida: o Nero não tem login próprio —
+ele valida o token de sessão do Portal NEO (subchave HKDF de propósito `nero`).
+
+## Headers de segurança (`vercel.json`)
+
+`vercel.json` é JSON estrito — não aceita comentário nem chave extra dentro de
+`headers[].headers[]`. O porquê de cada header fica aqui.
+
+| Header | Por quê |
+|---|---|
+| `X-Content-Type-Options: nosniff` | Impede o browser adivinhar o content-type. |
+| `Referrer-Policy: strict-origin-when-cross-origin` | Não vaza path do Nero para terceiros. |
+| `X-Frame-Options: SAMEORIGIN` | Legado; coberto também pelo `frame-ancestors` da CSP. |
+| `Strict-Transport-Security` | Acrescentado em 2026-07-27. |
+| `Content-Security-Policy` | Acrescentado em 2026-07-27. |
+| `Permissions-Policy` | Nega câmera/microfone/geolocalização/pagamento/USB — nada disso é usado. |
+
+**Por que o deployment precisa dos próprios headers.** O Nero é servido pela origem do portal
+(`neo-lm.vercel.app/nero`), que já tem CSP e HSTS. Mas o deployment do `nero-portal` também é
+alcançável pela URL do próprio projeto, e ali **nenhum header do portal se aplica**. O review
+de 2026-07-27 (§7.16) registrou isto: um deployment tem de ser defensivo por si, não por
+herança de quem faz o rewrite.
+
+**Notas da CSP.** `script-src` NÃO tem `'unsafe-inline'`. `'unsafe-eval'` está presente porque
+o runtime do Next precisa dele em produção; `style-src 'unsafe-inline'` é exigido pelo
+Tailwind/Next para estilo em runtime. `connect-src 'self'` basta porque o browser nunca fala
+com a API da Anthropic direto — quem chama o modelo é o servidor (`lib/nero/core.ts`, o único
+ponto de IA). Se algum dia a UI passar a consumir um serviço externo, é aqui que libera.

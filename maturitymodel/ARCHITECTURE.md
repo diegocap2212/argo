@@ -21,6 +21,21 @@
 > foram corrigidos, mas o resto do texto ainda assume o modelo antigo em
 > alguns exemplos. Fonte de verdade do estado atual: `HANDOFF.md` da raiz do
 > monorepo e `docs/ROLES-REDESIGN.md` deste app.
+>
+> ⚠️ **Terceira mudança estrutural (2026-07-27), do hardening pós-code-review:**
+> (3) a Edge Function **`sync-anchors` foi partida em duas** —
+> `sync-anchors-user` (valida o JWT do usuário e exige SM daquele squad ou AM/admin,
+> via as funções SQL de papel) e `sync-anchors-cron` (exige `ANCHOR_SYNC_CRON_SECRET`
+> em header, guardada no Vault), com a lógica comum em `functions/_shared/`. Toda
+> menção a "a Edge Function `sync-anchors`" neste documento se refere ao desenho
+> ANTIGO, em que a função recebia `service_role` por env e **autorizava com ela** —
+> ou seja, qualquer portador da anon key (pública, e hardcoded na migration do cron)
+> disparava sync de qualquer squad. `service_role` continua sendo usado para
+> **gravar**, mas só depois de a autorização passar. Também nesse dia: `npm run
+> typecheck` (`tsc --noEmit` com `files: []`) não verificava nada e virou `tsc -b`;
+> a policy `homolog_update` foi corrigida para exigir `is_portal_am()`; e o app
+> ganhou suíte de RLS em Postgres efêmero. Ver `docs/HARDENING-EM-ANDAMENTO.md`
+> na raiz do monorepo.
 
 ## 1. O que é este projeto
 
@@ -44,7 +59,7 @@ aqui. Ver commit `9c3e291` para o ponto exato dessa virada.
 
 - **Front-end**: Vite 5 + React 18.3 + TypeScript 5.8 (SWC), `react-router-dom` 6, `@tanstack/react-query` 5, Tailwind 3.4, shadcn/ui (Radix), `recharts` 2, `@hello-pangea/dnd`.
 - **Backend**: Supabase (Postgres + Auth + Storage + Edge Functions/Deno). Projeto: `cvkcngrmnfwupstyrpsd` (nome "maturitymodel" no dashboard).
-- **Deploy**: Vercel, projeto `maturitymodel`, deploy automático a cada push em `main`. URL de produção: **`https://maturitymodel-ashen.vercel.app`**.
+- **Deploy**: ~~Vercel, projeto `maturitymodel`, deploy automático a cada push em `main`. URL de produção: `https://maturitymodel-ashen.vercel.app`.~~ **DEFASADO desde o cutover (2026-07-14):** hoje sai no build composto do monorepo `argo` (projeto Vercel `neo-lm`, base `/maturity/`), servido em `https://neo-lm.vercel.app/maturity/**`. O projeto antigo só responde redirect 308. Ver §10.
 - **Integração externa**: Jira Cloud (via API REST v3, direto na Edge Function). A lógica de sync foi portada do `locavia-dashboard` (outro app nosso), que continua sendo a referência da regra de negócio de campos/status.
 
 ## 3. Estrutura do repositório
@@ -95,17 +110,31 @@ prototype/mma-prototipo-v2.html ← protótipo HTML estático, referência visua
 
 ## 4. Autenticação e controle de acesso
 
-### 4.1 Login
+### 4.1 Login — ⚠️ **DESCRIÇÃO HISTÓRICA, NÃO É O FLUXO ATUAL**
+
+> Desde o cutover do Portal NEO (2026-07-14) **o MMA não tem login próprio**: a sessão é
+> criada por **Magic Link/OTP no NEO Hub** e vale nesta app porque as duas vivem na mesma
+> origem (`neo-lm.vercel.app`) e portanto compartilham o `localStorage` do Supabase. O
+> acesso a `/maturity/**` é barrado na **borda** pelo `middleware.ts` da raiz do monorepo,
+> que exige o cookie `neo_session`. Não há email+senha, nem convite por senha, nem tela de
+> reset em uso. `Login.tsx`/`ResetPassword.tsx` seguem no repositório como código legado.
+>
+> O texto abaixo descreve o modelo ANTIGO e fica registrado porque a **configuração de
+> Auth no Supabase** (Site URL, Redirect URLs) foi feita nele e a advertência sobre
+> `supabase config push` continua valendo integralmente.
 
 **Email + senha real, obrigatório.** Não há sessão anônima (foi usada temporariamente durante o desenvolvimento e desligada antes de produção — ver `src/hooks/useAuth.tsx`). Não há cadastro self-service: contas são criadas por um AM via **convite por email do Supabase** (`POST /auth/v1/invite`, endpoint admin) ou, pra contas já existentes, via **recuperação de senha** (`POST /auth/v1/recover`, client-side). Em nenhum dos dois fluxos o time de desenvolvimento vê ou manipula senha — a pessoa define a própria via link recebido por email.
 
 `src/pages/ResetPassword.tsx` é a tela que completa esse fluxo: o link do email autentica temporariamente (Supabase processa o token da URL antes de chegar na página, evento `PASSWORD_RECOVERY` via `onAuthStateChange`), a tela só pede a senha nova e chama `supabase.auth.updateUser({password})`.
 
 **Configuração crítica no Supabase Dashboard** (Authentication → URL Configuration), sem a qual os links de email quebram:
-- Site URL: `https://maturitymodel-ashen.vercel.app`
-- Redirect URLs: inclui `https://maturitymodel-ashen.vercel.app/reset-password`
+- ~~Site URL: `https://maturitymodel-ashen.vercel.app`~~ → hoje **`https://neo-lm.vercel.app/maturity`**
+- ~~Redirect URLs: inclui `https://maturitymodel-ashen.vercel.app/reset-password`~~ → a lista atual está em `supabase/config.toml`
 
-Isso está espelhado em `supabase/config.toml` `[auth]` e foi aplicado via `supabase config push` em 2026-07-10. **Cuidado**: esse comando reescreve a seção `[auth]` inteira (não é patch parcial) — sempre revisar o diff mostrado antes de confirmar, e nunca rodar sem antes conferir que todo campo que já está em produção (MFA, confirmação de email) está explicitamente declarado no arquivo local. Já causou um incidente real antes desta sessão (ver o comentário no topo do arquivo).
+Isso está espelhado em `supabase/config.toml` `[auth]` — que era a **fonte do risco**: o arquivo
+ficou com os valores do domínio descontinuado depois do cutover, então um `supabase config push`
+feito por outro motivo reintroduziria redirect quebrado no projeto vivo. Corrigido em 2026-07-27.
+A versão original foi aplicada via `supabase config push` em 2026-07-10. **Cuidado**: esse comando reescreve a seção `[auth]` inteira (não é patch parcial) — sempre revisar o diff mostrado antes de confirmar, e nunca rodar sem antes conferir que todo campo que já está em produção (MFA, confirmação de email) está explicitamente declarado no arquivo local. Já causou um incidente real antes desta sessão (ver o comentário no topo do arquivo).
 
 ### 4.2 Papéis e RLS — **ATUALIZADO 2026-07-15** (redesenho de roles)
 

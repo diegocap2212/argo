@@ -41,21 +41,41 @@ Nunca tratar o template como verdade.
 ## Stack
 - Next.js (App Router) + TypeScript · Tailwind v4 + shadcn/ui
 - `@anthropic-ai/sdk` — Claude. Allowlist do portal: **`claude-haiku-4-5`**
-  (padrão) e **`claude-sonnet-4-6`** (ver `src/lib/nero/core.ts`).
-- Banco: **Postgres (Neon)** via Prisma. `vercel-build` roda `prisma db push`
-  no deploy — mudanças de schema só aditivas; backup antes (ver `DEPLOY.md`).
+  (padrão) e **`claude-sonnet-5`**.
+  A **fonte de verdade é `NERO_MODELS` em `src/lib/nero/core.ts`**, e o único
+  predicado que decide "este modelo pode?" é `isNeroModelId`. Não repita a lista:
+  este doc dizia `claude-sonnet-4-6` depois de o código migrar para `claude-sonnet-5`,
+  e uma allowlist de modelos defasada num doc que agentes leem é o pior drift possível.
+  `NERO_MODEL` fora da lista **aborta o startup em produção** (`VERCEL_ENV=production`);
+  fora de produção loga e cai no Haiku.
+- Banco: **Postgres (Neon)** via Prisma. `vercel-build` é **`prisma generate && next build`**
+  — **não** roda `prisma db push`. Schema muda por `prisma migrate` versionado em
+  `prisma/migrations/`, aplicado deliberadamente por um operador; nunca no build.
+  *(Este doc afirmava `db push` no deploy: era o comportamento antigo e foi exatamente
+  a causa do incidente de preview tocando produção. O `Dockerfile` ainda carrega um
+  `db push` no `CMD` e por isso está marcado como NÃO OPERACIONAL — nada o invoca.)*
   Nunca `db:reset` contra dados reais.
 
 ## Comandos
-- `npm run dev` — servidor de desenvolvimento (Turbopack)
-- `npm run build` / `npm start` — build de produção
-- `npm run lint` — ESLint
+Workspace **pnpm** na raiz do monorepo `argo` (`pnpm` não está no PATH — use `corepack pnpm`):
+
+- `corepack pnpm --filter nero-portal dev` — desenvolvimento (Turbopack)
+- `corepack pnpm --filter nero-portal build` / `start` — build de produção
+- `corepack pnpm --filter nero-portal lint` — ESLint
+- `corepack pnpm --filter nero-portal test:core` — 88 checks sem banco: allowlist de
+  modelo, preço/orçamento, redação de PII, política de tools, validação do input do chat
+- `corepack pnpm --filter nero-portal test:state` — auditoria/undo/reserva de orçamento.
+  **Exige Postgres e ESCREVE no banco** — só contra base descartável, nunca produção.
 
 ## Variáveis de ambiente (`.env.local`)
 - `ANTHROPIC_API_KEY` — obrigatória para o motor.
 - `POSTGRES_PRISMA_URL` (pooled) e `DATABASE_URL_UNPOOLED` (direta) — banco Neon.
-- `APP_PASSWORD` + `SESSION_SECRET` — login por senha única (cookie HMAC).
-- Opcionais: `NERO_MODEL`, `NERO_MONTHLY_BUDGET_USD`. (Futura: `VOYAGE_API_KEY`.)
+- `SESSION_SECRET` + `NEO_ORIGIN` — o Nero **não tem login próprio**: valida o token de
+  sessão emitido pelo Portal NEO (subchave HKDF de propósito `nero`) e confia na
+  identidade que vem dele. **`APP_PASSWORD` foi removida** — não reintroduzir; o doc a
+  citava como se o portal ainda tivesse senha única.
+- Opcionais: `NERO_MODEL`, `NERO_MONTHLY_BUDGET_USD` (teto global),
+  `NERO_USER_MONTHLY_BUDGET_USD` (teto por identidade). (Futura: `VOYAGE_API_KEY`.)
 
 ## Convenções
 - **Design:** antes de gerar/alterar qualquer tela, ler `DESIGN.md` — o Nero adota

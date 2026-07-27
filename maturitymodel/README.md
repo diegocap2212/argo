@@ -22,25 +22,39 @@ Query · Supabase (Postgres + Auth + Edge Functions) · deploy na Vercel.
 
 ## Rodando localmente
 
-Pré-requisitos: **Node 18+** e npm.
+Este app é um workspace do monorepo `argo`. **Instale na raiz do monorepo, não aqui**
+(`corepack pnpm install --frozen-lockfile`) — não existe `package-lock.json`, e rodar
+`npm install` nesta pasta cria um `node_modules` divergente do lockfile do workspace.
 
 ```bash
-npm install
-cp .env.example .env      # preencha com as chaves do Supabase (ver .env.example)
-npm run dev               # sobe em http://localhost:8080
+cp .env.example .env                          # chaves do Supabase (ver .env.example)
+corepack pnpm --filter maturitymodel dev      # sobe em http://localhost:8080
 ```
 
 ## Scripts
 
+Todos via `corepack pnpm --filter maturitymodel <script>`:
+
 | Comando | O quê |
 |---|---|
-| `npm run dev` | Dev server (porta 8080) |
-| `npm run build` | Build de produção (Vite) |
-| `npm run typecheck` | Checagem de tipos (`tsc --noEmit`) — **o build não checa tipos, rode isto antes de subir** |
-| `npm run lint` | ESLint |
-| `npm run preview` | Servir o build localmente |
+| `dev` | Dev server (porta 8080) |
+| `build` | Build de produção (Vite) |
+| `typecheck` | **`tsc -b`** — compila `src`, os testes e as ferramentas de verdade |
+| `lint` | ESLint |
+| `preview` | Servir o build localmente |
+| `test:journey` | Contrato da jornada do ciclo (21 checks, sem banco) |
+| `test:anchors` | Fórmulas das âncoras do Jira (17 checks, sem banco) |
+| `test:migrations` | Aplica todas as migrations num Postgres efêmero (PGlite) |
+| `test:rls-local` | Matriz de RLS/papéis no Postgres efêmero (88 checks) |
+| `test:rls` | Mesma matriz contra um Supabase real (exige envs) |
 
-**Antes de qualquer deploy**: `npm run typecheck && npm run build` limpos.
+**Antes de qualquer deploy**: `typecheck` + `build` + os quatro testes locais limpos.
+
+> **Sobre o `typecheck`:** até 2026-07-27 o script era `tsc --noEmit`, e o `tsconfig.json`
+> deste app é `files: []` + project references — a combinação **não verifica nada** (o
+> `--noEmit` ignora as referências). O script passava verde enquanto a aplicação tinha
+> **201 erros de tipo em 43 arquivos**. Hoje é `tsc -b`, que segue as referências.
+> Se alguém trocar de volta, o verde volta a ser falso.
 
 ## Variáveis de ambiente
 
@@ -51,9 +65,24 @@ nos *secrets* das Edge Functions do Supabase, nunca no repositório.
 
 ## Deploy
 
-- **Front**: Vercel, deploy automático a cada push na `main`.
+- **Front**: hoje sai no build composto do monorepo `argo` (rota `/maturity/**` do Portal NEO),
+  **não** por deploy próprio deste repositório. O domínio antigo
+  `maturitymodel-ashen.vercel.app` foi descontinuado no cutover.
 - **Banco / migrations**: `supabase db push` (CLI linkada ao projeto).
-- **Edge Function** (`sync-anchors`, integração Jira): `supabase functions deploy sync-anchors` + `supabase secrets set ...`. Detalhes e a lista de secrets em `ARCHITECTURE.md` §9.
+- **Edge Functions da integração Jira — são DUAS**, e a diferença é a fronteira de autorização:
+
+  ```bash
+  supabase functions deploy sync-anchors-user   # JWT do usuário; exige SM do squad ou AM/admin
+  supabase functions deploy sync-anchors-cron   # header com ANCHOR_SYNC_CRON_SECRET (Vault)
+  supabase secrets set JIRA_BASE_URL=... JIRA_EMAIL=... JIRA_API_TOKEN=... \
+                       SB_URL=... SB_SERVICE_ROLE=... SB_ANON_KEY=... \
+                       ANCHOR_SYNC_CRON_SECRET=...
+  ```
+
+  A função única `sync-anchors` **não existe mais**: ela recebia `service_role` por env e
+  autorizava com ela, então **qualquer pessoa com a anon key** (que é pública, e estava
+  hardcoded numa migration do cron) conseguia disparar sync de qualquer squad. Detalhes e a
+  lista completa de secrets em `ARCHITECTURE.md` §9.
 
 ## Dashboard Locavia incorporado
 
@@ -78,7 +107,15 @@ src/
 supabase/
 ├── migrations/       histórico do schema (as `2026071012/13...mma_*` são as do Portal MMA;
 │                     as anteriores são do Maturity Model legado — ver ARCHITECTURE §8.1)
-└── functions/sync-anchors/   Edge Function (Jira → âncoras)
+└── functions/
+    ├── _shared/              JQL, normalize, EXTRACTORS, verdict, authz (lógica comum)
+    ├── sync-anchors-user/    fronteira: JWT do usuário + papel no squad
+    └── sync-anchors-cron/    fronteira: secret exclusiva do cron
+
+tests/
+├── journey-contract.ts   jornada do ciclo (sem banco)
+├── anchor-formulas.ts    fórmulas das âncoras (sem banco)
+└── pg/                   Postgres efêmero (PGlite): apply-migrations, rls-local
 ```
 
 Detalhes de arquitetura, modelo de acesso (papéis por squad + RLS) e as

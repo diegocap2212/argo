@@ -11,7 +11,7 @@ quem rotaciona. Valores vivem só nos projetos Vercel e nos consoles dos provedo
 
 | Variável | Para quê | Onde obter | Se faltar em produção |
 |---|---|---|---|
-| `SESSION_SECRET` | Assina `neo_session`, `neo_tower`, `neo_nero` | gerar 32B; **tem de ser idêntico no `nero-portal`** | middleware 503 (fail-closed) |
+| `SESSION_SECRET` | Raiz das SUBCHAVES de `neo_session`, `neo_tower`, `neo_nero` (HKDF por propósito) | gerar 32B; **tem de ser idêntico no `nero-portal`** | middleware 503 (fail-closed) |
 | `TOWER_PASSWORD` | Senha da Torre (`/dash/torre`) | gerada; rotacionada em 2026-07-15 | `/api/gate?scope=tower` 503 |
 | `NERO_PASSWORD` | Senha do Nero (`/nero`) | gerada em 2026-07-26 | `/api/gate?scope=nero` 503 |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Functions validam Bearer via RPC `is_neo_allowed` | console Supabase | `/api/data` 401 (fail-closed) |
@@ -19,7 +19,12 @@ quem rotaciona. Valores vivem só nos projetos Vercel e nos consoles dos provedo
 | `BLOB_READ_WRITE_TOKEN` | Dataset do Jira no Vercel Blob | Vercel → Storage | `/api/data` cai no fallback versionado |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Upstash Redis: comentários + rate-limit do gate | Vercel → Storage | gate 503; comentários falham |
 | `ALLOWED_ORIGIN` | CORS de `/api/comments` | `https://neo-lm.vercel.app` | CORS bloqueia |
-| `CRON_SECRET`, `GITHUB_*` | `/api/trigger-sync` (inerte — o sync roda por Actions no repo do Dash) | — | 401, sem efeito prático |
+
+`CRON_SECRET` e `GITHUB_DISPATCH_TOKEN`/`GITHUB_*` **não são mais usadas por nada.** Os
+endpoints que as consumiam (`/api/trigger-sync` e `/api/refresh`) foram removidos em
+2026-07-27: nunca estiveram ativos (as envs estavam vazias desde o cutover — ver `HANDOFF.md`)
+e o sync roda por cron nativo do GitHub Actions. Se ainda existirem no projeto Vercel, podem
+ser apagadas.
 
 ## Projeto Vercel `nero-portal`
 
@@ -36,6 +41,32 @@ quem rotaciona. Valores vivem só nos projetos Vercel e nos consoles dos provedo
 
 `APP_PASSWORD` foi **removida** em 2026-07-26 (login próprio do Nero morreu). Não reintroduzir.
 `DASHBOARD_PASSWORD` idem, no Dash.
+
+## Supabase — secrets das Edge Functions (projeto `cvkcngrmnfwupstyrpsd`)
+
+`supabase secrets set NOME=valor`. Não aparecem em `vercel env`.
+
+| Secret | Para quê | Se faltar |
+|---|---|---|
+| `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN` | Único ponto de contato com o Jira (âncoras) | sync de âncoras falha |
+| `SB_URL`, `SB_SERVICE_ROLE` | Gravar `anchor_readings` contornando RLS | idem |
+| `SB_ANON_KEY` | Chamar o RPC `can_sync_anchors` com o JWT do usuário | `sync-anchors-user` responde 403 (**fail-closed**) |
+| `ANCHOR_SYNC_CRON_SECRET` | Autentica o cron em `sync-anchors-cron` | cron responde 401 (**fail-closed**) |
+
+### Vault do Postgres (lido pelo job de pg_cron)
+
+O job de cron não pode ter segredo hardcoded no SQL versionado — era exatamente o problema
+corrigido em 2026-07-27. Ele lê do Vault:
+
+```sql
+select vault.create_secret('https://cvkcngrmnfwupstyrpsd.supabase.co/functions/v1/sync-anchors-cron',
+                           'anchor_sync_url');
+select vault.create_secret('<secret longa e aleatória>', 'anchor_sync_secret');
+```
+
+`anchor_sync_secret` e `ANCHOR_SYNC_CRON_SECRET` têm de ter **o mesmo valor**. Se qualquer um
+dos dois segredos do Vault faltar, `net.http_post` recebe NULL e o cron não roda — fail-closed
+de propósito, em vez de cair para um default que funcione.
 
 ## Provedores
 
@@ -63,6 +94,32 @@ vercel integration list      # mostra o recurso ligado ao projeto
 | `backup-pre-v2` | backup do ritual da v2 |
 | `backup-pre-migrate-baseline` | backup antes do baseline de migrations (2026-07-26) |
 
+## Tokens de sessão: uma subchave por propósito
+
+`SESSION_SECRET` **não assina os cookies diretamente.** Cada cookie usa uma subchave derivada
+por HKDF-SHA256, com o propósito como `info`:
+
+| Cookie | Propósito (`info` do HKDF) | Emitido por | Lido por |
+|---|---|---|---|
+| `neo_session` | `neo_session` | `api/session.ts` | `middleware.ts`, `api/gate.ts`, proxy do Nero |
+| `neo_tower` | `tower` | `api/gate.ts?scope=tower` | `api/gate.ts` |
+| `neo_nero` | `nero` | `api/gate.ts?scope=nero` | `api/gate.ts`, proxy do Nero |
+
+**Por quê.** Antes os três eram assinados com o mesmo segredo e os verificadores checavam só
+assinatura + `exp`: qualquer token válido servia em qualquer trava, então copiar o valor de um
+cookie para outro era escalada de privilégio. Um campo `purpose` no payload não resolveria
+sozinho — dependeria de os QUATRO verificadores lembrarem de conferi-lo, e três deles são
+cópias autocontidas (imposição do Edge Middleware da Vercel). Com subchave, a assinatura de
+outro propósito simplesmente não confere.
+
+O salt (`neo-portal/token-subkey/v1`) é público e vive em quatro arquivos que **têm de
+concordar**: `packages/neo-auth/src/index.ts`, `middleware.ts`, `api/session.ts`,
+`api/gate.ts`. `pnpm --filter @neo/auth test` falha se divergirem.
+
+> ⚠️ **O deploy desta mudança derruba TODA sessão viva.** O formato do token mudou, então os
+> cookies existentes deixam de verificar: todos refazem login (OTP) e redigitam a senha da
+> Torre/do Nero. É o mesmo efeito de rotacionar `SESSION_SECRET`. Avise antes; não é incidente.
+
 ## Rotação
 
 **Rotina anual, ou imediata em suspeita de exposição.**
@@ -82,15 +139,39 @@ deploy) → verificar.
 > `env rm` em variável multi-target, garanta que o valor é reconstituível (para URLs de banco,
 > por exemplo, `neonctl connection-string <branch>`).
 
-## Pendências de rotação (herdadas)
+## Pendências de rotação
 
-Do `HANDOFF.md`, ainda em aberto e só o Diego pode fazer:
+**Uma pendência só fecha com evidência.** Cada linha precisa de `revogado_em`, responsável,
+substituto e como se comprovou que a credencial antiga morreu. "Acho que revoguei" mantém o
+incidente aberto: o code review de 2026-07-27 classificou estas linhas como *risco
+operacional*, não documentação, justamente porque nenhuma tem prova de revogação.
 
-- Tokens Supabase `sbp_a5f2…` (2026-07-14) e `sbp_6ac9…` (2026-07-15) — revogar em
-  `supabase.com/dashboard/account/tokens`
-- Senha de app do Gmail e API key antiga do Resend
-- 2FA nas contas (Vercel / GitHub / Supabase / cron-job.org)
-- Escopo do `GITHUB_DISPATCH_TOKEN`
+Enquanto a coluna **Revogado em** estiver vazia, considere a credencial VIVA.
+
+| # | Credencial | Exposta em | Responsável | Substituto | Revogado em | Evidência da revogação |
+|---|---|---|---|---|---|---|
+| 1 | Token pessoal Supabase `sbp_a5f2…` | 2026-07-14 | Diego | conta de serviço, não token pessoal | — | — |
+| 2 | Token pessoal Supabase `sbp_6ac9…` | 2026-07-15 | Diego | idem | — | — |
+| 3 | Senha de app do Gmail | — | Diego | — | — | — |
+| 4 | API key antiga do Resend | — | Diego | key nova já em uso | — | — |
+| 5 | Escopo do `GITHUB_DISPATCH_TOKEN` | — | Diego | token de escopo mínimo | — | — |
+| 6 | 2FA em Vercel / GitHub / Supabase / cron-job.org | — | Diego | — | — | — |
+| 7 | **Anon key do projeto Supabase** | migration `20260712190000_anchor_sync_cron.sql`, no **histórico do git** | Diego | cron passou a usar `ANCHOR_SYNC_CRON_SECRET` (Vault) | — | — |
+
+Como preencher (exemplo do que conta como evidência):
+
+- **Tokens Supabase:** `supabase.com/dashboard/account/tokens` não lista mais o token, **e** uma
+  chamada autenticada com ele responde 401. Anexar data/hora.
+- **Anon key (linha 7):** rotacionar em `Project Settings → API → JWT keys`, redeployar os apps
+  que a usam no build (`VITE_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_ANON_KEY`, `SB_ANON_KEY`), e
+  confirmar que a chave antiga recebe 401 no PostgREST. Reescrever histórico do git **não** é
+  requisito: a chave é pública por design; o que era grave é ela ser GATILHO de escrita
+  privilegiada, e isso a divisão `sync-anchors-user`/`sync-anchors-cron` já fechou.
+
+> Sobre a linha 7: a anon key não é um segredo (vai no bundle do browser). Ela está aqui porque
+> o cron a usava como credencial de acionamento de uma função que gravava com `service_role` —
+> transformando uma chave pública em gatilho privilegiado. O código já não faz isso; a rotação
+> restante é higiene, não contenção.
 
 ## Regras
 
