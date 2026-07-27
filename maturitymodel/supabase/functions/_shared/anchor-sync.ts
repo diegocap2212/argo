@@ -1,8 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- código de fronteira: parseia
    respostas JSON dinâmicas da API do Jira; tipar cada campo aqui não agrega. */
 // ============================================================================
-// supabase/functions/sync-anchors/index.ts
+// supabase/functions/_shared/anchor-sync.ts
 // Sincroniza âncoras de dados do JIRA (direto) → anchor_readings.
+//
+// Este arquivo era a Edge Function `sync-anchors` completa. Hoje é só a LÓGICA: a
+// autorização vive nos handlers `sync-anchors-user` e `sync-anchors-cron` (ver o rodapé).
 //
 // Regra de ouro: o front NUNCA fala com o Jira. Este é o único ponto de contato,
 // e as credenciais vivem em secrets da função.
@@ -37,6 +40,9 @@
 // ============================================================================
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+// A normalização de issue vive em módulo PURO (sem Deno/Supabase) para poder ser testada —
+// as fórmulas das âncoras nunca tinham teste porque este arquivo lê `Deno.env` na carga.
+import { normalize, type Item } from "./jira-normalize.ts";
 
 const WINDOW_DAYS = 90;
 
@@ -64,23 +70,6 @@ type Anchor = {
 
 type Verdict = "sustains" | "conflicts" | "limit" | "na";
 
-interface Item {
-  key: string;
-  type: string;
-  isSubtask: boolean;
-  statusCategory: "TODO" | "IN_PROGRESS" | "DONE";
-  created: string | null;
-  resolved: string | null;
-  updated: string | null;
-  labels: string[];
-  commitmentDate: string | null; // cf10102 (Data de Comprometimento)
-  sprintCount: number;           // nº de sprints em que o item esteve (cf10020)
-  sprintInjected: boolean;       // entrou numa sprint depois que ela começou
-  everDone: boolean;             // já esteve em status concluído (agora ou no changelog)
-  reopened: boolean;             // saiu de concluído e voltou a um status ativo
-  leadTimeDays: number | null;
-}
-
 const sb = createClient(Deno.env.get("SB_URL")!, Deno.env.get("SB_SERVICE_ROLE")!);
 
 // ── Jira client ─────────────────────────────────────────────────────────────
@@ -94,93 +83,81 @@ const JIRA_FIELDS = [
   "customfield_10020", // Sprint (array)
 ];
 
+const MAX_PAGES = 100;
+const MAX_RETRIES = 4;
+const REQUEST_TIMEOUT_MS = 20_000;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * POST no Jira com timeout, retry e backoff.
+ *
+ * Antes era um `fetch` nu: sem timeout (uma requisição pendurada consumia todo o tempo da
+ * Edge Function e o sync morria sem resultado), sem retry (um único 429 do Jira derrubava o
+ * squad inteiro) e devolvendo o body cru do erro na exceção, que subia até a resposta HTTP.
+ * O `jira-client.ts` do Dashboard já fazia isso certo — esta função estava atrás dele.
+ */
+async function jiraPost(path: string, body: unknown): Promise<any> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(`${JIRA_BASE}${path}`, {
+        method: "POST",
+        headers: { Authorization: JIRA_AUTH, Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+
+      // 429 / 5xx → transitório. Respeita Retry-After quando vem; senão backoff exponencial.
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < MAX_RETRIES) {
+          const retryAfter = Number(res.headers.get("retry-after")) || 0;
+          const backoff = retryAfter > 0 ? retryAfter * 1000 : Math.min(1000 * 2 ** attempt, 16_000);
+          console.warn(`[anchor-sync] Jira ${res.status} — retry em ${backoff}ms (${attempt + 1}/${MAX_RETRIES})`);
+          await sleep(backoff);
+          continue;
+        }
+      }
+      if (!res.ok) {
+        // O corpo do erro do Jira vai para o LOG, não para a exceção: ele sobe até a resposta
+        // HTTP e pode conter JQL, nome de campo e detalhe da instância.
+        console.error(`[anchor-sync] Jira ${res.status} em ${path}:`, (await res.text()).slice(0, 500));
+        throw new Error(`Jira respondeu ${res.status}`);
+      }
+      return await res.json();
+    } catch (e) {
+      lastErr = e;
+      const isHttp = e instanceof Error && e.message.startsWith("Jira respondeu");
+      if (isHttp || attempt >= MAX_RETRIES) throw e;
+      const backoff = Math.min(1000 * 2 ** attempt, 16_000);
+      console.warn(`[anchor-sync] falha de rede no Jira — retry em ${backoff}ms (${attempt + 1}/${MAX_RETRIES})`);
+      await sleep(backoff);
+    }
+  }
+  throw lastErr;
+}
+
 async function jiraSearch(jql: string): Promise<any[]> {
   const all: any[] = [];
   let nextPageToken: string | undefined;
-  for (let guard = 0; guard < 100; guard++) {
+  for (let page = 0; page < MAX_PAGES; page++) {
     const body: Record<string, unknown> = {
       jql, maxResults: 100, fields: JIRA_FIELDS, fieldsByKeys: false, expand: "changelog",
     };
     if (nextPageToken) body.nextPageToken = nextPageToken;
-    const res = await fetch(`${JIRA_BASE}/rest/api/3/search/jql`, {
-      method: "POST",
-      headers: { Authorization: JIRA_AUTH, Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(`Jira ${res.status}: ${await res.text()}`);
-    const data = await res.json();
+    const data = await jiraPost("/rest/api/3/search/jql", body);
     if (data.issues?.length) all.push(...data.issues);
     nextPageToken = data.nextPageToken;
-    if (!nextPageToken) break;
+    if (!nextPageToken) return all;
   }
-  return all;
-}
-
-// ── Classificação de status (porta de status-classification.ts) ──────────────
-const DISCARD = ["DESCARTADO", "CANCELADO"];
-const DONE_CAT = ["CONCLU", "DONE", "COMPLETE", "RESOLV"];
-const DONE_NAME = ["CONCLU", "DONE", "PRONTO", "FINALIZ", "ENCERR", "RESOLV", "FECHAD", "ENTREGUE"];
-const PROGRESS_CAT = ["ANDAMENTO", "PROGRESS", "EXECU"];
-
-const isDoneName = (s?: string) => !!s && DONE_NAME.some((k) => s.toUpperCase().includes(k));
-const isDiscardName = (s?: string) => !!s && DISCARD.some((k) => s.toUpperCase().includes(k));
-
-function classifyStatus(statusName: string, categoryName: string, hasResolution: boolean): Item["statusCategory"] {
-  const name = (statusName || "").toUpperCase();
-  const cat = (categoryName || "").toUpperCase();
-  if (DISCARD.some((s) => name.includes(s))) return "TODO";
-  if (hasResolution || DONE_CAT.some((k) => cat.includes(k))) return "DONE";
-  if (PROGRESS_CAT.some((k) => cat.includes(k))) return "IN_PROGRESS";
-  return "TODO";
-}
-
-function normalize(issue: any): Item {
-  const f = issue.fields ?? {};
-  const created = f.created ?? null;
-  const resolved = f.resolutiondate ?? null;
-  const leadTimeDays =
-    created && resolved ? Math.ceil((new Date(resolved).getTime() - new Date(created).getTime()) / 86_400_000) : null;
-  const statusCategory = classifyStatus(f.status?.name ?? "", f.status?.statusCategory?.name ?? "", !!resolved);
-
-  // Sprint (cf10020): array de objetos { name, state, startDate, ... }.
-  const sprintObjs: any[] = Array.isArray(f.customfield_10020) ? f.customfield_10020 : [];
-  const starts = sprintObjs.map((s) => s?.startDate).filter(Boolean).map((d: string) => new Date(d).getTime());
-  const earliestStart = starts.length ? Math.min(...starts) : null;
-
-  // Changelog: reabertura (done→ativo) e injeção na sprint (add após o start).
-  let everDone = statusCategory === "DONE";
-  let reopened = false;
-  let sprintInjected = false;
-  for (const h of issue.changelog?.histories ?? []) {
-    const ts = new Date(h.created).getTime();
-    for (const it of h.items ?? []) {
-      if (it.field === "status") {
-        if (isDoneName(it.toString)) everDone = true;
-        if (isDoneName(it.fromString) && !isDoneName(it.toString) && !isDiscardName(it.toString)) reopened = true;
-      }
-      if (it.field === "Sprint" || it.fieldId === "customfield_10020") {
-        const added = (it.to ?? "").length > (it.from ?? "").length; // ganhou uma sprint
-        if (added && earliestStart != null && ts > earliestStart) sprintInjected = true;
-      }
-    }
-  }
-
-  return {
-    key: issue.key,
-    type: f.issuetype?.name ?? "Task",
-    isSubtask: !!f.issuetype?.subtask,
-    statusCategory,
-    created,
-    resolved,
-    updated: f.updated ?? created,
-    labels: f.labels ?? [],
-    commitmentDate: f.customfield_10102 ?? null,
-    sprintCount: sprintObjs.length,
-    sprintInjected,
-    everDone,
-    reopened,
-    leadTimeDays,
-  };
+  // Estouro do teto de páginas: FALHA em vez de devolver dado parcial.
+  // Antes o `for` terminava e o `return all` entregava um recorte silencioso — as âncoras
+  // seriam calculadas sobre parte dos itens e gravadas como se fossem a medição completa.
+  // Métrica errada com cara de certa é pior que sync que falhou.
+  throw new Error(
+    `Paginação do Jira excedeu ${MAX_PAGES} páginas (${all.length} itens) — recorte o JQL ou aumente o teto. ` +
+      `Nada foi gravado: melhor sem leitura do que com leitura parcial.`,
+  );
 }
 
 // ── JQL por squad ────────────────────────────────────────────────────────────
@@ -303,24 +280,31 @@ async function syncTeam(teamId: string, cycleId: string | null) {
   return { teamId, name: team.name, itens: items.length, inserted: rows.length };
 }
 
-Deno.serve(async (req) => {
-  try {
-    const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
-    let results;
-    if (body.team_id) {
-      results = [await syncTeam(body.team_id, body.cycle_id ?? null)];
-    } else {
-      const { data: teams } = await sb.from("teams").select("id, name").eq("status", "active");
-      results = [];
-      for (const t of teams ?? []) {
-        if (SQUAD_JIRA[t.name]) results.push(await syncTeam(t.id, null));
-      }
-    }
-    return new Response(JSON.stringify({ ok: true, results }), { headers: { "Content-Type": "application/json" } });
-  } catch (e) {
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+// ── Superfície pública do módulo ─────────────────────────────────────────────
+// Este arquivo ERA a Edge Function `sync-anchors` inteira, com `Deno.serve` no fim e ZERO
+// autorização: aceitava body vazio (e então sincronizava todos os squads), aceitava
+// qualquer `team_id`, e gravava com `SB_SERVICE_ROLE`, contornando RLS. O cron versionado
+// a chamava com o JWT `anon` — uma chave PÚBLICA (vai no bundle do browser e estava
+// hardcoded na migration) virava gatilho de carga no Jira e de escrita privilegiada.
+//
+// Agora é só a LÓGICA. Quem decide se a chamada pode acontecer são os dois handlers:
+//   · sync-anchors-user → valida o JWT do usuário e exige SM do squad, ou AM/admin global.
+//   · sync-anchors-cron → exige secret exclusiva em header (Vault), nunca a anon key.
+// O `service_role` continua sendo usado para GRAVAR, mas só depois de a autorização passar.
+
+export { SQUAD_JIRA, syncTeam };
+
+/** Sincroniza todos os squads ativos que existem no mapa do Jira (caminho do cron). */
+export async function syncAllMappedTeams() {
+  const { data: teams, error } = await sb.from("teams").select("id, name").eq("status", "active");
+  if (error) throw error;
+  const results: Array<Awaited<ReturnType<typeof syncTeam>>> = [];
+  const unmapped: string[] = [];
+  for (const t of teams ?? []) {
+    if (SQUAD_JIRA[t.name]) results.push(await syncTeam(t.id, null));
+    else unmapped.push(t.name);
   }
-});
+  // Squad ativo fora do mapa era pulado em SILÊNCIO — o painel dele simplesmente não
+  // recebia leitura e ninguém era avisado. Agora volta na resposta.
+  return { results, unmapped };
+}

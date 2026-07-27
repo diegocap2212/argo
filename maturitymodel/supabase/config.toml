@@ -7,8 +7,18 @@ project_id = "cvkcngrmnfwupstyrpsd"
 # volta pro default do CLI. Valores restaurados a partir do diff observado em
 # 2026-07-06 (ver commit que corrigiu um push acidental).
 [auth]
-site_url = "https://maturitymodel-ashen.vercel.app"
-additional_redirect_urls = ["https://maturitymodel-ashen.vercel.app/reset-password"]
+# Origem OFICIAL é o Portal NEO — o Maturity é servido em /maturity, não mais por um
+# deployment próprio. Estes valores apontavam para `maturitymodel-ashen.vercel.app`, o
+# deployment ANTIGO: um `supabase config push` reintroduziria redirect de OTP para um domínio
+# que não é o do produto (o link do e-mail levaria a pessoa para fora do portal).
+site_url = "https://neo-lm.vercel.app/maturity"
+additional_redirect_urls = [
+  "https://neo-lm.vercel.app/maturity",
+  "https://neo-lm.vercel.app/maturity/reset-password",
+  # Dev local do app isolado (vite): mantém o fluxo de OTP funcionando fora do portal.
+  "http://localhost:5173",
+  "http://localhost:5173/reset-password",
+]
 # Login real obrigatório (Portal MMA) — atualizado manualmente no Dashboard
 # em vez de `supabase config push`, que reescreveria toda a seção [auth].
 enable_anonymous_sign_ins = false
@@ -25,3 +35,21 @@ otp_length = 8
 [storage.vector]
 # Projeto não está no tier pago — manter desligado evita erro 402 a cada push.
 enabled = false
+
+# ── Edge Functions ───────────────────────────────────────────────────────────
+# A antiga `sync-anchors` foi dividida em duas por causa do achado P0.1 do review de
+# 2026-07-27: um handler só, sem autorização, servia tanto o botão do portal quanto o cron
+# — e o cron o chamava com a anon key, que é pública.
+
+[functions.sync-anchors-user]
+# JWT obrigatório: é o caminho da PESSOA (botão "Sincronizar agora"). O handler ainda exige
+# SM do squad ou AM/admin via RPC can_sync_anchors — `verify_jwt` só prova que o token é
+# assinado, e a anon key também é um token assinado.
+verify_jwt = true
+
+[functions.sync-anchors-cron]
+# Chamada service-to-service: não há usuário, então não há JWT a verificar. O controle de
+# acesso é a secret exclusiva em `x-anchor-sync-secret` (Vault → pg_cron → header), checada
+# em tempo constante no handler. Deixar `verify_jwt = true` aqui obrigaria o cron a portar
+# um JWT de projeto — que é justamente o problema que esta divisão elimina.
+verify_jwt = false
