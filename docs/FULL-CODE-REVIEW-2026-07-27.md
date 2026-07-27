@@ -30,7 +30,7 @@ abaixo são de precisão e de severidade — nenhuma derruba a tese central.
 | 4 | §5.6 | Trata Dashboard e `sync-anchors` no mesmo parágrafo | O [jira-client.ts](../locavia-dashboard/sync/jira-client.ts) do Dashboard **tem** retry com backoff e um teto que **lança erro em vez de truncar em silêncio** — melhor que a Edge Function, que terminava o laço após 100 páginas sem declarar truncamento. Contaminar um com a crítica do outro esconde onde está o problema. |
 | 5 | §5.7 | Severidade **subestimada** | [src/data.json](../locavia-dashboard/src/data.json) é array puro **sem `syncedAt`**, e `src/data-meta.json` é commitado a cada hora pelo workflow, que **não** commita `data.json`. Logo, quando o Blob falha, `/api/data` devolve itens congelados **com o timestamp de hoje**, e o ETag também diz "fresco". O fallback não mente às vezes: **mente sempre**. É P0. |
 | 6 | §7.13 | Severidade **superestimada** | O Dockerfile está quebrado nos cinco pontos, mas **nada o invoca** — `vercel-build` já é `prisma generate && next build`. O risco é a *documentação* afirmar que o container está pronto, não o container rodar `db push`. |
-| 7 | §4.7 | `hourly-sync` não instala dependências, então o sync está quebrado | **Empiricamente falso.** O workflow está **verde a cada execução** e produziu o `data-meta.json` de hoje: o `actions/setup-node` com `cache: 'npm'` falha silenciosamente e o `npm ci` acha o `node_modules` que já existe. O problema real é outro e continua sério: **install não reproduzível** (sem lockfile) num job que carrega `JIRA_API_TOKEN`, `BLOB_READ_WRITE_TOKEN` e `contents: write`. |
+| 7 | §4.7 | `hourly-sync` não instala dependências, então o sync está quebrado | **Parcialmente correto — e o review acabou certo no efeito.** Ver §0.5: a correção que eu havia escrito aqui estava errada no mecanismo e ficou obsoleta em horas. |
 
 ### 0.2 O achado que o review não nomeia: a composição
 
@@ -68,6 +68,52 @@ nenhum sinal visível na UI nem no ETag. Nenhum dos três achados isolados carre
 8. **Duas fórmulas de âncora estavam erradas, não só "assumidas".** "Sprint injetada" era inferida
    comparando **comprimento de string** dos campos `from`/`to`, e o timestamp era comparado ao
    início mais antigo entre **todas** as sprints do item, não à sprint adicionada.
+
+### 0.5 A correção nº 7, corrigida — e por que ela merece um registro próprio
+
+Eu escrevi aqui que o achado §4.7 era "**empiricamente falso**", que o workflow estava "verde a
+cada execução", e expliquei o mecanismo como "o `setup-node` falha silenciosamente e o `npm ci`
+acha o `node_modules` que já existe". **Duas dessas três afirmações estavam erradas**, e a
+terceira envelheceu em três horas. A cronologia medida na GitHub API:
+
+| Quando (UTC) | O quê |
+|---|---|
+| 2026-07-26 15:32 | `c5393c2` remove os 5 `package-lock.json` (migração para pnpm workspaces) |
+| 26/07 16:06 → 27/07 11:30 | ~15 execuções do `hourly-sync`, **todas verdes** |
+| 27/07 11:32 | último `data-meta.json` commitado (`a70cdf9`) |
+| 27/07 14:48, 17:02, 18:57 | **três falhas consecutivas** |
+
+Entre 11:32 e 14:48 **nenhum commit entrou na `main`**. O repositório não mudou: mudou o runner.
+O log da falha mostra `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` e o aviso de depreciação do
+Node 20 — o GitHub passou a forçar as actions fixadas por SHA (`checkout`, `setup-node`, ambas
+de era Node 20) a rodar sob Node 24, e o que era condição tolerada no `setup-node` virou **erro
+fatal**: `Some specified paths were not resolved, unable to cache dependencies`. O job morre em
+~9s, no `Set up Node.js`, antes de chegar ao install.
+
+O que o log da última execução verde mostra, e que é a evidência que eu deveria ter buscado antes
+de teorizar: `npm ci` em `locavia-dashboard` **"added 331 packages"** — sem nenhum lockfile no
+repositório desde o dia anterior. Não havia `node_modules` preexistente (runner é limpo): o npm
+resolveu tudo fresco no registry. Ou seja, o **install não reproduzível é fato comprovado**, não
+inferência — e é uma prova mais forte do que a que eu tinha em mãos quando escrevi a correção.
+
+Três lições, e a terceira é a que importa:
+
+1. **Errei o mecanismo por inferir em vez de ler o log.** Já havia errado assim uma vez nesta
+   mesma sessão (ver §0.4). A regra de §0.4 tem um par: *não conclua mecanismo sem ler o log do
+   passo*.
+2. **"Está verde" é uma medição com timestamp, não uma propriedade.** Escrever afirmação de estado
+   no presente, num documento versionado, é uma dívida que vence sozinha.
+3. **O review estava certo no que importa.** O texto dele — "o workflow ainda usa `npm ci` e um
+   lockfile que não existe" — descreve exatamente a bomba que explodiu. Eu me apeguei ao fato de
+   o job estar passando e chamei o achado de falso; o achado era sobre a **configuração**, e
+   configuração errada que passa hoje é configuração que falha quando o ambiente muda. A correção
+   do commit `4e199a1` (Corepack + `pnpm install --frozen-lockfile`, sem `cache-dependency-path`
+   fantasma) conserta precisamente esta falha.
+
+**Consequência operacional aberta enquanto esta branch não entrar na `main`:** o dataset do
+Dashboard está congelado em **27/07 11:32 UTC** e envelhece a cada hora. Com o fallback de
+`/api/data` ainda não deployado, produção rotula esse dado congelado como fresco — que é
+exatamente a composição descrita em §0.2.
 
 ### 0.4 Uma armadilha de método, registrada porque custou caro
 

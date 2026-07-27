@@ -272,12 +272,25 @@ Onda 3 (**COMPLETA**):
 1. **`api/` e `middleware.ts` não tinham typecheck NENHUM.** Não havia `tsconfig.json` na
    raiz e `pnpm -r` não visita o projeto raiz. Toda a fronteira de autenticação do portal
    estava sem verificação de tipos — pior que o "falso verde" do Maturity.
-2. **§4.7 do review está com o diagnóstico errado.** O `hourly-sync` **não** falha: as
-   execuções estão verdes e produziram o `data-meta.json` de hoje. O problema real é mais
-   quieto — `npm ci` sem lockfile no repo (removido no commit `c5393c2`), ou seja install não
-   reproduzível num job que carrega `JIRA_API_TOKEN`, `BLOB_READ_WRITE_TOKEN` e
+2. ~~**§4.7 do review está com o diagnóstico errado.** O `hourly-sync` **não** falha: as
+   execuções estão verdes e produziram o `data-meta.json` de hoje.~~ **ESTA CORREÇÃO ESTAVA
+   ERRADA — ver `FULL-CODE-REVIEW-2026-07-27.md` §0.5.** O achado do review estava certo no
+   efeito. O `hourly-sync` ficou verde de 26/07 16:06 até **27/07 11:30 UTC** e desde **14:48
+   UTC falha em toda execução** (3 falhas consecutivas), sem nenhum commit na `main` no meio: o
+   GitHub passou a forçar as actions fixadas por SHA a rodar sob Node 24, e o
+   `cache-dependency-path: locavia-dashboard/package-lock.json` — arquivo que não existe desde
+   `c5393c2` — deixou de ser condição tolerada e virou **erro fatal** no `Set up Node.js`.
+   Errei o mecanismo por inferir em vez de ler o log do passo.
+
+   O que se confirma, com evidência mais forte do que eu tinha: o log da última execução verde
+   mostra `npm ci` **"added 331 packages" sem lockfile nenhum no repositório** — install não
+   reproduzível, comprovado, num job que carrega `JIRA_API_TOKEN`, `BLOB_READ_WRITE_TOKEN` e
    `contents: write` em `main`. O log também reporta **8 vulnerabilidades (7 high)**, dado de
    CVE que o review disse não ter conseguido obter.
+
+   **URGÊNCIA OPERACIONAL:** o dataset do Dashboard está congelado em 27/07 11:32 UTC e
+   envelhece a cada hora. O commit `4e199a1` desta branch conserta exatamente esta falha —
+   enquanto ele não entrar na `main`, o sync segue morto.
 3. **`trends.ts` tinha uma segunda cópia do fallback `Resolved ?? UpdatedAt`** — era a causa
    da divergência entre a vazão do snapshot e a da tendência.
 4. **`DataQuality.missingResolutionDate` era código morto:** 0 de 6.345 itens, estruturalmente
