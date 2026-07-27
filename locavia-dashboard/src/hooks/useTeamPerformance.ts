@@ -8,6 +8,7 @@ import { computeAgingDistribution, computeCumulativeFlow, computeWeeklyPerforman
 import { computeAgingHeatmap, computeAttentionItems, computeLeadTimeScatter, computeStageDurations, computeThroughputVsLeadTime } from '../performance/analytics';
 import { computeEpics } from '../performance/epics';
 import { operationalItems, isOperationalType, isOutrosThroughputType, teamShowsOutrosNaVazao } from '../performance/operational';
+import { endOfDayExclusiveUTC, previousPeriodOf } from '../performance/period';
 
 export function useTeamPerformance(teamId: string, days = 56) {
   const [allItems, setAllItems] = useState<DashboardItem[]>([]);
@@ -39,8 +40,22 @@ export function useTeamPerformance(teamId: string, days = 56) {
       : items,
     [allItems, teamId, outrosNaVazao, items],
   );
-  const period = useMemo(() => ({ start: subDays(now, days).toISOString(), end: now.toISOString() }), [now, days]);
-  const previousPeriod = useMemo(() => ({ start: subDays(now, days * 2).toISOString(), end: subDays(now, days).toISOString() }), [now, days]);
+  // `end` é EXCLUSIVO e cobre o dia corrente inteiro: meia-noite UTC do dia seguinte. É aqui
+  // que a decisão vive — o cálculo não estica mais o limite por conta própria (era o que
+  // gerava a contagem dupla no dia da fronteira). Fechamento em UTC por exigência do
+  // CLAUDE.md: em fuso negativo, fechar em hora local perderia o último dia.
+  const period = useMemo(
+    () => ({
+      start: subDays(now, days).toISOString(),
+      end: endOfDayExclusiveUTC(now).toISOString(),
+    }),
+    [now, days],
+  );
+  // Derivado por `previousPeriodOf` em vez de montado à mão. O par montado aqui fazia
+  // `previousPeriod.end === period.start` e, com o `isInPeriod` FECHADO de antes, o dia da
+  // fronteira contava nos dois períodos — inflando exatamente o delta que a tela usa para
+  // dizer se o time melhorou. Agora o intervalo é semiaberto e a derivação é única.
+  const previousPeriod = useMemo(() => previousPeriodOf(period), [period]);
   const snapshot = useMemo(() => computeTeamPerformance(items, { teamId, period, now }), [items, teamId, period, now]);
   const previousSnapshot = useMemo(() => computeTeamPerformance(items, { teamId, period: previousPeriod, now }), [items, teamId, previousPeriod, now]);
   const insights = useMemo(() => generateTeamInsights(snapshot, previousSnapshot), [snapshot, previousSnapshot]);
@@ -61,6 +76,18 @@ export function useTeamPerformance(teamId: string, days = 56) {
     attention: computeAttentionItems(items, now, 8),
   }), [items, period, trend, teamId, now]);
 
+  /**
+   * Épicos usam o HISTÓRICO COMPLETO do time, de propósito — não o `period` selecionado.
+   *
+   * Recortar os filhos pela janela seria pior que a inconsistência que isso aparenta: a
+   * completude de um épico é cumulativa, então um épico com 40 itens exibiria "2 de 3
+   * concluídos" quando só 3 tiveram atividade nos últimos 30 dias. O número ficaria
+   * tecnicamente coerente com o filtro e completamente errado como informação.
+   *
+   * O problema real que o review apontou (§5.5) é de COMUNICAÇÃO: a tela sugeria que todo
+   * número respondia ao filtro temporal. Resolvido no componente, que agora rotula o painel
+   * como histórico completo. Ver EpicsCharts.
+   */
   const epics = useMemo(() => computeEpics(items, now), [items, now]);
 
   return { items, period, snapshot, previousSnapshot, insights, trend, viewTrend, outrosNaVazao, cfd, aging, analysis, epics, loading, error };

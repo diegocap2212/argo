@@ -59,6 +59,16 @@ export function ForecastPanel({ weekly, backlog }: { weekly: number[]; backlog: 
   if (noData) return <p style={{ color: 'var(--text-muted)', fontSize: 13, padding: '1rem' }}>Sem histórico de entregas suficiente no período para simular. Aumente o intervalo de semanas.</p>;
 
   return <div style={{ display: 'grid', gap: 20 }}>
+    {/* Amostra pequena não vira previsão. Monte Carlo REAMOSTRA as semanas observadas: com 3
+        semanas ele reproduz 3 valores com aparência de confiança estatística e nenhuma
+        informação sobre variabilidade real. O número era exibido igual, sem ressalva. */}
+    {!when.sufficientSample && (
+      <p role="status" style={{ margin: 0, padding: '0.6rem 0.75rem', fontSize: 12.5, lineHeight: 1.4, borderRadius: 6, background: 'var(--warn-surface, #3a2d10)', color: 'var(--warn-text, #f5d68a)' }}>
+        <strong>Amostra insuficiente</strong> — {when.sampleSize} semana(s) de histórico.
+        Os percentis abaixo são ilustrativos, não previsão: com esta quantidade de dados a
+        simulação apenas repete o pouco que observou. Aumente o intervalo de semanas.
+      </p>
+    )}
     {/* ── Quando entregamos N itens? ── */}
     <section>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 4 }}>

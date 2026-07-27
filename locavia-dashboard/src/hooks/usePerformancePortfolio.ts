@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { subDays } from 'date-fns';
+import { endOfDayExclusiveUTC, previousPeriodOf } from '../performance/period';
 import { computePerformancePortfolio } from '../performance/computePerformancePortfolio';
 import { generatePortfolioInsights } from '../performance/insights';
 import { fetchData } from '../services/dataService';
@@ -24,18 +25,21 @@ export function usePerformancePortfolio(days = 56) {
     return () => { alive = false; };
   }, []);
 
+  // `end` EXCLUSIVO cobrindo o dia corrente inteiro (meia-noite UTC do dia seguinte). Mesma
+  // convenção de useTeamPerformance: quem decide o limite é o chamador, e o cálculo não
+  // estica mais nada por conta própria. Ver src/performance/period.ts.
   const period = useMemo(() => ({
     start: subDays(now, days).toISOString(),
-    end: now.toISOString(),
+    end: endOfDayExclusiveUTC(now).toISOString(),
   }), [now, days]);
   const portfolio = useMemo(
     () => computePerformancePortfolio(items, period, now),
     [items, period, now],
   );
-  const previousPeriod = useMemo(() => ({
-    start: subDays(now, days * 2).toISOString(),
-    end: subDays(now, days).toISOString(),
-  }), [now, days]);
+  // Derivado, não montado à mão: o par montado fazia `previousPeriod.end === period.start`
+  // com intervalo FECHADO nas duas pontas, e o dia da fronteira contava nos DOIS períodos —
+  // inflando o delta de portfólio exibido na home executiva.
+  const previousPeriod = useMemo(() => previousPeriodOf(period), [period]);
   const previousPortfolio = useMemo(
     () => computePerformancePortfolio(items, previousPeriod, now),
     [items, previousPeriod, now],

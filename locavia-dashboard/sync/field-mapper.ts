@@ -77,7 +77,10 @@ export function resolveTeam(issue: JiraApiIssue): string {
 function readSelectValue(field: unknown): string | null {
   if (!field) return null;
   if (typeof field === 'string') return field.trim() || null;
-  if (typeof field === 'object' && 'value' in (field as any)) return (field as any).value ?? null;
+  if (typeof field === 'object' && 'value' in field) {
+    const value = (field as { value?: unknown }).value;
+    return typeof value === 'string' ? value.trim() || null : null;
+  }
   return null;
 }
 
@@ -92,7 +95,7 @@ export function mapJiraIssueToDashboardItem(issue: JiraApiIssue): DashboardItem 
 
   // 2. Release Cleaning (Priority: O4R Pattern)
   const releaseFieldValues = (issue.fields.customfield_11330 || []) as string[];
-  const fixVersions = (issue.fields.fixVersions || []).map((v: any) => v.name);
+  const fixVersions = (issue.fields.fixVersions || []).map(v => v.name);
   const allReleasesRaw = [...releaseFieldValues, ...fixVersions];
 
   let finalRelease = 'OUTROS';
@@ -172,21 +175,27 @@ export function mapJiraIssueToDashboardItem(issue: JiraApiIssue): DashboardItem 
     Epic: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? issue.fields.parent.key : null,
     EpicName: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? (issue.fields.parent.fields.summary || null) : null,
     EpicStatus: issue.fields.parent?.fields?.issuetype?.name === 'Epic' ? (issue.fields.parent.fields.status?.name || null) : null,
-    CycleTime: null,
+    // `CycleTime: null` vivia aqui e também não existe em DashboardItem — outro campo
+    // fantasma gravado nos 6.345 itens e lido por ninguém (o gráfico "Cycle Time P85" usa
+    // PerformanceTrendPoint, calculado de StartDate→Resolved em trends.ts). Removido.
     TimeInTodo: null,
     LeadTime: null,
     LeadTimeP85: null,
     LeadTimeP15: null,
     TimeInStatus: {},
     IsPlanned: false, // Calculated later
+    // Placeholders: calculateMetrics() substitui este objeto INTEIRO logo depois.
+    // `doneWithoutCycleData: false` vivia aqui e não existe em DataQualityFlags — era
+    // escrito e descartado, invisível porque `sync/` não tinha typecheck. Removido.
     DataQuality: {
+      historyComplete: false, // definido no sync-jira, DEPOIS do bulkfetch do changelog
       missingResolutionDate: false,
       missingAssignee: false,
       noStatusTransitions: false,
       noSprint: false,
       staleTodo: false,
       suspiciouslyLongLead: false,
-      doneWithoutCycleData: false
+      negativeLeadTime: false,
     },
     Source: 'api'
   };

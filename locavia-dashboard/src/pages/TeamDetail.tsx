@@ -143,15 +143,25 @@ export default function TeamDetail() {
 
                 {tab === 'epics' && (
                   <div className="chart-grid">
-                    <ChartCard title="Progresso por épico" subtitle="Concluídos (verde) × restantes por épico ativo. Top 12 por volume." tall>
+                    {/* Esta aba NÃO responde ao filtro de período — e agora diz isso. A
+                        completude de um épico é cumulativa: recortar os filhos pela janela
+                        mostraria "2 de 3 concluídos" num épico de 40 itens. O defeito que o
+                        review apontou (§5.5) era a tela deixar parecer que todo número
+                        respondia ao filtro. */}
+                    <p className="sub" style={{ gridColumn: '1 / -1', margin: 0 }}>
+                      <strong>Histórico completo do time</strong> — os épicos ignoram o filtro
+                      de período acima. Um épico atravessa vários períodos, e seu progresso só
+                      faz sentido acumulado.
+                    </p>
+                    <ChartCard title="Progresso por épico" subtitle="Concluídos (verde) × restantes por épico ativo. Top 12 por volume. Histórico completo." tall>
                       <EpicProgressChart epics={epics.epics} />
                     </ChartCard>
-                    <ChartCard title="Trabalho sob épico" subtitle="Quanto do que o time toca está ligado a um épico (planejado) vs avulso.">
+                    <ChartCard title="Trabalho sob épico" subtitle="Quanto do que o time toca está ligado a um épico (planejado) vs avulso. Histórico completo.">
                       <EpicCoverageChart view={epics} />
                     </ChartCard>
                     <article className="chart-card wide">
                       <div className="card-heading"><div><span className="eyebrow">Iniciativas</span><h2>Épicos do time</h2></div></div>
-                      <p className="sub">Status, progresso, volume e idade. Idade em vermelho passa de 120 dias.</p>
+                      <p className="sub">Status, progresso, volume e idade, sobre o histórico completo. Idade em vermelho passa de 120 dias.</p>
                       <div style={{ marginTop: 8 }}><EpicsTable epics={epics.epics} /></div>
                     </article>
                   </div>

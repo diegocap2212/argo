@@ -76,12 +76,22 @@ export function computeWeeklyPerformanceTrend(
     // vazão e as barras "por tipo" derivam do MESMO conjunto `delivered`, então batem).
     const inWeek = (date: Date | null) => Boolean(date && date >= week && date <= weekEnd);
     const activeItems = items.filter(item => !isDiscardedStatus(item.Status));
-    const delivered = activeItems.filter(item => item.StatusCategory === 'DONE' && inWeek(parseDate(item.Resolved) ?? parseDate(item.UpdatedAt)));
+    // `?? parseDate(item.UpdatedAt)` FOI REMOVIDO daqui. Era a MESMA invenção de data de
+    // entrega que existia no sync (`metrics-calculator.ts`), reimplementada na camada de
+    // runtime — e a causa da divergência estrutural entre a tendência semanal e o snapshot:
+    // `computeTeamPerformance` exige `Resolved` real, então o mesmo time tinha vazão
+    // diferente nas duas telas. Item DONE sem `resolutiondate` não entra na vazão da semana;
+    // ele aparece como dívida de higiene via `DataQuality.missingResolutionDate`.
+    const delivered = activeItems.filter(item => item.StatusCategory === 'DONE' && inWeek(parseDate(item.Resolved)));
     const created = activeItems.filter(item => inWeek(parseDate(item.Created)));
     const plannedAtStart = activeItems.filter(item => {
       const commitment = parseDate(item.CommitmentDate);
       const createdAt = parseDate(item.Created);
-      const resolvedAt = parseDate(item.Resolved) ?? parseDate(item.UpdatedAt);
+      // Sem fallback: para DONE sem `resolutiondate` a data de fechamento é DESCONHECIDA,
+      // e o item conta como aberto no início da semana (mesmo tratamento de um item
+      // realmente aberto). Limitação conhecida e explícita — melhor que adivinhar a partir
+      // do último toque no card.
+      const resolvedAt = parseDate(item.Resolved);
       return Boolean(commitment && commitment <= week && createdAt && createdAt <= week && (!resolvedAt || resolvedAt >= week));
     });
     const committedDuringWeek = activeItems.filter(item => inWeek(parseDate(item.CommitmentDate)));
