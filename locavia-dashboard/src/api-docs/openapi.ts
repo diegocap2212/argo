@@ -62,12 +62,24 @@ export const openApiSpec = {
   paths: {
     '/api/data': {
       get: {
-        tags: ['Dados'], summary: 'Dataset do Jira (itens + syncedAt)',
-        description: 'Retorna ~5MB de itens. Suporta ETag/304 e `Cache-Control: max-age=300`.',
+        tags: ['Dados'], summary: 'Dataset do Jira (itens + procedência)',
+        description:
+          'Retorna ~5MB de itens. Suporta ETag/304 e `Cache-Control: max-age=300`.\n\n' +
+          '`source` diz de onde o dado veio: `blob` (publicado pelo sync) ou `fallback` ' +
+          '(snapshot congelado no repositório, servido quando o Blob falha). Quando ' +
+          '`stale: true`, `syncedAt` é `null` — o dataset não carrega data própria e o ' +
+          'endpoint NÃO empresta o timestamp do último sync para fingir frescor.',
         responses: {
           200: {
             description: 'Dataset',
-            content: { 'application/json': { schema: { type: 'object', properties: { items: { type: 'array', items: { $ref: '#/components/schemas/JiraItem' } }, syncedAt: { type: ['string', 'null'], format: 'date-time' } } } } },
+            content: { 'application/json': { schema: { type: 'object', properties: {
+              items: { type: 'array', items: { $ref: '#/components/schemas/JiraItem' } },
+              syncedAt: { type: ['string', 'null'], format: 'date-time', description: 'Do dataset servido; null quando desconhecido.' },
+              source: { type: 'string', enum: ['blob', 'fallback'] },
+              stale: { type: 'boolean' },
+              count: { type: 'integer' },
+              hash: { type: ['string', 'null'], description: 'Impressão digital do conteúdo, gravada pelo sync.' },
+            } } } },
           },
           304: { description: 'Not Modified (ETag bate)' },
           401: { description: 'Não autenticado', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
@@ -101,38 +113,13 @@ export const openApiSpec = {
         },
       },
     },
-    '/api/refresh': {
-      get: {
-        tags: ['Sync'], summary: 'Status da última execução de sync (GitHub Actions)',
-        responses: {
-          200: { description: 'Status', content: { 'application/json': { schema: { type: 'object', properties: { status: { type: 'string', enum: ['queued', 'in_progress', 'completed', 'unknown'] }, conclusion: { type: ['string', 'null'] }, createdAt: { type: 'string' }, url: { type: 'string' } } } } } },
-          401: { description: 'Não autenticado', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-        },
-      },
-      post: {
-        tags: ['Sync'], summary: 'Dispara o sync do Jira (workflow_dispatch)',
-        responses: {
-          202: { description: 'Disparado (ou já em andamento)', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' }, alreadyRunning: { type: 'boolean' }, message: { type: 'string' } } } } } },
-          401: { description: 'Não autenticado', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-          503: { description: 'Refresh não configurado (faltam GITHUB_DISPATCH_TOKEN/GITHUB_REPO)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
-        },
-      },
-    },
-    '/api/trigger-sync': {
-      post: {
-        tags: ['Sync'], summary: 'Dispara o sync via cron externo (auth por CRON_SECRET)',
-        description: 'Não usa sessão; valida `CRON_SECRET` na query `?key=` ou no header `x-cron-key`.',
-        security: [],
-        parameters: [{ name: 'key', in: 'query', schema: { type: 'string' }, description: 'CRON_SECRET (alternativa ao header x-cron-key)' }],
-        responses: {
-          200: { description: 'Disparado', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' }, dispatched: { type: 'boolean' }, at: { type: 'string', format: 'date-time' } } } } } },
-          401: { description: 'Unauthorized (CRON_SECRET inválido)', content: { 'application/json': { schema: { type: 'object', properties: { ok: { type: 'boolean' }, error: { type: 'string' } } } } } },
-          405: { description: 'Método não suportado (só GET/POST)' },
-          500: { description: 'Falta GITHUB_DISPATCH_TOKEN' },
-          502: { description: 'Falha no dispatch ao GitHub' },
-        },
-      },
-    },
+    // `/api/refresh` e `/api/trigger-sync` foram REMOVIDOS em 2026-07-27. Eram superfície
+    // morta: nenhum frontend os chamava, as envs `CRON_SECRET`/`GITHUB_*` nunca existiram no
+    // projeto neo-lm (ver HANDOFF), e o sync roda por cron nativo do GitHub Actions. Além de
+    // inúteis, carregavam dois defeitos: `refresh` era fail-open quando as envs do Supabase
+    // faltavam (sem branch de produção, diferente de todas as outras functions), e
+    // `trigger-sync` aceitava o segredo em query string — formato que vaza em log, histórico
+    // do browser e header Referer.
   },
 } as const;
 

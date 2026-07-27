@@ -1,4 +1,10 @@
-const APP_PATH = /^\/(dash|maturity)(\/|$)/;
+/**
+ * As TRÊS portas do portal. `nero` faltava aqui: o middleware da raiz preserva
+ * `?next=/nero/...` ao barrar a rota, mas o hub descartava esse destino e devolvia a pessoa
+ * para a tela de portas. Quem clicava num link direto do Nero autenticava e "perdia" o
+ * destino, sem explicação.
+ */
+const APP_PATH = /^\/(dash|maturity|nero)(\/|$)/;
 const ENCODED_PATH_SEPARATOR = /%(2f|5c|2e)/i;
 
 /** Accept only canonical, same-origin destinations owned by the two portal apps. */
