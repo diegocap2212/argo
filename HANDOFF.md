@@ -4,10 +4,26 @@
 > load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
 > **estado operacional corrente** — histórico e pendências.
 
-## Rodada 2026-07-27 — Papéis do MMA + home real — ✅ **NO AR**
+## Rodada 2026-07-27 — Papéis do MMA + home real — ✅ **NO AR E NO GIT**
 
 Banco e front promovidos em 2026-07-27. Deployment de produção:
-`dpl_CbMZHZVXrUkcyWSopMXufw7KWgvj` (`neo-9lraqnl33`).
+`dpl_5zZQKzim74tSL6jZ3ykcJs5PQGQs` (`neo-4s8gituta` — inclui a correção do layout da jornada).
+
+### Git: `main` = produção (2026-07-27)
+
+`origin/main` estava **48 commits atrás** e produção rodava código que existia **só na máquina
+local** — as duas rodadas (Nero de 26/07 e papéis de 27/07) nunca tinham sido enviadas. Resolvido:
+`main == origin/main == produção` em `bb56bbd`.
+
+Detalhe operacional que vale saber: `origin/main` tinha 22 commits de `automated hourly sync`
+tocando só `locavia-dashboard/{sfmkt_data.json,src/data-meta.json}` — zero sobreposição com o
+trabalho, então o merge foi limpo (commit de merge, sem rebase, sem force-push). E **o push NÃO
+disparou deploy**: o projeto `neo-lm` não tem conexão git de auto-deploy, então o deployment
+verificado permaneceu no ar. Deploy neste projeto é sempre explícito, via
+`vercel deploy` + `vercel promote`.
+
+As branches `feat/nero-porta-03` e `feat/mma-papeis-globais` seguem locais e já estão contidas em
+`main` — podem ser apagadas quando quiser.
 
 Rollback, se necessário: `vercel promote https://neo-k3c6lu88z-diegocaporusso-2820s-projects.vercel.app`
 (o último anterior a esta rodada). **Atenção:** voltar só o front deixa o estado invertido —
@@ -440,7 +456,9 @@ DESATIVADO na conta do Diego (hoje só recebe 308). `/api/trigger-sync` no porta
 - `docs/QA-PLAN.md` — code review profundo + matriz de testes + debug/observabilidade + aceite.
 - `docs/SECURITY-PLAN.md` — cybersecurity (insider/offboarding/segredos/headers/supply chain).
 - `maturitymodel/docs/ROLES-REDESIGN.md` — SM por squad + admin global; tem 4 QUESTÕES ABERTAS para o Diego (§5) antes de implementar.
-- Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), Torre sem rate-limit de senha, policies legadas de `teams` no MMA, monorepo sem espelho remoto (backup!).
+- Achados já conhecidos aguardando correção (estão nos planos): `frame-ancestors` só no `/dash` (hub/maturity sem anti-clickjacking), policies legadas de `teams` no MMA.
+- ✅ **RESOLVIDO 2026-07-27** — "monorepo sem espelho remoto (backup!)": `origin/main` estava 48 commits atrás e produção rodava código que existia só na máquina local. Agora `main == origin/main == produção` (`bb56bbd`).
+- ✅ **RESOLVIDO 2026-07-26** — Torre sem rate-limit de senha: `api/gate.ts` tem rate-limit Upstash por IP e escopo.
 
 ## Roles do MMA — IMPLEMENTADO E NO AR (2026-07-15)
 
