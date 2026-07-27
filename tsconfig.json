@@ -1,0 +1,36 @@
+{
+  /* Typecheck da BORDA do Portal NEO: as functions de `api/` e o Edge Middleware.
+
+     POR QUE ESTE ARQUIVO PASSOU A EXISTIR (2026-07-27): não havia tsconfig na raiz, e
+     `pnpm typecheck` é `pnpm -r --if-present typecheck` — que por padrão NÃO visita o
+     projeto raiz, só os workspaces de pnpm-workspace.yaml. Resultado: `api/session.ts`,
+     `api/gate.ts`, `api/data.ts`, `api/comments.ts` e `middleware.ts` — ou seja, TODA a
+     fronteira de autenticação e autorização do portal — não tinham verificação de tipos em
+     lugar nenhum do CI. (`api/refresh.ts` e `api/trigger-sync.ts` também estavam nessa lista
+     e foram REMOVIDOS por serem superfície morta — ver o comentário em openapi.ts.)
+
+     O review de 27/07 apontou o typecheck do Maturity como "falso verde". Este caso é
+     pior: não era falso verde, era ausência total de verificação, justamente no código
+     que decide quem entra.
+
+     Runtime misto de propósito: as functions rodam em Node e o middleware no Edge, então
+     o `lib` inclui DOM (Response, crypto.subtle, atob, fetch) além de ES2023. */
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "resolveJsonModule": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["api/**/*.ts", "middleware.ts"]
+}

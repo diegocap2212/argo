@@ -1,0 +1,31 @@
+{
+  /* Projeto para o código Node do Dash: o pipeline de sync (`sync/`), os scripts de teste e
+     auditoria (`scripts/`) e as ferramentas de diagnóstico (`tools/`).
+
+     POR QUE ESTE ARQUIVO EXISTE: `tsc -b` cobria apenas `tsconfig.app.json` (include: ["src"])
+     e `tsconfig.node.json` (include: ["vite.config.ts"]). Ou seja, o código que autentica no
+     Jira, classifica os status, calcula as métricas e PUBLICA o dataset não tinha typecheck
+     nenhum — menos verificação estática que a UI que só desenha o resultado. O eslint também
+     ignorava `sync/**` e `tools/**` (ver eslint.config.js). Corrigido em 2026-07-27.
+
+     Roda em Node via tsx, não no browser: daí `types: ["node"]` e `lib: ES2023` sem DOM. */
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tools.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "resolveJsonModule": true,
+    "noEmit": true,
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["sync", "scripts", "tools"]
+}

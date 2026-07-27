@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    /* Fora da pasta do projeto: `tsc -b` (que substituiu o `tsc --noEmit` falso-verde) emite
+       .tsbuildinfo, e sem isto ele caía na raiz do app como arquivo não versionado. Mesmo
+       destino que tsconfig.node.json já usava. */
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
@@ -23,7 +27,27 @@
 
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      /* UMA SÓ cópia dos tipos do React no programa.
+       *
+       * Este app é o único do monorepo ainda em React 18 (`react@^18.3.1`); o Dash e o Nero
+       * estão em 19. Sem estes dois `paths`, o compilador puxava `@types/react@18.3.31` E
+       * `@types/react@19.2.17` para a MESMA compilação (comprovado com `tsc --listFiles`), e
+       * dois `ReactNode` incompatíveis geravam 201 erros em 43 arquivos — 135 deles TS2786
+       * ("'Routes' cannot be used as a JSX component"), que é o sintoma clássico da colisão,
+       * não um problema do código do app.
+       *
+       * Ninguém tinha visto porque o script `typecheck` era `tsc --noEmit` sobre um
+       * tsconfig.json com `files: []` + project references: passava sem compilar `src`.
+       * Agora é `tsc -b`, que compila de verdade.
+       *
+       * Override global de pnpm não serve: forçaria 18 no Dash e no Nero, que precisam de 19.
+       * A solução definitiva é migrar este app para React 19 e remover estes dois `paths` —
+       * mas isso é uma migração (radix, react-day-picker@8, react-router@6) que exige QA da
+       * aplicação rodando, não um ajuste de build. Está no backlog.
+       */
+      "react": ["./node_modules/@types/react"],
+      "react-dom": ["./node_modules/@types/react-dom"]
     }
   },
   "include": ["src"]

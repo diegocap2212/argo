@@ -7,13 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:journey": "tsx tests/journey-contract.ts",
     "test:rls": "tsx tests/rls/rls-matrix.ts",
     "test:migrations": "tsx tests/pg/apply-migrations.ts",
-    "test:rls-local": "tsx tests/pg/rls-local.ts"
+    "test:rls-local": "tsx tests/pg/rls-local.ts",
+    "test:anchors": "tsx tests/anchor-formulas.ts"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",

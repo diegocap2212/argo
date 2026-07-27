@@ -52,7 +52,11 @@ function normalizeStatusName(statusName: string): string {
   return (statusName || '')
     .normalize('NFD')                    // decompõe acentos (Ç → C + cedilha combinante)
     .replace(COMBINING_MARKS, '')        // remove os acentos → junto (CONCLUÍDO → CONCLUIDO)
-    .replace(/[^\x00-\x7F]/g, ' ')       // emojis/símbolos restantes → espaço
+    // Fora do ASCII IMPRIMÍVEL → espaço. Era `[^\x00-\x7F]`, que preservava caracteres de
+    // controle (0x00–0x1F) dentro do nome do status; o `\x00` também disparava
+    // `no-control-regex` quando `sync/` entrou no lint. A faixa 0x20–0x7F cobre emoji e
+    // símbolo do mesmo jeito e agora limpa controle junto (o `\s+ → ' '` abaixo colapsa).
+    .replace(/[^\x20-\x7F]/g, ' ')
     .replace(/^\s*\d+\.\s*/, '')         // "1. BACKLOG" → "BACKLOG"
     .toUpperCase().replace(/\s+/g, ' ').trim();
 }

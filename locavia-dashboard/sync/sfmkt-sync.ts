@@ -4,6 +4,7 @@ import path from 'path';
 import { JiraClient } from './jira-client.js';
 import { extractStoryPoints } from './story-points.js';
 import type { SFMKTItem, SFMKTDashboardData, DataQualityFlags } from '../src/types/sfmkt.js';
+import type { StatusTransition } from '../src/types/jira';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -37,17 +38,26 @@ function daysBetween(a: string | null, b: string | null): number | null {
   return Math.round(ms / (1000 * 60 * 60 * 24));
 }
 
-function extractSprintInfo(sprintField: any): {
+/** Sprint como o Jira devolve no customfield de sprint: array das sprints da issue. */
+interface JiraSprint {
+  name?: string;
+  id?: number;
+  state?: 'active' | 'closed' | 'future';
+  startDate?: string;
+  endDate?: string;
+}
+
+function extractSprintInfo(sprintField: unknown): {
   name: string | null; id: number | null; state: 'active' | 'closed' | 'future' | null;
   startDate: string | null; endDate: string | null;
 } {
-  if (!sprintField || !Array.isArray(sprintField) || sprintField.length === 0) {
+  if (!Array.isArray(sprintField) || sprintField.length === 0) {
     return { name: null, id: null, state: null, startDate: null, endDate: null };
   }
   // Prefer the active or most recent sprint
-  const sorted = [...sprintField].sort((a, b) => {
+  const sorted = [...(sprintField as JiraSprint[])].sort((a, b) => {
     const order: Record<string, number> = { active: 0, closed: 1, future: 2 };
-    return (order[a.state] ?? 99) - (order[b.state] ?? 99);
+    return (order[a.state ?? ''] ?? 99) - (order[b.state ?? ''] ?? 99);
   });
   const s = sorted[0];
   return {
@@ -62,11 +72,11 @@ function extractSprintInfo(sprintField: any): {
 function computeCycleAndTodo(
   created: string,
   resolved: string | null,
-  histories: any[]
+  histories: StatusTransition[]
 ): { cycleTimeDays: number | null; timeInTodoDays: number | null; hasInProgress: boolean } {
   // Filter only status changes
   const statusChanges = histories
-    .filter(h => h.items?.some((i: any) => i.field === 'status'))
+    .filter(h => h.items?.some(i => i.field === 'status'))
     .sort((a, b) => new Date(a.created).getTime() - new Date(b.created).getTime());
 
   let firstInProgressDate: string | null = null;
@@ -119,7 +129,6 @@ function buildDataQualityFlags(
   hasInProgressTransition: boolean
 ): DataQualityFlags {
   const isDone = item.statusCategory === 'DONE';
-  const isInProgress = item.statusCategory === 'IN_PROGRESS';
 
   return {
     missingResolutionDate: isDone && !item.resolved,
@@ -181,7 +190,7 @@ async function main() {
   }
 
   const items: SFMKTItem[] = filteredIssues.map(issue => {
-    const fields = issue.fields as Record<string, any>;
+    const fields = issue.fields;
     const histories = issue.changelog?.histories || [];
 
     const created = fields.created as string;

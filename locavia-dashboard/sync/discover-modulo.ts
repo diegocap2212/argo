@@ -3,6 +3,8 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 dotenv.config(); // fallback para .env / env do CI
 import { JiraClient } from './jira-client';
+import { readIssueResponse, readSearchResponse } from './jira-json';
+import type { JiraApiIssue } from '../src/types/jira';
 
 /**
  * Descobre qual custom field guarda "Módulo" / o valor "Erro de processo".
@@ -47,19 +49,19 @@ async function main() {
   }
 
   const argKey = process.argv[2];
-  let issues: any[] = [];
+  let issues: JiraApiIssue[] = [];
 
   if (argKey) {
     const res = await fetch(`${base}/rest/api/3/issue/${encodeURIComponent(argKey)}?fields=*all`, { headers });
     if (!res.ok) { console.error(`❌ ${argKey}: ${res.status} ${res.statusText} — passe uma key válida e visível ao token.`); process.exit(1); }
-    issues = [await res.json()];
+    issues = [await readIssueResponse(res)];
   } else {
     const res = await fetch(`${base}/rest/api/3/search/jql`, {
       method: 'POST', headers,
       body: JSON.stringify({ jql: 'issuetype = "Script Manual" ORDER BY updated DESC', maxResults: 50, fields: ['*all'] }),
     });
     if (!res.ok) { console.error(`❌ Busca falhou: ${res.status} — ${(await res.text()).slice(0, 200)}`); process.exit(1); }
-    issues = (await res.json()).issues || [];
+    issues = (await readSearchResponse(res)).issues ?? [];
   }
 
   console.log(`\nItens analisados: ${issues.length}`);
@@ -83,7 +85,8 @@ async function main() {
       }
       if (v && typeof v === 'object' && !Array.isArray(v) && 'value' in v) {
         if (!selects.has(key)) selects.set(key, new Set());
-        selects.get(key)!.add(String((v as any).value) + ((v as any).child ? ` > ${(v as any).child.value}` : ''));
+        const sel = v as { value?: unknown; child?: { value?: unknown } };
+        selects.get(key)!.add(String(sel.value) + (sel.child ? ` > ${String(sel.child.value)}` : ''));
       }
     }
   }

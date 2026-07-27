@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { JiraClient } from './sync/jira-client';
+import { JiraClient } from '../sync/jira-client';
 
 async function main() {
   const baseUrl = process.env.JIRA_BASE_URL;

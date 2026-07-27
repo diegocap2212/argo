@@ -795,20 +795,35 @@ export type Database = {
         Row: {
           created_at: string
           email: string
+          granted_by: string | null
           note: string | null
+          revoke_reason: string | null
+          revoked_at: string | null
+          revoked_by: string | null
           role: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
           email: string
+          granted_by?: string | null
           note?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
           role: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
           email?: string
+          granted_by?: string | null
           note?: string | null
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          revoked_by?: string | null
           role?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -1367,7 +1382,8 @@ export type Database = {
       is_sm: { Args: { t: string }; Returns: boolean }
       my_portal_roles: { Args: never; Returns: string[] }
       officialize_cycle: { Args: { p_cycle: string }; Returns: undefined }
-      restart_assessment: { Args: { p_team: string }; Returns: string }
+      reconcile_portal_role_user: { Args: never; Returns: undefined }
+      restart_assessment: { Args: { p_team: string; p_reason: string }; Returns: string }
       shares_squad_with: { Args: { target: string }; Returns: boolean }
     }
     Enums: {

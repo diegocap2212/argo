@@ -1,5 +1,8 @@
 {
   "compilerOptions": {
+    /* Ver a nota em tsconfig.app.json: `tsc -b` emite .tsbuildinfo e sem isto ele fica solto
+       na raiz do app como arquivo não versionado. */
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "target": "ES2022",
     "lib": ["ES2023"],
     "module": "ESNext",

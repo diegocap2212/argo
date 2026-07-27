@@ -36,13 +36,13 @@ function encodeField(squadId: string, releaseId: string, quinzenaId: string, met
 }
 
 async function main() {
-  const blob = (await redis.get(OLD_KEY)) as Record<string, any> | null;
+  const blob = (await redis.get(OLD_KEY)) as Record<string, unknown> | null;
   if (!blob || typeof blob !== 'object') {
     console.log('Nenhum blob antigo encontrado. Nada a migrar.');
     return;
   }
 
-  const fields: Record<string, any> = {};
+  const fields: Record<string, unknown> = {};
   const skipped: string[] = [];
   let migrated = 0;
 
@@ -51,9 +51,9 @@ async function main() {
       skipped.push(squadId);
       continue;
     }
-    for (const [releaseId, quinzenas] of Object.entries(releases as Record<string, any>)) {
-      for (const [quinzenaId, metrics] of Object.entries(quinzenas as Record<string, any>)) {
-        for (const [metricId, comment] of Object.entries(metrics as Record<string, any>)) {
+    for (const [releaseId, quinzenas] of Object.entries(releases as Record<string, unknown>)) {
+      for (const [quinzenaId, metrics] of Object.entries(quinzenas as Record<string, unknown>)) {
+        for (const [metricId, comment] of Object.entries(metrics as Record<string, unknown>)) {
           const field = encodeField(squadId, releaseId, quinzenaId, metricId);
           fields[field] = comment;
           migrated++;

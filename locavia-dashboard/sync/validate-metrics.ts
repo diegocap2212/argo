@@ -5,6 +5,8 @@ import data from '../src/data.json';
 import type { DashboardItem } from '../src/types/jira';
 import { extractStoryPoints } from './story-points';
 import { classifyStatus } from './status-classification';
+import { readSearchResponse } from './jira-json';
+import type { JiraApiIssue } from '../src/types/jira';
 
 /**
  * Valida a FIDELIDADE do dataset (src/data.json) contra os valores crus do Jira:
@@ -37,8 +39,8 @@ function sample<T>(arr: T[], n: number): T[] {
   return copy.slice(0, n);
 }
 
-async function fetchByKeys(keys: string[]): Promise<Map<string, any>> {
-  const out = new Map<string, any>();
+async function fetchByKeys(keys: string[]): Promise<Map<string, JiraApiIssue>> {
+  const out = new Map<string, JiraApiIssue>();
   for (let i = 0; i < keys.length; i += 50) {
     const batch = keys.slice(i, i + 50);
     const jql = `key in (${batch.join(',')})`;
@@ -47,7 +49,7 @@ async function fetchByKeys(keys: string[]): Promise<Map<string, any>> {
       body: JSON.stringify({ jql, maxResults: 50, fields: ['summary', 'status', 'issuetype', 'created', 'resolutiondate', 'customfield_11795', 'customfield_12386', 'customfield_11297', 'customfield_13338', 'customfield_10026', 'customfield_10016', 'customfield_10028'] }),
     });
     if (!res.ok) { console.error(`Busca falhou: ${res.status} — ${(await res.text()).slice(0, 200)}`); process.exit(1); }
-    for (const issue of (await res.json()).issues || []) out.set(issue.key, issue);
+    for (const issue of (await readSearchResponse(res)).issues ?? []) out.set(issue.key, issue);
   }
   return out;
 }
@@ -92,7 +94,9 @@ async function main() {
     // Type
     if ((it.Type || '') !== (f.issuetype?.name || 'Task')) record('Type', it.Key, it.Type, f.issuetype?.name);
     // Modulo ↔ cf11297
-    const liveMod = typeof f.customfield_11297 === 'string' ? f.customfield_11297.trim() : (f.customfield_11297?.value ?? null);
+    const liveMod = typeof f.customfield_11297 === 'string'
+      ? f.customfield_11297.trim()
+      : ((f.customfield_11297 as { value?: string } | null)?.value ?? null);
     if ((it.Modulo || null) !== (liveMod || null)) record('Modulo↔cf11297', it.Key, it.Modulo, liveMod);
     // Jornada ↔ cf12386 (compara como conjunto)
     const liveJor = ((f.customfield_12386 || []) as string[]).slice().sort().join('|');

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { readSearchResponse } from './jira-json';
 
 async function test() {
   const baseUrl = process.env.JIRA_BASE_URL;
@@ -23,14 +24,14 @@ async function test() {
     
     try {
       const res = await fetch(url, { headers: { 'Authorization': auth, 'Accept': 'application/json' } });
-      const data = await res.json();
+      const data = await readSearchResponse(res);
       
       if (res.ok) {
-        console.log(`- ${snippet}: ${data.total > 0 ? 'MATCH' : 'NO MATCH'}`);
+        console.log(`- ${snippet}: ${(data.total ?? 0) > 0 ? 'MATCH' : 'NO MATCH'}`);
       } else {
         console.log(`- ${snippet}: ERROR (${res.status}) - ${data.errorMessages ? data.errorMessages[0] : 'Unknown'}`);
       }
-    } catch (e) {
+    } catch {
       console.log(`- ${snippet}: FETCH ERROR`);
     }
   }
