@@ -250,7 +250,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA
       - name: Inicializa CodeQL
-        uses: github/codeql-action/init@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4 — pinned por SHA
+        uses: github/codeql-action/init@e4fba868fa4b1b91e1fdab776edc8cfbe6e9fb81 # v3.29.4 — pinned por SHA
         with:
           languages: javascript-typescript
           # `security-and-quality` inclui as regras de qualidade além das de segurança. Vale a
