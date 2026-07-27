@@ -21,7 +21,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.104.1",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@base-ui/react": "^1.5.0",
     "@neo/auth": "workspace:*",
     "@prisma/client": "^6.19.3",
