@@ -22,6 +22,17 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.NEO_BASE_URL || 'https://neo-lm.vercel.app';
 
+/**
+ * Deployments de staging (URL *.vercel.app) ficam atrás do SSO da Vercel —
+ * `ssoProtection: all_except_custom_domains`. SEM este header, TODA rota responde 302 para
+ * a tela de login da Vercel e a suíte "passa" medindo a proteção em vez do app: `/` daria
+ * 302 quando o esperado é 200, e os 302 legítimos do gate seriam indistinguíveis dos do SSO.
+ *
+ * O segredo é o `protectionBypass` de escopo `automation-bypass` do projeto
+ * (`vercel project protection`). Produção no domínio próprio não precisa dele.
+ */
+const bypass = process.env.NEO_BYPASS_SECRET;
+
 export default defineConfig({
   testDir: './tests',
   fullyParallel: false, // o gate emite cookies; execução serial mantém o estado previsível
@@ -31,6 +42,11 @@ export default defineConfig({
   reporter: process.env.CI ? 'line' : 'list',
   use: {
     baseURL,
+    // `set-bypass-cookie: false` de propósito: com o cookie, o bypass viajaria junto de
+    // requisições que queremos medir cruas.
+    extraHTTPHeaders: bypass
+      ? { 'x-vercel-protection-bypass': bypass, 'x-vercel-set-bypass-cookie': 'false' }
+      : {},
     trace: 'on-first-retry',
     viewport: { width: 1280, height: 800 },
     actionTimeout: 15_000,

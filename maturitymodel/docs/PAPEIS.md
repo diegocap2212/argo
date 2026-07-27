@@ -1,12 +1,16 @@
 # Papéis e jornada — Portal MMA
 
-> **STATUS: CÓDIGO PRONTO E EXECUTADO EM POSTGRES, NÃO APLICADO EM PRODUÇÃO** (2026-07-26).
-> A migration foi **executada de verdade** (PGlite/WASM): as 51 migrations aplicam em ordem, a
-> migração de dados foi ensaiada e a matriz de papéis roda com RLS real — **59 asserções verdes**.
-> Falta aplicar em branch Supabase e promover — ver [`../../HANDOFF.md`](../../HANDOFF.md).
+> **STATUS: NO AR** (2026-07-27). Migration aplicada em produção com as 11 pós-condições verdes
+> (4 → 4 AMs globais, 2 → 2 admins, 41 → 41 vínculos) e front promovido
+> (`dpl_CbMZHZVXrUkcyWSopMXufw7KWgvj`). E2E do portal contra produção: 20/21.
 >
-> Executar em vez de só revisar achou **dois defeitos que a revisão de código não pegou** (§6b) e
-> **um vazamento de privacidade pré-existente** (§6c).
+> Antes de tocar em produção a migration foi **executada de verdade** em PGlite/WASM: as 51
+> migrations aplicam em ordem, a migração de dados foi ensaiada e a matriz de papéis roda com RLS
+> real — **59 asserções verdes**. Isso achou **três defeitos meus** que a revisão de código não
+> pegou (§6b) e **um vazamento de privacidade pré-existente** (§6c), confirmado depois como LIVE
+> em produção.
+>
+> Pendente: o roteiro manual das 4 personas na UI (exige login real — ver `HANDOFF.md`).
 
 Substitui [`ROLES-REDESIGN.md`](ROLES-REDESIGN.md) (modelo de 15/07, AM por squad).
 

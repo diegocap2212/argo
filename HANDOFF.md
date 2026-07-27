@@ -4,41 +4,57 @@
 > load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
 > **estado operacional corrente** — histórico e pendências.
 
-## 🔴 ESTADO PARCIAL AGORA (2026-07-27) — banco novo, front antigo
+## Rodada 2026-07-27 — Papéis do MMA + home real — ✅ **NO AR**
 
-**A migration de papéis ESTÁ APLICADA em produção. O front NÃO foi deployado.**
-Enquanto isso não fechar, **ninguém consegue homologar pela interface**.
+Banco e front promovidos em 2026-07-27. Deployment de produção:
+`dpl_CbMZHZVXrUkcyWSopMXufw7KWgvj` (`neo-9lraqnl33`).
 
-Por quê: o front em produção decide "é AM?" lendo `squad_members.role = 'am'`. Esse valor
-não existe mais — os 4 AMs viraram `member` no squad e ganharam papel **global** em
-`portal_roles`. O banco permite (as policies usam `is_portal_am()`), mas a UI antiga esconde
-e barra: `Homologacao.tsx` faz `if (!role.isAM)` e a aba "Homologação" do `SquadSubNav` só
-aparece com `r.isAM`.
+Rollback, se necessário: `vercel promote https://neo-k3c6lu88z-diegocaporusso-2820s-projects.vercel.app`
+(o último anterior a esta rodada). **Atenção:** voltar só o front deixa o estado invertido —
+o front antigo lê `squad_members.role='am'`, que não existe mais, e a homologação desaparece da
+UI. Para reverter de verdade, rode também
+`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` e restaure
+`squad_members` do backup. Isso **reabre o vazamento de diretório** — pense duas vezes.
 
-O que **continua funcionando**: login, leitura, pré-sessão e sessão (dependem de `is_sm`, que
-não mudou) e `/admin` para os 3 SMs. Nada foi perdido nem corrompido — é capacidade
-temporariamente indisponível, não dado.
+### Verificado em produção
 
-**Correção = deployar o front** (o código novo lê `my_portal_roles()`):
+| | |
+|---|---|
+Migration, 11 pós-condições | **4 → 4** AMs globais · **2 → 2** admins · **41 → 41** vínculos |
+Conferência independente | `portal_roles` 4 am + 2 admin · `squad_members` 32 member + 9 sm |
+E2E do portal contra produção | **20/21** (o pulado é o que queima rate-limit, de propósito) |
+Matriz de gate | `/` 200 · `/dash/` 302 · `/maturity/` 302 · `/nero/` 302 · `/api/data` 401 |
+Bundle em produção | `my_portal_roles` presente · `is_portal_admin` **ausente** · home com "Fila do AM" |
 
-```bash
-cd argo
-vercel deploy --target=production --skip-domain --yes   # staging, não toca no domínio
-# smoke: / 200 · /dash/ 302 · /maturity/ 302 · /nero/ 307
-vercel promote <url-do-staging>
-```
+### ⚠️ A janela entre migration e deploy (lição registrada)
 
-Rollback alternativo, se preferir voltar antes de deployar:
-`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` + restaurar
-`squad_members` do backup. Mas isso reabre o vazamento de diretório — deployar é melhor.
+Entre aplicar o banco e promover o front, **a homologação ficou indisponível na UI**: o front
+antigo decide "é AM?" lendo `squad_members.role='am'`, valor que a migration eliminou. O banco
+permitia (as policies usam `is_portal_am()`), a interface não.
 
-⚠️ Correção de uma afirmação minha anterior: eu disse que o front antigo seguiria funcionando
-porque `is_portal_admin()` não mudou de assinatura. Está certo sobre a função e **errado sobre
-o efeito** — os checks de AM do front antigo são por papel de squad, não por essa função.
+Eu havia afirmado que o front antigo seguiria funcionando porque `is_portal_admin()` não mudou
+de assinatura — certo sobre a função, **errado sobre o efeito**. Para mudanças futuras de papel:
+**deployar o front ANTES ou junto**, nunca depois, quando o front antigo depende de um valor que
+a migration remove. O caminho seguro é a migration ser retrocompatível (manter o valor antigo
+lendo em paralelo) ou fazer os dois na mesma janela.
+
+### Falta fazer (só com login real)
+
+O roteiro das 4 personas na UI. Nenhum teste automatizado cobre isto, porque forjar o cookie
+HMAC do portal não cria sessão do Supabase — a home lê o papel via RPC autenticado:
+
+1. **admin** (Diego/Tiago) — vê "Fila do AM", "Todos os squads" e "Administração"; consegue
+   reiniciar assessment e excluir squad; em `/admin`, a área "Papéis do portal".
+2. **AM** (os 4 promovidos) — vê todos os squads e a fila; homologa; **não** vê `/admin`;
+   reiniciar/excluir devem falhar.
+3. **SM** — vê só os squads dele; roda pré-sessão e sessão; **não** vê a aba Homologação.
+4. **member** — leitura do próprio squad, sem ação.
+5. **Round trip**: pré-sessão → sessão → homologação → **devolver para sessão** (só AM) →
+   homologar → oficializar → arquivar.
 
 ---
 
-## Rodada 2026-07-26 (2ª) — Papéis do MMA + home real — ✅ **BANCO APLICADO** / ⏸️ front pendente
+## Rodada 2026-07-26 (2ª) — detalhe técnico dos papéis do MMA
 
 **Estado: pronto para aplicar.** A migration foi **executada de verdade** contra Postgres
 (PGlite/WASM, sem Docker/nuvem/credencial): 51 migrations aplicam em ordem, a migração de dados foi
