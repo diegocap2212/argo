@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { DAMA_AREAS, isDamaArea, isNivelMaturidade } from "./dama";
+import { currentActorEmail } from "./actor";
 
 /**
  * Mutações do estado vivo. TODA alteração grava uma StateVersion (snapshot
@@ -52,6 +53,33 @@ function snapshot(row: unknown): string {
   return JSON.stringify(row);
 }
 
+/**
+ * Entidades cuja escrita toca FILHOS na mesma operação. O snapshot precisa levar os filhos,
+ * senão o undo restaura só o pai e a alteração nos filhos PERMANECE — a UI prometendo
+ * reversibilidade que o caminho não entrega.
+ *
+ * O caso concreto: `upsertCatalogAsset` aceita `campos` inline e grava N `DataField`, mas
+ * registrava UMA `StateVersion` do `CatalogAsset` cujo snapshot nem incluía `campos`.
+ * Resultado: `undo(create)` funcionava (cascade apagava os campos), mas
+ * `undo(update com campos inline)` restaurava só o ativo. O teste cobria só o create.
+ */
+const ENTITY_CHILDREN: Record<string, { relation: string; childEntity: string; fk: string }> = {
+  CatalogAsset: { relation: "campos", childEntity: "DataField", fk: "assetId" },
+};
+
+/** Lê a entidade COM os filhos versionados, no formato que o snapshot guarda. */
+async function readWithChildren(tx: Tx, entity: string, id: string): Promise<unknown> {
+  const spec = ENTITY_CHILDREN[entity];
+  const model = modelOf(tx, entity) as {
+    findUnique: (a: unknown) => Promise<unknown>;
+  };
+  if (!spec) return model.findUnique({ where: { id } });
+  return model.findUnique({
+    where: { id },
+    include: { [spec.relation]: { orderBy: { ordem: "asc" } } },
+  });
+}
+
 function reviveDates(entity: string, obj: Record<string, unknown>): Record<string, unknown> {
   const fields = ENTITY_DATE_FIELDS[entity] ?? [];
   const copy = { ...obj };
@@ -81,6 +109,9 @@ async function recordVersion(
       before: args.before ? snapshot(args.before) : null,
       after: args.after ? snapshot(args.after) : null,
       actor: args.actor,
+      // QUEM, e não só o tipo de ator. Resolvido aqui (e não em cada uma das ~20 mutações)
+      // porque é sempre a mesma resposta dentro de um request; fora de request vira null.
+      actorEmail: await currentActorEmail(),
       resumo: args.resumo,
     },
   });
@@ -104,6 +135,12 @@ export async function recordDecision(
     // Idempotente: se uma decisão com o MESMO texto já existe, devolve a existente
     // em vez de duplicar (o log de decisões era append-only e acumulava repetições
     // quando o Nero reprocessava o contexto).
+    // `findFirst` de propósito: `decisao` NÃO tem unique. Texto de decisão é livre e pode
+    // passar do limite de ~2704 bytes do índice btree do Postgres, então uma unique aqui
+    // transformaria uma decisão longa em erro de escrita. A idempotência segue sendo
+    // best-effort: duas requisições realmente simultâneas com o MESMO texto ainda podem
+    // duplicar. Aceitável para um log append-only de decisões; o de-duplicar-por-texto existe
+    // para o Nero não repetir a mesma decisão ao reprocessar contexto, não como invariante.
     const dup = await tx.decision.findFirst({ where: { decisao: input.decisao } });
     if (dup) return dup;
 
@@ -129,7 +166,7 @@ export async function setStackItem(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
-    const before = await tx.stackItem.findFirst({ where: { item: input.item } });
+    const before = await tx.stackItem.findUnique({ where: { item: input.item } });
     const data = {
       resposta: input.resposta,
       statusVerdade: input.statusVerdade ?? before?.statusVerdade ?? "lacuna",
@@ -164,7 +201,7 @@ export async function upsertDependency(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
-    const before = await tx.dependency.findFirst({ where: { codigo: input.codigo } });
+    const before = await tx.dependency.findUnique({ where: { codigo: input.codigo } });
     const faseId = await resolvePhaseId(tx, input.faseSlug) ?? before?.faseId ?? undefined;
     const data = {
       descricao: input.descricao ?? before?.descricao ?? input.codigo,
@@ -207,7 +244,7 @@ export async function addRisk(
     let featureId: string | null = null;
     let faseId = (await resolvePhaseId(tx, input.faseSlug)) ?? null;
     if (input.featureCodigo) {
-      const feature = await tx.feature.findFirst({ where: { codigo: input.featureCodigo } });
+      const feature = await tx.feature.findUnique({ where: { codigo: input.featureCodigo } });
       if (!feature)
         throw new Error(
           `Feature ${input.featureCodigo} não existe — crie com criar_feature ou omita featureCodigo para um risco da fase.`,
@@ -218,7 +255,7 @@ export async function addRisk(
     // Idempotente por código (espelha upsertDependency): se o risco já existe,
     // atualiza em vez de criar de novo — evita R5/R6/... duplicados quando o Nero
     // reprocessa o contexto em sessões diferentes.
-    const before = await tx.risk.findFirst({ where: { codigo: input.codigo } });
+    const before = await tx.risk.findUnique({ where: { codigo: input.codigo } });
     const data = {
       descricao: input.descricao,
       severidade: input.severidade ?? before?.severidade ?? "Média",
@@ -249,7 +286,7 @@ export async function setPhase(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
-    const before = await tx.phaseStatus.findFirst({ where: { fase: input.fase } });
+    const before = await tx.phaseStatus.findUnique({ where: { fase: input.fase } });
     if (!before) throw new Error(`Fase não encontrada: ${input.fase}`);
     const after = await tx.phaseStatus.update({
       where: { id: before.id },
@@ -277,7 +314,7 @@ export async function setFeatureStatus(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
-    const before = await tx.feature.findFirst({ where: { codigo: input.codigo } });
+    const before = await tx.feature.findUnique({ where: { codigo: input.codigo } });
     if (!before)
       throw new Error(
         `Feature ${input.codigo} não existe — crie com criar_feature antes de atualizar o status.`,
@@ -323,7 +360,7 @@ export async function createFeature(
         `Fase não encontrada para slug "${input.faseSlug}". Slugs válidos: fase-0..fase-6.`,
       );
 
-    const dup = await tx.feature.findFirst({ where: { codigo: input.codigo } });
+    const dup = await tx.feature.findUnique({ where: { codigo: input.codigo } });
     if (dup)
       throw new Error(
         `Feature ${input.codigo} já existe — use editar_feature ou definir_feature.`,
@@ -422,14 +459,14 @@ export async function editFeature(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
-    const before = await tx.feature.findFirst({ where: { codigo: input.codigo } });
+    const before = await tx.feature.findUnique({ where: { codigo: input.codigo } });
     if (!before)
       throw new Error(
         `Feature ${input.codigo} não existe — crie com criar_feature antes de editar.`,
       );
 
     if (input.novoCodigo && input.novoCodigo !== input.codigo) {
-      const clash = await tx.feature.findFirst({ where: { codigo: input.novoCodigo } });
+      const clash = await tx.feature.findUnique({ where: { codigo: input.novoCodigo } });
       if (clash)
         throw new Error(`Já existe uma feature com o código ${input.novoCodigo}.`);
     }
@@ -707,6 +744,9 @@ export async function upsertCatalogAsset(
 ) {
   return prisma.$transaction(async (tx) => {
     const before = await tx.catalogAsset.findUnique({ where: { nome: input.nome } });
+    // Lido ANTES de qualquer escrita e COM os campos, para o undo poder restaurar o
+    // dicionário inteiro — não só a linha do ativo.
+    const beforeSnapshot = before ? await readWithChildren(tx, "CatalogAsset", before.id) : null;
     let ordem = before?.ordem;
     if (ordem === undefined) {
       const last = await tx.catalogAsset.findFirst({ orderBy: { ordem: "desc" } });
@@ -761,12 +801,17 @@ export async function upsertCatalogAsset(
       }
     }
 
+    // Snapshot COM os campos: sem isto, `undo(update com campos inline)` restaurava só o
+    // ativo e as alterações nos `DataField` permaneciam. `beforeWithChildren` é lido no topo
+    // desta função (antes de qualquer escrita) — ver `beforeSnapshot`.
+    const afterWithChildren = await readWithChildren(tx, "CatalogAsset", after.id);
+
     await recordVersion(tx, {
       entity: "CatalogAsset",
       entityId: after.id,
       operation: before ? "update" : "create",
-      before,
-      after,
+      before: beforeSnapshot,
+      after: afterWithChildren,
       actor,
       resumo: `Catálogo "${input.nome}" ${before ? "atualizado" : "documentado"}${campos.length ? ` (+${campos.length} campos)` : ""} — ${data.statusVerdade}`,
     });
@@ -842,6 +887,19 @@ export async function createReport(
   actor: Actor = "nero",
 ) {
   return prisma.$transaction(async (tx) => {
+    /**
+     * Número do report: `max + 1` sob LOCK.
+     *
+     * Sem o lock, duas gerações simultâneas leem o mesmo máximo, calculam o mesmo número e
+     * disputam a unique constraint de `numero` — uma delas morre com erro do Postgres no meio
+     * da geração (o report é caro: várias chamadas ao modelo). O `@unique` impedia a
+     * duplicata, não a corrida.
+     *
+     * `pg_advisory_xact_lock` serializa só esta janela e é liberado no fim da transação.
+     * Uma sequência do Postgres não serve aqui: `numero` é a identidade de negócio (Q1..Q12)
+     * e precisa ser contígua — sequence deixa buracos quando uma transação aborta.
+     */
+    await tx.$executeRaw`select pg_advisory_xact_lock(529384710)`;
     const prev = await tx.report.findFirst({ orderBy: { numero: "desc" } });
     const numero = (prev?.numero ?? 0) + 1;
     const periodoFim = new Date();
@@ -878,32 +936,132 @@ export async function listVersions(limit = 30) {
   return prisma.stateVersion.findMany({ orderBy: { createdAt: "desc" }, take: limit });
 }
 
+/**
+ * Desfaz UMA versão.
+ *
+ * O que faltava (achado 7.6): o undo aplicava o snapshot `before` CEGAMENTE. O único guarda
+ * era `v.desfeito`. Não verificava se o estado atual ainda correspondia ao `after` daquela
+ * versão, nem se havia versão POSTERIOR não desfeita. Consequência: desfazer uma versão
+ * antiga depois de uma edição nova restaurava o snapshot antigo e PERDIA a edição recente —
+ * silenciosamente, num produto que promete "toda escrita reversível".
+ *
+ * Agora:
+ *   · undo é LIFO por entidade — versão posterior não desfeita bloqueia;
+ *   · concorrência otimista — se o estado atual divergir do `after` registrado, aborta;
+ *   · filhos versionados (ENTITY_CHILDREN) são restaurados junto com o pai.
+ */
 export async function undoVersion(versionId: string) {
   return prisma.$transaction(async (tx) => {
     const v = await tx.stateVersion.findUnique({ where: { id: versionId } });
     if (!v) throw new Error("Versão não encontrada.");
     if (v.desfeito) throw new Error("Esta versão já foi desfeita.");
 
+    // ── Undo fora de ordem ────────────────────────────────────────────────
+    // Desfazer a versão N com N+1 pendente aplicaria um snapshot que já não descreve o
+    // estado atual, apagando o trabalho posterior. Exige desfazer na ordem inversa.
+    const posterior = await tx.stateVersion.findFirst({
+      where: {
+        entity: v.entity,
+        entityId: v.entityId,
+        desfeito: false,
+        createdAt: { gt: v.createdAt },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (posterior) {
+      throw new Error(
+        `Existe alteração mais recente nesta entidade (${posterior.resumo ?? posterior.operation}). ` +
+          `Desfaça a mais nova primeiro — desfazer fora de ordem perderia aquela alteração.`,
+      );
+    }
+
     const m = modelOf(tx, v.entity) as {
       delete: (a: unknown) => Promise<unknown>;
       update: (a: unknown) => Promise<unknown>;
       create: (a: unknown) => Promise<unknown>;
       findUnique: (a: unknown) => Promise<unknown>;
+      deleteMany: (a: unknown) => Promise<unknown>;
     };
+    const childSpec = ENTITY_CHILDREN[v.entity];
 
     if (v.operation === "create") {
       const exists = await m.findUnique({ where: { id: v.entityId } });
       if (exists) await m.delete({ where: { id: v.entityId } });
     } else if (v.operation === "update" && v.before) {
-      const data = reviveDates(v.entity, JSON.parse(v.before));
+      // ── Concorrência otimista ───────────────────────────────────────────
+      // O estado atual tem de ser o que ESTA versão deixou. Se alguém (pessoa ou Nero)
+      // mexeu depois por um caminho que não gerou versão, abortar é melhor que sobrescrever.
+      await assertCurrentMatchesAfter(tx, v);
+
+      const parsed = JSON.parse(v.before) as Record<string, unknown>;
+      const children = childSpec ? (parsed[childSpec.relation] as unknown[] | undefined) : undefined;
+      const data = reviveDates(v.entity, parsed);
       delete (data as { id?: string }).id;
+      if (childSpec) delete (data as Record<string, unknown>)[childSpec.relation];
       await m.update({ where: { id: v.entityId }, data });
+
+      // Filhos: troca atômica pelo conjunto do snapshot. Sem isto o undo restaurava o pai e
+      // deixava os campos alterados — o caminho que a UI dizia ser reversível e não era.
+      if (childSpec && Array.isArray(children)) {
+        await restoreChildren(tx, childSpec, v.entityId, children);
+      }
     } else if (v.operation === "delete" && v.before) {
-      const data = reviveDates(v.entity, JSON.parse(v.before));
+      const parsed = JSON.parse(v.before) as Record<string, unknown>;
+      const children = childSpec ? (parsed[childSpec.relation] as unknown[] | undefined) : undefined;
+      const data = reviveDates(v.entity, parsed);
+      if (childSpec) delete (data as Record<string, unknown>)[childSpec.relation];
       await m.create({ data });
+      if (childSpec && Array.isArray(children)) {
+        await restoreChildren(tx, childSpec, v.entityId, children);
+      }
     }
 
     await tx.stateVersion.update({ where: { id: versionId }, data: { desfeito: true } });
     return { undone: v.entity, operation: v.operation };
   });
+}
+
+/**
+ * Aborta se o estado atual não é o que a versão registrou como `after`.
+ *
+ * Compara só os campos presentes no `after` e ignora `updatedAt` — carimbo de tempo muda a
+ * cada escrita e faria toda comparação falhar. A intenção é detectar DIVERGÊNCIA DE
+ * CONTEÚDO, não de metadado.
+ */
+async function assertCurrentMatchesAfter(tx: Tx, v: { entity: string; entityId: string; after: string | null }) {
+  if (!v.after) return;
+  const current = (await readWithChildren(tx, v.entity, v.entityId)) as Record<string, unknown> | null;
+  if (!current) throw new Error("A entidade desta versão não existe mais — nada a desfazer.");
+
+  const expected = JSON.parse(v.after) as Record<string, unknown>;
+  const ignore = new Set(["updatedAt", "createdAt"]);
+  const divergentes: string[] = [];
+  for (const [key, value] of Object.entries(expected)) {
+    if (ignore.has(key)) continue;
+    if (JSON.stringify(current[key]) !== JSON.stringify(value)) divergentes.push(key);
+  }
+  if (divergentes.length) {
+    throw new Error(
+      `O estado atual já não é o que esta versão deixou (mudou: ${divergentes.join(", ")}). ` +
+        `Desfazer agora sobrescreveria essa alteração.`,
+    );
+  }
+}
+
+/** Substitui o conjunto de filhos pelo do snapshot, dentro da transação do undo. */
+async function restoreChildren(
+  tx: Tx,
+  spec: { relation: string; childEntity: string; fk: string },
+  parentId: string,
+  children: unknown[],
+) {
+  const childModel = modelOf(tx, spec.childEntity) as {
+    deleteMany: (a: unknown) => Promise<unknown>;
+    create: (a: unknown) => Promise<unknown>;
+  };
+  await childModel.deleteMany({ where: { [spec.fk]: parentId } });
+  for (const child of children) {
+    const data = reviveDates(spec.childEntity, child as Record<string, unknown>);
+    await childModel.create({ data });
+  }
 }

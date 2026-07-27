@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseCookie, verifyToken } from "@neo/auth";
+import { parseCookie, readToken, verifyToken } from "@neo/auth";
 import { BASE_PATH } from "@/lib/base-path";
+import { ACTOR_EMAIL_HEADER } from "@/lib/state/actor";
 
 /**
  * Gate do Nero (no Next 16 o "middleware" chama-se "proxy").
@@ -61,20 +62,40 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // (1) Sessão do portal — sem ela, nem a tela de senha aparece.
+  // `readToken` em vez de `verifyToken`: além de validar, devolve o payload com o e-mail.
+  // Era o elo que faltava para a auditoria ter PESSOA, e não só tipo de ator (achado 7.4).
   const session = parseCookie(cookies, SESSION_COOKIE);
-  if (!session || !(await verifyToken(session, secret))) {
+  const claims = session ? await readToken(session, secret, "neo_session") : null;
+  if (!claims) {
     if (pathname.startsWith("/api/")) {
       return new NextResponse("Não autenticado.", { status: 401 });
     }
     return toHub(req);
   }
 
+  /**
+   * Repassa a identidade validada para o app.
+   *
+   * Ordem importa: DELETE antes de SET. Sem o delete, um cliente poderia mandar
+   * `x-neo-actor-email: chefe@lm...` e a trilha de auditoria registraria outra pessoa. O
+   * header só vale porque este proxy o reescreve incondicionalmente, depois de conferir a
+   * assinatura HMAC do cookie.
+   */
+  // Extraído fora do closure: o narrowing de `claims` não sobrevive dentro da função.
+  const actorEmail = claims.email ?? null;
+  function passthroughWithActor(): NextResponse {
+    const h = new Headers(req.headers);
+    h.delete(ACTOR_EMAIL_HEADER);
+    if (actorEmail) h.set(ACTOR_EMAIL_HEADER, actorEmail);
+    return NextResponse.next({ request: { headers: h } });
+  }
+
   // A tela de senha é o único lugar que dispensa a trava (2) — é onde ela é obtida.
-  if (pathname === "/login") return NextResponse.next();
+  if (pathname === "/login") return passthroughWithActor();
 
   // (2) Senha do Nero.
   const gate = parseCookie(cookies, GATE_COOKIE);
-  if (!gate || !(await verifyToken(gate, secret))) {
+  if (!gate || !(await verifyToken(gate, secret, "nero"))) {
     if (pathname.startsWith("/api/")) {
       return new NextResponse("Acesso ao Nero requer senha.", { status: 401 });
     }
@@ -84,5 +105,5 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  return NextResponse.next();
+  return passthroughWithActor();
 }
