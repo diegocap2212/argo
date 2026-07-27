@@ -1,5 +1,5 @@
 import { type BrowserContext, type Page, expect, test as base } from '@playwright/test';
-import { serializeCookie, signToken } from '../packages/neo-auth/src/index.ts';
+import { signToken } from '../packages/neo-auth/src/index.ts';
 
 /**
  * Fixtures do e2e do portal.
