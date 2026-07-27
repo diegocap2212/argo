@@ -1,0 +1,46 @@
+{
+  "_leia_primeiro": [
+    "Achados do CodeQL CONHECIDOS E ACEITOS. Chave: `ruleId|arquivo`, valor: quantos achados",
+    "daquela regra naquele arquivo são esperados, mais o motivo de aceitar.",
+    "",
+    "POR QUE ISTO EXISTE: o gate falha em achado NOVO. Sem baseline, ligar SAST num código que",
+    "já existe deixa a `main` vermelha para sempre — e vermelho permanente é o treinamento para",
+    "ignorar vermelho. Com baseline, vermelho volta a significar 'algo mudou'.",
+    "",
+    "REGRAS DE USO:",
+    "1. Cada entrada precisa de `motivo` dizendo POR QUE não é defeito. 'ruído' não é motivo.",
+    "2. Aumentar `qtd` é decisão consciente, não conserto de CI. Se subiu, é achado novo.",
+    "3. Se a contagem real ficar MENOR, o gate avisa: alguém corrigiu, e a entrada tem de",
+    "   encolher junto. Baseline que não encolhe apodrece até virar allowlist geral.",
+    "4. A chave não tem linha de propósito — linha muda a cada edição e daria falso alarme.",
+    "   O preço é que um achado NOVO da MESMA regra no MESMO arquivo só é pego pela contagem.",
+    "",
+    "Se o repositório ganhar GitHub Advanced Security, isto tudo vira triage na aba Security e",
+    "este arquivo pode ser apagado junto com o passo que o lê."
+  ],
+
+  "js/insufficient-password-hash|api/gate.ts": {
+    "qtd": 2,
+    "motivo": "É `safeSecretEqual`: aplica SHA-256 nos DOIS lados só para igualar o comprimento antes de `crypto.timingSafeEqual`, que exige buffers do mesmo tamanho. O hash não é armazenado em lugar nenhum, e o valor esperado é a env `TOWER_PASSWORD` — não existe banco de senhas para proteger de quebra offline, que é a premissa da regra. Trocar por bcrypt/scrypt custaria latência por request sem proteger nada. Falso positivo EM CONTEXTO, não defeito."
+  },
+
+  "js/file-access-to-http|maturitymodel/scripts/sql.mjs": {
+    "qtd": 1,
+    "motivo": "O propósito do script é ler um `.sql` e enviá-lo à API do Supabase. O caminho vem de `argv` (o operador que roda o comando), não de entrada remota. É a função da ferramenta."
+  },
+
+  "js/file-access-to-http|maturitymodel/scripts/apply-papeis.mjs": {
+    "qtd": 1,
+    "motivo": "Mesmo caso do `sql.mjs`: aplica migration de papéis via API do Supabase. Caminho de `argv`."
+  },
+
+  "js/http-to-file-access|locavia-dashboard/sync/sync-jira.ts": {
+    "qtd": 1,
+    "motivo": "É o sync: resposta do Jira gravada em arquivo. O risco que a regra aponta é caminho DERIVADO da resposta remota (path traversal) — aqui o caminho é constante e a escrita é atômica (`writeAtomic`: tmp + rename), com o tmp nomeado por `process.pid`, não por dado do Jira. Verificado no código."
+  },
+
+  "js/http-to-file-access|locavia-dashboard/sync/sync-discover.ts": {
+    "qtd": 1,
+    "motivo": "Ferramenta de introspecção (read-only no Jira) que despeja os campos em `'sync/all_fields_dump.json'` — string literal, não derivada da resposta. Verificado no código."
+  }
+}
