@@ -61,15 +61,29 @@ export function useAdminTeamCycle(teamId: string | undefined) {
   });
 }
 
+/**
+ * Reinicia o assessment do squad. `reason` é OBRIGATÓRIO.
+ *
+ * A ação apaga kaizens, homologações, propostas e pré-sessão. Desde 2026-07-27 o banco exige
+ * o motivo e grava snapshot do que existia em `destructive_audit` — antes não havia registro
+ * de quem reiniciou, por quê, nem o que havia antes. A autorização (admin-only) já estava
+ * certa; o que faltava era governança e recuperação.
+ */
 export function useRestartAssessment(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (reason: string) => {
+      const motivo = reason?.trim() ?? "";
+      // Barra aqui também, não só no banco: a mensagem do Postgres é boa para log, ruim para
+      // uma pessoa lendo um toast.
+      if (!motivo) {
+        throw new Error("Informe o motivo do reinício — a ação é destrutiva e fica auditada.");
+      }
       const restartRpc = supabase.rpc.bind(supabase) as unknown as (
         fn: string,
-        args: { p_team: string }
+        args: { p_team: string; p_reason: string }
       ) => Promise<{ error: { message: string } | null }>;
-      const { error } = await restartRpc("restart_assessment", { p_team: teamId });
+      const { error } = await restartRpc("restart_assessment", { p_team: teamId, p_reason: motivo });
       if (error) throw error;
     },
     onSuccess: () => {

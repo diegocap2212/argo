@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { devWarn } from "@/lib/utils";
+import { keepValidAxisKeys } from "@/lib/domain";
+import { classifyQueryError } from "@/lib/query-error";
 import type { AxisKey } from "@/types/mma";
 
 export interface AxisScore {
@@ -23,12 +24,19 @@ export function useAxisScores(teamId: string | undefined) {
         .order("quarter", { ascending: false });
 
       if (error) {
-        devWarn("useAxisScores: v_axis_scores indisponível ainda?", error.message);
+        // Classifica em vez de engolir: recurso ausente/permissão devolvem vazio (com log
+        // que SOBREVIVE em produção); qualquer outra falha é lançada para a tela poder dizer
+        // "não consegui carregar" em vez de "nada aqui". Ver lib/query-error.ts.
+        classifyQueryError("useAxisScores", error);
         return [];
       }
 
       const latestQuarter = data?.[0]?.quarter;
-      return (data ?? []).filter((row: AxisScore) => row.quarter === latestQuarter);
+      // `axis_key` vem do banco como `text`. O CHECK da migration 20260727140000 garante o
+      // domínio; aqui é a segunda linha, para dado fora dele ser DESCARTADO com aviso em vez
+      // de atravessar o app tipado como se fosse válido (era o que um `as AxisKey` faria).
+      return keepValidAxisKeys(data ?? [], "useAxisScores")
+        .filter((row) => row.quarter === latestQuarter);
     },
   });
 }

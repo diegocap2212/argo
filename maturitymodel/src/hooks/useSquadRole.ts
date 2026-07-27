@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { devWarn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { usePortalRole } from "@/hooks/usePortalRole";
 import type { Role } from "@/types/mma";
+import { classifyQueryError } from "@/lib/query-error";
 
 /** Papéis do usuário atual num squad específico (`squad_members`: 'sm' | 'member'). */
 export function useSquadRoles(teamId: string | undefined) {
@@ -21,7 +21,10 @@ export function useSquadRoles(teamId: string | undefined) {
         .eq("user_id", user!.id);
 
       if (error) {
-        devWarn("useSquadRoles: squad_members indisponível ainda?", error.message);
+        // Classifica em vez de engolir: recurso ausente/permissão devolvem vazio (com log
+        // que SOBREVIVE em produção); qualquer outra falha é lançada para a tela poder dizer
+        // "não consegui carregar" em vez de "nada aqui". Ver lib/query-error.ts.
+        classifyQueryError("useSquadRoles", error);
         return [];
       }
       return (data ?? []).map((r: { role: Role }) => r.role);

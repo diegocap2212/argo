@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { AxisKey } from "@/types/mma";
+import { keepValidAxisRows } from "@/lib/domain";
 
 export interface AxisRow {
   id: string;
@@ -25,7 +26,9 @@ export function useAxes() {
     queryFn: async (): Promise<AxisRow[]> => {
       const { data, error } = await supabase.from("axes").select("*").order("display_order");
       if (error) throw error;
-      return data ?? [];
+      // `axes.key` é `text` no banco. CHECK em 20260727140000 garante o domínio; aqui é a
+      // segunda linha (descarta com aviso em vez de mentir para o compilador com `as`).
+      return keepValidAxisRows(data ?? [], "useAxes");
     },
   });
 }

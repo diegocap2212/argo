@@ -23,11 +23,13 @@ export const MIGRATIONS_DIR = join(HERE, "..", "..", "supabase", "migrations");
 const SKIP: Record<string, string> = {
   "20260712190000_anchor_sync_cron.sql":
     "pg_cron + pg_net não existem no PGlite. Só agenda um job HTTP diário — não cria schema, tabela nem policy, então não afeta o que este harness verifica.",
+  "20260727130100_anchor_sync_cron_secret.sql":
+    "pg_cron + pg_net + supabase_vault não existem no PGlite. Só reagenda o job HTTP (agora com secret do Vault em vez da anon key). A AUTORIZAÇÃO dessa mudança vive na migration 20260727130000, que roda aqui e é verificada em tests/pg/rls-local.ts (PARTE C · quem pode sincronizar âncoras) — foi por isso que as duas foram separadas.",
 };
 
 export async function applyAllMigrations(
   db: PGlite,
-  opts: { verbose?: boolean; stopBefore?: string; grants?: boolean } = {},
+  opts: { verbose?: boolean; stopBefore?: string; startAfter?: string; grants?: boolean } = {},
 ): Promise<{ applied: string[]; skipped: string[] }> {
   const files = (await readdir(MIGRATIONS_DIR)).filter((f) => f.endsWith(".sql")).sort();
   const applied: string[] = [];
@@ -37,6 +39,10 @@ export async function applyAllMigrations(
     // `stopBefore` permite parar no estado ANTERIOR a uma migration para semear dados
     // realistas e depois aplicá-la — é como se ensaia a migração de dados.
     if (opts.stopBefore && file >= opts.stopBefore) break;
+    // `startAfter` retoma DEPOIS de uma migration já aplicada à mão. Sem isto, o harness de
+    // RLS parava na migration de papéis e NUNCA aplicava as posteriores — `drop_is_any_am` e
+    // a autorização das âncoras ficavam fora do teste sem ninguém notar.
+    if (opts.startAfter && file <= opts.startAfter) continue;
     if (SKIP[file]) {
       skipped.push(file);
       if (opts.verbose) console.log(`  ⤳ ${file}\n      pulada: ${SKIP[file]}`);

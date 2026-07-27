@@ -138,6 +138,10 @@ async function partA(): Promise<PGlite> {
 
   // ── A migração ──
   await db.exec(migrationSql(PORTAL_ROLES_MIGRATION));
+  // E TUDO o que veio depois dela. Antes o harness parava aqui, então toda migration
+  // posterior à de papéis (drop_is_any_am, autorização das âncoras) nunca era exercitada
+  // pela PARTE C — o teste passava sem nunca ter visto o estado atual do banco.
+  await applyAllMigrations(db, { startAfter: PORTAL_ROLES_MIGRATION, grants: false });
   await grantSupabaseDefaults(db);
 
   const after = await db.query<{ n: number }>(
@@ -332,6 +336,58 @@ async function partC(db: PGlite) {
     `insert into homologations (cycle_id, dimension_id, official_stage, am_user_id)
        values ($1,$2,2,$3) returning cycle_id`, [cycle, dims.rows[0]!.id, U.am]);
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // UPDATE de homologação (achado 6.3). A migration de papéis globais trocou
+  // `homolog_write` (INSERT) e `homolog_read`, mas ESQUECEU `homolog_update`, que continuou
+  // com a regra antiga: `am_user_id = auth.uid()` e nada de `is_portal_am()`.
+  //
+  // Ninguém tinha visto porque os testes cobriam INSERT e oficialização — nunca UPDATE
+  // cruzado entre AMs, nem mutação das chaves. E como o frontend usa `upsert`, o UPDATE é o
+  // caminho REAL na segunda edição: o fluxo "AM global homologa qualquer squad" quebrava em
+  // silêncio.
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log("\n── PARTE C · UPDATE de homologação (papel, não posse) ──\n");
+  const dimHomolog = dims.rows[0]!.id;
+
+  // Segundo AM GLOBAL (o `po` do fixture ganha o papel). Como owner: conceder papel não é o
+  // objeto deste teste.
+  await db.query(`insert into portal_roles (email, role) values ($1,'am') on conflict do nothing`, [E.po]);
+  const am2 = { sub: U.po, email: E.po };
+
+  // O CASO QUE ESTAVA QUEBRADO: outro AM global editando homologação criada por um colega.
+  await allowed(db, "AM #2 atualiza homologação criada pelo AM #1", am2,
+    `update homologations set official_stage = 3
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`, [cycle, dimHomolog]);
+
+  await allowed(db, "AM #1 corrige o conteúdo da própria homologação", am,
+    `update homologations set justification = 'ajuste'
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`, [cycle, dimHomolog]);
+
+  // Permissão vem do PAPEL, não de ter criado a linha.
+  await denied(db, "SM atualiza homologação", sm,
+    `update homologations set official_stage = 1
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`, [cycle, dimHomolog]);
+  await denied(db, "member atualiza homologação", member,
+    `update homologations set official_stage = 1
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`, [cycle, dimHomolog]);
+
+  // Mover a linha de ciclo/dimensão é REIDENTIFICÁ-LA: `(cycle_id, dimension_id)` é a PK, e o
+  // registro passaria a valer para outra avaliação levando `official_stage` consigo. O
+  // `WITH CHECK` não consegue barrar (não vê a linha antiga) — quem barra é o trigger.
+  await denied(db, "AM move homologação para OUTRA dimensão", am,
+    `update homologations set dimension_id=$3
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`,
+    [cycle, dimHomolog, dims.rows[1]!.id]);
+
+  const outroCiclo = await db.query<{ id: string }>(
+    `insert into assessment_cycles (team_id, quarter, status)
+       values ($1,'2099Q4','homologation') returning id`, [B],
+  );
+  await denied(db, "AM move homologação para OUTRO ciclo", am,
+    `update homologations set cycle_id=$3
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`,
+    [cycle, dimHomolog, outroCiclo.rows[0]!.id]);
+
   // Completa as demais dimensões (service_role/owner: o seed não é o objeto do teste).
   for (const d of dims.rows.slice(1)) {
     await db.query(
@@ -351,6 +407,13 @@ async function partC(db: PGlite) {
   );
   check("ciclo ficou 'official'", st.rows[0]!.status === "official", st.rows[0]!.status);
   check("homologated_by registrou o AM", st.rows[0]!.homologated_by === U.am);
+
+  // Ciclo oficializado: a janela de edição FECHOU. A policy antiga só exigia
+  // `cycle.status = 'homologation'` no USING; agora o WITH CHECK exige também, então não dá
+  // para empurrar conteúdo novo para uma avaliação já publicada.
+  await denied(db, "AM atualiza homologação de ciclo JÁ oficializado", am,
+    `update homologations set official_stage = 4
+       where cycle_id=$1 and dimension_id=$2 returning cycle_id`, [cycle, dimHomolog]);
 
   // Regressão: oficializar GERA os kaizens (a etapa "Plano"). Uma reescrita do RPC já
   // apagou esse insert por descuido nesta rodada — o teste existe por causa disso.
@@ -373,14 +436,16 @@ async function partC(db: PGlite) {
     `update assessment_cycles set status='archived' where id=$1 returning id`, [cycle]);
 
   // O pedido literal: "AM homologa, mas não deleta nem reseta nada".
-  const amRestart = await attempt(db, am, `select restart_assessment($1)`, [A]);
+  const amRestart = await attempt(db, am, `select restart_assessment($1, 'teste')`, [A]);
   check("AM restart_assessment — NEGADO", !amRestart.ok, amRestart.error?.slice(0, 60));
   const amDelete = await attempt(db, am, `select delete_squad($1)`, [A]);
   check("AM delete_squad — NEGADO", !amDelete.ok, amDelete.error?.slice(0, 60));
-  const smRestart = await attempt(db, sm, `select restart_assessment($1)`, [A]);
+  const smRestart = await attempt(db, sm, `select restart_assessment($1, 'teste')`, [A]);
   check("SM restart_assessment — NEGADO", !smRestart.ok);
 
-  const adminRestart = await attempt(db, admin, `select restart_assessment($1)`, [A]);
+  // Motivo obrigatório desde 27/07: ação destrutiva sem justificativa registrada torna a
+  // auditoria inútil depois.
+  const adminRestart = await attempt(db, admin, `select restart_assessment($1, 'reset de teste')`, [A]);
   check("admin restart_assessment — permitido", adminRestart.ok, adminRestart.error?.slice(0, 120));
 
   // O reset volta ao COMEÇO da jornada, não à sessão (defeito corrigido em 26/07).
@@ -486,6 +551,149 @@ async function partC(db: PGlite) {
   check(
     "types.ts não declara mais is_am(uuid) (função removida)",
     !/^\s+is_am: \{ Args:/m.test(typesFile),
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Autorização da sincronização de âncoras (achado P0.1 do review de 2026-07-27).
+  //
+  // A Edge Function `sync-anchors` não checava NADA: nem auth.uid(), nem papel, nem
+  // pertencimento ao squad — e gravava com service_role. O cron a chamava com a anon key,
+  // que é PÚBLICA. `verify_jwt` não cobre isso: ele prova que o token é assinado, e a anon
+  // key também é um token assinado.
+  //
+  // A decisão passou a viver em `can_sync_anchors(team)`. Estes casos são o contrato que
+  // o handler `sync-anchors-user` consulta.
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log("\n── PARTE C · quem pode sincronizar âncoras ──\n");
+  const canSync = async (identity: { sub?: string; email?: string }, team: string) =>
+    await asUser(db, identity, async () =>
+      // `$1::uuid` explícito: sem o cast o Postgres não resolve a assinatura do parâmetro.
+      (await db.query<{ can_sync_anchors: boolean }>(`select can_sync_anchors($1::uuid)`, [team]))
+        .rows[0]!.can_sync_anchors,
+    );
+
+  check("SM sincroniza o PRÓPRIO squad", (await canSync(sm, A)) === true);
+  check("SM NÃO sincroniza squad de outro", (await canSync(sm, B)) === false);
+  check("member (não SM) NÃO sincroniza nem o próprio squad", (await canSync(member, B)) === false);
+  check("AM global sincroniza qualquer squad", (await canSync(am, A)) === true && (await canSync(am, B)) === true);
+  check("admin sincroniza qualquer squad", (await canSync(admin, A)) === true);
+
+  // Sem sub no JWT (o caso da anon key: ela não representa pessoa nenhuma) → auth.uid() é
+  // NULL, nenhum vínculo casa, e a resposta é false.
+  check("identidade sem usuário (anon key) NÃO sincroniza", (await canSync({}, A)) === false);
+
+  // Defesa em profundidade: além de devolver false, o papel `anon` não pode nem EXECUTAR.
+  //
+  // ⚠️ ORDEM IMPORTA, e o harness a inverte. Em produção o bootstrap do Supabase
+  // (`grant all on all routines in schema public to anon, ...`) roda ANTES das migrations,
+  // então o `revoke ... from anon` da migration é a última palavra. Aqui
+  // `grantSupabaseDefaults()` roda DEPOIS, o que desfaz silenciosamente todo revoke de
+  // migration. Reaplicar a migration restaura a ordem real — e é idempotente
+  // (`create or replace` + revoke/grant).
+  //
+  // Isto vale para QUALQUER revoke de RPC neste repo: sem reaplicar, um teste de privilégio
+  // aqui mede o shim, não a migration.
+  await db.exec(migrationSql("20260727130000_anchor_sync_authz.sql"));
+
+  const anonCanExecute = (
+    await db.query<{ has: boolean }>(
+      `select has_function_privilege('anon', 'public.can_sync_anchors(uuid)', 'execute') as has`,
+    )
+  ).rows[0]!.has;
+  check("papel anon não tem EXECUTE em can_sync_anchors", anonCanExecute === false);
+
+  const authCanExecute = (
+    await db.query<{ has: boolean }>(
+      `select has_function_privilege('authenticated', 'public.can_sync_anchors(uuid)', 'execute') as has`,
+    )
+  ).rows[0]!.has;
+  check("papel authenticated tem EXECUTE em can_sync_anchors", authCanExecute === true);
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // Governança de papéis e ações destrutivas (achados 6.4, 6.6, 6.7).
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log("\n── PARTE C · governança: último admin, revogação, kaizen, reset ──\n");
+
+  // ── Lockout ──
+  // `portal_roles_write` permitia apagar QUALQUER linha, inclusive a última de admin. Sem
+  // admin, ninguém concede admin: só service_role no SQL editor recupera.
+  //
+  // Testes anteriores desta PARTE C concedem papéis, então o estado aqui NÃO é o do fixture.
+  // Como owner (bypassa RLS), deixo exatamente um admin — `E.admin`, que é a identidade usada
+  // nas asserções — para o cenário de "último admin" ser o cenário real.
+  await db.query(`delete from portal_roles where role='admin' and email <> $1`, [E.admin]);
+  const admins = await db.query<{ n: number }>(
+    `select count(*)::int as n from portal_roles where role='admin' and revoked_at is null`,
+  );
+  check("estado preparado: exatamente 1 admin", admins.rows[0]!.n === 1, `${admins.rows[0]!.n}`);
+
+  await denied(db, "admin apaga o ÚLTIMO admin (lockout)", admin,
+    `delete from portal_roles where role='admin' returning email`);
+  await denied(db, "admin rebaixa o ÚLTIMO admin para am", admin,
+    `update portal_roles set role='am' where role='admin' returning email`);
+
+  // Com DOIS admins, remover um passa a ser legítimo.
+  await db.query(`insert into portal_roles (email, role) values ($1,'admin') on conflict do nothing`, [E.po]);
+  await allowed(db, "com 2 admins, remover um é permitido", admin,
+    `delete from portal_roles where role='admin' and email=$1 returning email`, [E.po]);
+
+  // ── Rastro de concessão ──
+  check("granted_by é preenchido pelo BANCO, não pela app", await (async () => {
+    await asUser(db, admin, async () => {
+      await db.query(`insert into portal_roles (email, role) values ('novo@lm.test','am')`);
+    });
+    const r = await db.query<{ granted_by: string | null }>(
+      `select granted_by from portal_roles where email='novo@lm.test'`,
+    );
+    return r.rows[0]?.granted_by === E.admin;
+  })(), "confiar na app para preencher isso é o mesmo que não ter o campo");
+
+  // ── Revogação DESLIGA o papel ──
+  // Manter a linha é deliberado (a prova de que o acesso existiu é o que o offboarding precisa),
+  // então os predicados têm de exigir `revoked_at is null` — senão revogar seria decorativo.
+  await db.query(`insert into portal_roles (email, role) values ($1,'am') on conflict do nothing`, [E.memberB]);
+  const amAntes = await asUser(db, member, async () =>
+    (await db.query<{ v: boolean }>(`select is_portal_am() as v`)).rows[0]!.v,
+  );
+  check("papel concedido ativa is_portal_am()", amAntes === true);
+
+  await db.query(`update portal_roles set revoked_at = now() where email=$1 and role='am'`, [E.memberB]);
+  const amDepois = await asUser(db, member, async () =>
+    (await db.query<{ v: boolean }>(`select is_portal_am() as v`)).rows[0]!.v,
+  );
+  check("papel REVOGADO desliga is_portal_am() (linha continua para auditoria)", amDepois === false);
+  const linhaViva = await db.query<{ n: number }>(
+    `select count(*)::int as n from portal_roles where email=$1 and role='am'`, [E.memberB],
+  );
+  check("a linha revogada NÃO é apagada (prova do offboarding)", linhaViva.rows[0]!.n === 1);
+  await db.query(`delete from portal_roles where email in ($1,'novo@lm.test')`, [E.memberB]);
+
+  // ── Kaizen: criar/atualizar ≠ excluir ──
+  const dimKaizen = dims.rows[0]!.id;
+  await db.query(
+    `insert into kaizens (team_id, cycle_id, dimension_id, title) values ($1,$2,$3,'kz de teste')
+       on conflict do nothing`,
+    [A, cycle, dimKaizen],
+  );
+  await allowed(db, "membro do squad ATUALIZA kaizen (execução é do time)", sm,
+    `update kaizens set title='ajustado' where team_id=$1 returning id`, [A]);
+  await denied(db, "membro do squad EXCLUI kaizen", sm,
+    `delete from kaizens where team_id=$1 returning id`, [A]);
+  await denied(db, "AM global EXCLUI kaizen", am,
+    `delete from kaizens where team_id=$1 returning id`, [A]);
+  await allowed(db, "admin EXCLUI kaizen", admin,
+    `delete from kaizens where team_id=$1 returning id`, [A]);
+
+  // ── Reset: motivo obrigatório e snapshot ──
+  const semMotivo = await attempt(db, admin, `select restart_assessment($1, null)`, [A]);
+  check("restart_assessment SEM motivo é recusado", !semMotivo.ok,
+    semMotivo.error?.slice(0, 60));
+
+  const assinaturaAntiga = await attempt(db, admin, `select restart_assessment($1)`, [A]);
+  check(
+    "assinatura de 1 argumento não existe mais (caminho sem auditoria)",
+    !assinaturaAntiga.ok,
+    assinaturaAntiga.error?.slice(0, 60),
   );
 
   console.log("\n── PARTE C · o operador não fica trancado fora ──\n");

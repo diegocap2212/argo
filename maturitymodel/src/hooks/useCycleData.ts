@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import type { AxisKey, CycleStatus } from "@/types/mma";
+import { keepValidStageNumbers } from "@/lib/domain";
 
 export interface DimensionWithAxis {
   id: string;
@@ -58,7 +59,9 @@ export function useStageDescriptions() {
     queryFn: async (): Promise<StageDescription[]> => {
       const { data, error } = await supabase.from("dimension_stage_descriptions").select("*");
       if (error) throw error;
-      return data ?? [];
+      // `stage_number` é `int` no banco. CHECK em 20260727140000 garante 1..4; aqui é a
+      // segunda linha (descarta com aviso em vez de mentir com `as StageDescription[]`).
+      return keepValidStageNumbers(data ?? [], "useStageDescriptions");
     },
   });
 }
@@ -296,7 +299,11 @@ export function useMoveKaizen(teamId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, status, resultValue }: { id: string; status: KaizenRow["status"]; resultValue?: number | null }) => {
-      const patch: Record<string, unknown> = { status };
+      // Tipado com os campos REAIS da tabela, não `Record<string, unknown>`: o cliente do
+      // Supabase rejeita índice aberto (`RejectExcessProperties`), e com razão — um typo em
+      // nome de coluna passava a ser erro de compilação em vez de update silenciosamente
+      // ignorado. Só apareceu quando o typecheck do app passou a compilar `src`.
+      const patch: { status: KaizenRow["status"]; result_value?: number } = { status };
       if (status === "done" && resultValue != null) patch.result_value = resultValue;
       const { error } = await supabase.from("kaizens").update(patch).eq("id", id);
       if (error) throw error;
