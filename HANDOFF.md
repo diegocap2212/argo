@@ -60,14 +60,32 @@ escopo, sem escalação (SM e member não satisfazem `is_portal_am()`), sem vaza
 AMs, porque o colapso converteu as linhas `am` delas. Se aparecer um `member` sem papel global,
 o script passa a cobri-lo automaticamente.
 
-### Falta fazer: só a camada VISUAL
+### Camada visual — verificada, e achou um bug (2026-07-27)
 
-O que sobrou não é autorização nem dado — é renderização: fonte, layout, se o texto faz sentido
-para quem lê. Nenhum teste automatizado cobre, e não é por preguiça: forjar o cookie HMAC do
-portal não cria sessão do Supabase, e a home lê o papel por RPC autenticado. Emitir sessão exige
-a `service_role` key.
+O Diego abriu a home logado como admin e mandou screenshot. A home entrega o que devia:
+"Homologar o pacote · SF Vendas" como próxima ação, **"Precisa de você · 3 pendências"** listando
+SF Vendas, Gol e Parati, a jornada com "Pré-sessão ✓" e o contador **3/5 etapas**, "Aguardando
+homologação" e "Administração". Badge de 3 na sidebar. É o relato original resolvido.
 
-Roteiro (o que verificar em cada tela):
+**E revelou um defeito que nenhum teste automatizado pegaria:** a trilha da jornada quebrava em
+duas linhas — `"05 Evolução"` caía desalinhado sob "Pré-sessão". Causa: `.home-journey` tinha
+`grid-template-columns: repeat(4,1fr)` cravado, e a jornada passou a ter 5 etapas.
+
+Corrigido com `grid-auto-flow: column` + `grid-auto-columns: 1fr` (as colunas derivam da
+quantidade de etapas) e `grid-auto-flow: row` no `@media (max-width: 720px)` — sem esse reset os
+passos ficariam lado a lado no celular. Medido no browser contra o CSS compilado: desktop 1440px
+= 5 passos numa linha, colunas de 258px; mobile 390px = 5 linhas empilhadas, sem transbordo.
+Confirmado no CSS servido em produção. Deployment `dpl_5zZQKzim74tSL6jZ3ykcJs5PQGQs`.
+
+**Lição:** a jornada tinha o CSS como uma quarta opinião sobre "quantas etapas existem", além de
+`CYCLE_JOURNEY`, `CYCLE_TRANSITIONS` e o trigger. As três primeiras já estão amarradas por
+contrato (`test:journey`); o CSS agora simplesmente não opina.
+
+### Falta fazer: as outras três personas na tela
+
+Verificado por dado e autorização (tabela acima), **não** por renderização. Emitir sessão para
+outra pessoa exige a `service_role` key, que ignora RLS — não vale o risco só para tirar
+screenshot. O que ver ao logar como cada uma:
 
 1. **admin** (Diego/Tiago) — vê "Fila do AM", "Todos os squads" e "Administração"; consegue
    reiniciar assessment e excluir squad; em `/admin`, a área "Papéis do portal".
