@@ -4,7 +4,41 @@
 > load-bearing) e [`ONBOARDING.md`](ONBOARDING.md) (do zero ao deploy). Este arquivo é o
 > **estado operacional corrente** — histórico e pendências.
 
-## Rodada 2026-07-26 (2ª) — Papéis do MMA + home real — ⏸️ **VERIFICADO EM POSTGRES, NÃO APLICADO**
+## 🔴 ESTADO PARCIAL AGORA (2026-07-27) — banco novo, front antigo
+
+**A migration de papéis ESTÁ APLICADA em produção. O front NÃO foi deployado.**
+Enquanto isso não fechar, **ninguém consegue homologar pela interface**.
+
+Por quê: o front em produção decide "é AM?" lendo `squad_members.role = 'am'`. Esse valor
+não existe mais — os 4 AMs viraram `member` no squad e ganharam papel **global** em
+`portal_roles`. O banco permite (as policies usam `is_portal_am()`), mas a UI antiga esconde
+e barra: `Homologacao.tsx` faz `if (!role.isAM)` e a aba "Homologação" do `SquadSubNav` só
+aparece com `r.isAM`.
+
+O que **continua funcionando**: login, leitura, pré-sessão e sessão (dependem de `is_sm`, que
+não mudou) e `/admin` para os 3 SMs. Nada foi perdido nem corrompido — é capacidade
+temporariamente indisponível, não dado.
+
+**Correção = deployar o front** (o código novo lê `my_portal_roles()`):
+
+```bash
+cd argo
+vercel deploy --target=production --skip-domain --yes   # staging, não toca no domínio
+# smoke: / 200 · /dash/ 302 · /maturity/ 302 · /nero/ 307
+vercel promote <url-do-staging>
+```
+
+Rollback alternativo, se preferir voltar antes de deployar:
+`maturitymodel/supabase/rollback/20260726120000_portal_roles_DOWN.sql` + restaurar
+`squad_members` do backup. Mas isso reabre o vazamento de diretório — deployar é melhor.
+
+⚠️ Correção de uma afirmação minha anterior: eu disse que o front antigo seguiria funcionando
+porque `is_portal_admin()` não mudou de assinatura. Está certo sobre a função e **errado sobre
+o efeito** — os checks de AM do front antigo são por papel de squad, não por essa função.
+
+---
+
+## Rodada 2026-07-26 (2ª) — Papéis do MMA + home real — ✅ **BANCO APLICADO** / ⏸️ front pendente
 
 **Estado: pronto para aplicar.** A migration foi **executada de verdade** contra Postgres
 (PGlite/WASM, sem Docker/nuvem/credencial): 51 migrations aplicam em ordem, a migração de dados foi
