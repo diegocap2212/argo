@@ -215,6 +215,9 @@ drop policy if exists "Users can view all profiles" on public.profiles;
 -- ninguém). Uma linha esquecida ali dava poder de editar qualquer perfil. Passa a usar a
 -- fonte única de autoridade.
 drop policy if exists "Admins can update any profile" on public.profiles;
+-- O drop do PRÓPRIO nome é o que torna a migration reaplicável. Faltava, e a segunda
+-- aplicação morria em "policy already exists" — pego pelo teste de idempotência.
+drop policy if exists profiles_admin_update on public.profiles;
 create policy profiles_admin_update on public.profiles for update to authenticated
   using (is_portal_admin()) with check (is_portal_admin());
 

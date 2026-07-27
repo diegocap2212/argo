@@ -135,6 +135,21 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     `${amPolicies[0]?.n} policies`,
   );
 
+  // O cabeçalho da migration afirma que ela é idempotente. Afirmação em comentário não
+  // vale nada sem teste: `db push` pode reaplicar, e uma migration que só roda uma vez
+  // deixa o banco a meio caminho na segunda tentativa.
+  console.log("\nIdempotência (aplicar 2ª vez):");
+  let reapplied = true;
+  let reapplyError = "";
+  try {
+    await db.exec(migrationSql(PORTAL_ROLES_MIGRATION));
+  } catch (e) {
+    reapplied = false;
+    reapplyError = e instanceof Error ? e.message : String(e);
+    await db.exec("rollback").catch(() => undefined);
+  }
+  check("20260726120000_portal_roles.sql reaplica sem erro", reapplied, reapplyError);
+
   console.log(failed === 0 ? "\nSchema OK.\n" : `\n${failed} verificações falharam.\n`);
   process.exit(failed === 0 ? 0 : 1);
 }
