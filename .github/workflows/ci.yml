@@ -173,7 +173,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write # upload do SARIF para a aba Security
+      # `pulls/{n}/commits`: em `pull_request` o gitleaks varre só o range do PR e precisa
+      # enumerar os commits. Sem isto o job morre com 403 "Resource not accessible by
+      # integration" em TODO PR, mesmo sem achado — o próprio GitHub responde
+      # `x-accepted-github-permissions: pull_requests=read`. Só LEITURA: escrever no PR
+      # (comentário) fica desligado via GITLEAKS_ENABLE_COMMENTS.
+      pull-requests: read
+      # `security-events: write` saiu: sem GHAS não existe aba Security neste repo privado,
+      # então não havia upload nenhum acontecendo — era permissão concedida a troco de nada.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 — pinned por SHA (supply chain)
         with:
