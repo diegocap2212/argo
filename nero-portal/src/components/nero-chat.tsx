@@ -238,7 +238,10 @@ export function NeroChat({ scope }: { scope?: ChatScope } = {}) {
               </select>
             </label>
             <p className="text-xs text-muted-foreground">
-              Enter envia · Shift+Enter quebra linha · Só metadados/schemas — nunca PII real (
+              {/* "nunca PII real" prometia um controle que não existia. O servidor remove
+                  e-mail/CPF/telefone do CONTEXTO e pseudonimiza campos de pessoa, mas o que
+                  você digita vai como está. Ver /privacidade. */}
+              Enter envia · Shift+Enter quebra linha · Prefira metadados/schemas (
               {/* Link (não <a> cru): só o next/link aplica o basePath sozinho. */}
               <Link href="/privacidade" className="underline hover:text-foreground">
                 LGPD

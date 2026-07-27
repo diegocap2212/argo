@@ -15,12 +15,39 @@ export default async function PrivacidadePage() {
 
   return (
     <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-8">
+      {/*
+        Esta copy foi CORRIGIDA em 2026-07-27 (achado 7.9 do code review).
+        Ela dizia "nunca envie nomes" como se fosse uma garantia do produto, enquanto o
+        servidor mandava `Stakeholder.nome`, `Decision.quem` e `Risk.dono` para o modelo em
+        todo turno. Era educação vestida de controle: não havia detecção, mascaramento nem
+        bloqueio. Agora descreve o que de fato acontece — e o que continua sendo do usuário.
+      */}
       <div className="mb-6 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
-        <p className="font-medium text-destructive">Regra de ouro</p>
+        <p className="font-medium text-destructive">O que sai deste portal</p>
         <p className="mt-1 text-muted-foreground">
-          O Nero processa o que você escreve em um modelo externo.{" "}
-          <strong>Nunca envie dados reais de pessoas</strong> (CPF, nomes, e-mails, telefones,
-          endereços). Use só metadados, schemas e exemplos fictícios.
+          O Nero processa em um modelo externo (Claude, da Anthropic) tudo que você escreve no
+          chat, <strong>mais</strong> o estado do projeto que ele carrega como contexto a cada
+          turno.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-muted-foreground">
+          <li>
+            <strong>O que o servidor remove antes de enviar:</strong> e-mail, CPF, CNPJ e
+            telefone em qualquer texto do contexto.
+          </li>
+          <li>
+            <strong>O que o servidor pseudonimiza:</strong> os campos de pessoa do estado
+            (stakeholder, quem decidiu, dono do risco) viram <code>Pessoa-1234</code> — estável,
+            para o Nero ainda entender que é a mesma pessoa, sem o nome sair.
+          </li>
+          <li>
+            <strong>O que NÃO é filtrado:</strong> o texto que você digita. Ele vai como está —
+            é a sua pergunta. Um nome escrito no meio de uma frase também não é detectado no
+            estado; só os campos que o sistema sabe que são de pessoa.
+          </li>
+        </ul>
+        <p className="mt-2 text-muted-foreground">
+          Portanto: continue usando <strong>metadados, schemas e exemplos fictícios</strong>. A
+          diferença é que agora isso é uma boa prática sua, não a única barreira existente.
         </p>
       </div>
 

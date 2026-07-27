@@ -22,6 +22,7 @@ import { STATUS_VERDADE } from "@/lib/state/provenance";
 import { DAMA_AREAS } from "@/lib/state/dama";
 import { searchBiblioteca, readDocumentForNero } from "@/lib/biblioteca/search";
 import { SENSIBILIDADES } from "@/lib/catalog/sensibilidade";
+import { randomUUID } from "node:crypto";
 
 /**
  * Tools que o Nero pode usar para ESCREVER no estado vivo (01). Cada chamada
@@ -603,7 +604,47 @@ export async function runNeroTool(name: string, input: ToolInput): Promise<strin
         return `Tool desconhecida: ${name}`;
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "erro";
-    return `Falha ao executar ${name}: ${msg}`;
+    /**
+     * O retorno desta função vai para DOIS destinos: o `tool_result` que o modelo lê no turno
+     * seguinte, e o texto que a UI mostra ao usuário. Devolver `err.message` cru mandava para
+     * os dois o nome da tabela, a constraint violada, o provider e trechos de query do
+     * Postgres — e, no caso das tools que falam com o Jira, o corpo do erro da API.
+     *
+     * Mensagens de VALIDAÇÃO de domínio continuam passando: são a informação que o Nero
+     * precisa para corrigir a própria chamada ("área DAMA inválida", "ativo inexistente").
+     * O que fica no log é a falha de INFRA, que o modelo não tem como agir sobre.
+     */
+    const ref = randomUUID().slice(0, 8);
+    console.error(`[Nero] tool ${name} falhou (ref=${ref}):`, err);
+    const msg = err instanceof Error ? err.message : "";
+    const domínio = isDomainValidationError(msg);
+    return domínio
+      ? `Falha ao executar ${name}: ${msg}`
+      : `Falha ao executar ${name}: erro interno (ref ${ref}). Não repita a chamada; avise o operador.`;
   }
+}
+
+/**
+ * Distingue "você chamou errado" (útil para o modelo corrigir) de "o banco quebrou" (que o
+ * modelo não resolve e cujo detalhe não deve sair do servidor).
+ *
+ * Lista de PERMISSÃO, não de bloqueio: erro desconhecido é tratado como interno. Uma lista de
+ * bloqueio deixaria passar tudo que ainda não foi previsto — exatamente o oposto do desejado
+ * numa fronteira que alimenta o prompt.
+ */
+function isDomainValidationError(message: string): boolean {
+  if (!message) return false;
+  const marcadores = [
+    "área DAMA",
+    "nível de maturidade",
+    "não encontrad", // "ativo não encontrado", "fase não encontrada"
+    "inexistente",
+    "já foi desfeita",
+    "obrigatóri",
+    "inválid",
+    "mais recente", // guarda de undo fora de ordem
+    "já não é o que esta versão deixou", // concorrência otimista do undo
+    "não muda de ciclo/dimensão",
+  ];
+  return marcadores.some((m) => message.toLowerCase().includes(m.toLowerCase()));
 }
