@@ -164,7 +164,16 @@ async function jiraSearch(jql: string): Promise<any[]> {
 // Exclui só Epic no JQL; subtarefas são filtradas no cliente (isSubtask), pois
 // subTaskIssueTypes() falha em projetos company-managed (ex.: RM).
 function squadJql(cfg: { teamFieldValues: string[]; keyPrefixes: string[] }): string {
-  const q = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
+  // Escapa a BARRA INVERTIDA primeiro e só depois a aspa — inverter a ordem faz o segundo
+  // replace duplicar as escapas que o primeiro acabou de criar.
+  //
+  // Antes era só `.replace(/"/g, '\\"')`, que não escapava barra. Um valor terminando em `\`
+  // virava `"foo\"`: a barra escapa a aspa de fechamento, o literal não fecha, e o resto do
+  // valor é lido como JQL. Hoje os valores vêm do mapa SQUAD_JIRA hardcoded neste arquivo, o
+  // que torna isso inofensivo NA CONFIGURAÇÃO ATUAL — e é exatamente por isso que vale
+  // corrigir agora: no dia em que o mapa vier de `teams` (que SM edita), passa a ser injeção
+  // de JQL, e ninguém vai reler esta linha. Achado do CodeQL (js/incomplete-sanitization).
+  const q = (v: string) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
   const tfv = cfg.teamFieldValues.map(q).join(",");
   const clauses = [`labels in (${tfv})`, `cf[11795] in (${tfv})`, `cf[12386] in (${tfv})`];
   if (cfg.keyPrefixes.length) clauses.unshift(`project in (${cfg.keyPrefixes.map(q).join(",")})`);

@@ -193,6 +193,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_CONFIG: .gitleaks.toml
+          # Em `pull_request` a action tenta postar o achado como COMENTÁRIO no PR e morre com
+          # "Resource not accessible by integration": o `GITHUB_TOKEN` do job não tem
+          # `pull-requests: write`. Derrubava o job em TODO PR, mesmo sem achado nenhum.
+          # Desligar o comentário é melhor que conceder a permissão — o achado já aparece no log
+          # e já falha o job, e token de CI que escreve no PR é superfície a mais.
+          GITLEAKS_ENABLE_COMMENTS: false
 
       - run: corepack enable
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0 — pinned por SHA
