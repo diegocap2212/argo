@@ -1,0 +1,24 @@
+-- ============================================================================
+-- Remove is_any_am() — o vetor de escalação de privilégio documentado em 15/07.
+--
+-- Aquela migration removeu todos os USOS da função, mas não a função. Ela seguia
+-- em produção como `security definer`:
+--
+--   select exists (select 1 from squad_members where user_id = auth.uid() and role = 'am');
+--
+-- Ou seja: ser AM de UM squad devolvia true globalmente. Era exatamente o desenho que
+-- foi abandonado por dar poder cross-squad de forma derivada e silenciosa.
+--
+-- Hoje ela é inofensiva por dois motivos que se somam: nenhuma policy a chama (verificado
+-- contra produção, 0 referências) e `squad_members.role` só aceita ('sm','member') desde
+-- 20260726120000, então a condição nunca é satisfeita. Mas função morta com privilégio
+-- elevado é dívida que volta: bastaria alguém recriar o papel para reativá-la.
+--
+-- `is_am(uuid)` já saiu na migration de papéis pelo mesmo raciocínio.
+--
+-- NÃO removidas de propósito: is_admin(), can_access_team(), can_access_assessment(),
+-- is_approved(). Elas sustentam 4–8 policies das tabelas LEGADAS do Maturity Model antigo;
+-- dropá-las quebraria essas policies em troca de nada. Ficam como dívida registrada.
+-- ============================================================================
+
+drop function if exists public.is_any_am();

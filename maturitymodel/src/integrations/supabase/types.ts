@@ -767,6 +767,51 @@ export type Database = {
         }
         Relationships: []
       }
+      neo_access: {
+        Row: {
+          approved: boolean
+          created_at: string
+          created_by: string | null
+          email: string
+          note: string | null
+        }
+        Insert: {
+          approved?: boolean
+          created_at?: string
+          created_by?: string | null
+          email: string
+          note?: string | null
+        }
+        Update: {
+          approved?: boolean
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          note?: string | null
+        }
+        Relationships: []
+      }
+      portal_roles: {
+        Row: {
+          created_at: string
+          email: string
+          note: string | null
+          role: string
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          note?: string | null
+          role: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          note?: string | null
+          role?: string
+        }
+        Relationships: []
+      }
       pre_session_assessments: {
         Row: {
           created_by: string | null
@@ -801,36 +846,34 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "pre_session_assessments_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "v_axis_scores"
+            referencedColumns: ["cycle_id"]
+          },
+          {
+            foreignKeyName: "pre_session_assessments_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "v_cycle_scores"
+            referencedColumns: ["cycle_id"]
+          },
+          {
             foreignKeyName: "pre_session_assessments_dimension_id_fkey"
             columns: ["dimension_id"]
             isOneToOne: false
             referencedRelation: "dimensions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pre_session_assessments_dimension_id_fkey"
+            columns: ["dimension_id"]
+            isOneToOne: false
+            referencedRelation: "v_cycle_scores"
+            referencedColumns: ["dimension_id"]
+          },
         ]
-      }
-      // Papéis GLOBAIS do portal (migration 20260726120000). Chaveada por E-MAIL, não por
-      // user_id: permite conceder papel antes do primeiro login da pessoa.
-      portal_roles: {
-        Row: {
-          email: string
-          role: string
-          note: string | null
-          created_at: string
-        }
-        Insert: {
-          email: string
-          role: string
-          note?: string | null
-          created_at?: string
-        }
-        Update: {
-          email?: string
-          role?: string
-          note?: string | null
-          created_at?: string
-        }
-        Relationships: []
       }
       profiles: {
         Row: {
@@ -1298,6 +1341,15 @@ export type Database = {
         Returns: boolean
       }
       can_access_team: { Args: { _team_id: string }; Returns: boolean }
+      delete_squad: { Args: { p_team: string }; Returns: undefined }
+      find_profile_by_email: {
+        Args: { p_email: string }
+        Returns: {
+          email: string
+          full_name: string
+          id: string
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -1305,20 +1357,18 @@ export type Database = {
         }
         Returns: boolean
       }
-      find_profile_by_email: {
-        Args: { p_email: string }
-        Returns: { id: string; email: string | null; full_name: string | null }[]
-      }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_approved: { Args: { _user_id: string }; Returns: boolean }
       is_member: { Args: { t: string }; Returns: boolean }
+      is_neo_allowed: { Args: never; Returns: boolean }
+      is_neo_email_allowed: { Args: { check_email: string }; Returns: boolean }
       is_portal_admin: { Args: never; Returns: boolean }
-      // Papéis GLOBAIS (migration 20260726120000). `is_am(t)` saiu junto com o modelo
-      // de AM por squad — mantê-lo aqui permitiria chamar uma função que não existe mais.
       is_portal_am: { Args: never; Returns: boolean }
-      my_portal_roles: { Args: never; Returns: string[] }
       is_sm: { Args: { t: string }; Returns: boolean }
+      my_portal_roles: { Args: never; Returns: string[] }
       officialize_cycle: { Args: { p_cycle: string }; Returns: undefined }
+      restart_assessment: { Args: { p_team: string }; Returns: string }
+      shares_squad_with: { Args: { target: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user"
