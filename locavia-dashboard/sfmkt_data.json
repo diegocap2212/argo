@@ -1509,37 +1509,9 @@
         "suspiciouslyLongLead": false,
         "doneWithoutCycleData": false
       }
-    },
-    {
-      "key": "SFMKT-61",
-      "summary": "[Migração Marketing Cloud] Data Quality RD VENDAS e MARKETING",
-      "type": "História",
-      "status": "DESENV CONCLUIDO",
-      "statusCategory": "DONE",
-      "assignee": "Josivan Santos de Freitas",
-      "created": "2026-03-31T10:30:14.654-0300",
-      "resolved": "2026-04-13T14:05:19.013-0300",
-      "sprint": "SFMKT-SP Sprint 8",
-      "sprintId": 17094,
-      "sprintState": "closed",
-      "storyPoints": 8,
-      "priority": "Medium",
-      "labels": [],
-      "leadTimeDays": 13,
-      "cycleTimeDays": 13,
-      "timeInTodoDays": 0,
-      "dq": {
-        "missingResolutionDate": false,
-        "missingAssignee": false,
-        "noStatusTransitions": false,
-        "noSprint": false,
-        "staleTodo": false,
-        "suspiciouslyLongLead": false,
-        "doneWithoutCycleData": false
-      }
     }
   ],
-  "synced_at": "2026-07-29T12:08:47.456Z",
+  "synced_at": "2026-07-29T14:55:57.248Z",
   "project": "SFMKT",
-  "total_fetched": 54
+  "total_fetched": 53
 }
