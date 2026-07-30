@@ -49,16 +49,80 @@ valor**, senão o cron toma 401 em silêncio.
 
 ## Lista de retomada, em ordem
 
-| # | O quê | Por que está aberto | Quem fecha |
+> **Atualizada em 2026-07-30.** Itens 1, 2 e 5 fechados e verificados em produção — ver
+> "Execução de 2026-07-30" abaixo. O que sobrou é **uma janela coordenada** (itens 3+4) mais
+> decisões suas.
+
+| # | O quê | Estado | Quem fecha |
 |---|---|---|---|
-| 1 | **`supabase functions delete sync-anchors`** + deploy das 2 novas + Vault | apagar pasta local não faz undeploy — **o P0 segue no ar** | operador (Supabase) |
-| 2 | **Migrations do Prisma** (`20260727160000`, `20260727170000`) | exige acesso ao Neon; **antes** do deploy do Nero | operador (Neon) |
-| 3 | **Avisar o time**: a troca para subchaves HKDF **derruba toda sessão viva** | no deploy, todos caem no login juntos. Não é bug, é o custo de a chave ser a fronteira | você |
-| 4 | **Deploy do portal** `vercel deploy --target=production --skip-domain` → smoke → `vercel promote` | é o que faz `/api/data` parar de mentir sobre frescor e o HKDF valer | você |
-| 5 | `pnpm --filter nero-portal test:state` contra base **descartável** | **escreve no banco**; nunca rodou. Cobre reserva de orçamento, auditoria e undo | operador |
-| 6 | Definir `NERO_USER_MONTHLY_BUDGET_USD` | decisão de negócio (teto por pessoa; o global já existe) | você |
-| 7 | Rotações de segredo pendentes | ver [`SECRETS.md`](SECRETS.md) | você |
-| 8 | Backup/restore **testado**, RPO/RTO, retenção, preview isolado do Nero | exige console Neon/Vercel | operador |
+| 1 | P0 do `sync-anchors` | ✅ **FECHADO** — nome antigo republicado com a implementação autorizada; anon key agora toma 401. O `functions delete` fica para a janela do deploy | — |
+| 2 | Migrations do Prisma (`20260727160000`, `20260727170000`) | ✅ **APLICADAS** no Neon, com backup antes; os 13 CHECKs foram **validados** (não ficaram `NOT VALID`) | — |
+| 3 | **Avisar o time**: subchaves HKDF **derrubam toda sessão viva** | ⛔ **você** | você |
+| 4 | **Janela coordenada: portal + Nero JUNTOS** (ver aviso abaixo) + migration `20260727180000` + `functions delete sync-anchors` | ⛔ gated no item 3 | você |
+| 5 | `test:state` contra base descartável | ✅ **31/31** num branch Neon descartável, já removido | — |
+| 6 | Definir `NERO_USER_MONTHLY_BUDGET_USD` | ⛔ decisão de negócio | você |
+| 7 | Rotações de segredo pendentes | ⛔ ver [`SECRETS.md`](SECRETS.md) | você |
+| 8 | Backup/restore **testado**, RPO/RTO, retenção, preview isolado do Nero | ⛔ exige console Neon/Vercel | operador |
+
+### ⚠️ Portal e Nero têm de subir na MESMA janela (medido em 2026-07-30)
+
+A RETOMADA original tratava o deploy do portal e o do Nero como itens separados. **Não são.**
+`@neo/auth` deriva a chave por propósito com HKDF (`hmacKey(secret, purpose)`) e **não tem
+fallback para o formato antigo**. Consequência:
+
+- Deployar **só o portal** → ele emite token novo; o Nero em produção (código antigo) rejeita e
+  fica inacessível.
+- Deployar **só o Nero** → ele exige token novo; o portal em produção ainda emite o antigo, e
+  todo mundo é mandado de volta ao hub.
+
+Os dois projetos Vercel são separados, então isso é sequência manual: `deploy` nos dois,
+smoke nos dois, `promote` nos dois — de preferência em minutos, não horas.
+
+**Ordem dentro da janela:**
+1. avisar o time (todos refazem login OTP e redigitam a senha da Torre/do Nero);
+2. `vercel deploy --target=production --skip-domain` no portal **e** no `nero-portal`;
+3. smoke nos dois → `vercel promote` nos dois;
+4. aplicar `20260727180000_governanca_papeis` **logo em seguida** — ela dropa
+   `restart_assessment(uuid)` de 1 argumento, e o front antigo chama com 1; o novo já manda
+   `p_reason`. A janela em que o botão "Reiniciar assessment" fica quebrado é o intervalo entre
+   o promote e esta migration, então rode junto;
+5. `supabase functions delete sync-anchors` + apagar
+   `maturitymodel/supabase/functions/sync-anchors/` (o shim), depois de conferir no bundle de
+   produção que ele chama `sync-anchors-user`.
+
+## Execução de 2026-07-30 — o que foi fechado
+
+**P0 do `sync-anchors` — fechado sem esperar a janela.** O bloqueio era um acoplamento que só
+apareceu ao medir: o front **em produção** invoca o nome antigo (confirmado com
+`git show <commit-em-prod>:useAnchors.ts`), então `functions delete` quebraria o botão de sync.
+Como o P0 não é "a função existe" e sim "a função não autoriza", o nome antigo foi republicado
+com a implementação autorizada (shim de 1 linha importando o handler de `sync-anchors-user`).
+
+Verificado contra as functions no ar: anon key + `team_id` → **401**; body vazio → **400**
+(antes sincronizava TODOS os squads); cron sem secret → **401**; cron com secret errado →
+**401**; `anon` sem `execute` em `can_sync_anchors`.
+
+**Migrations do Maturity aplicadas** (as 4 que não dependem do front): `130000` (can_sync_anchors),
+`140000` (CHECKs de domínio — dado pré-checado, 0 fora), `150000` (fix do `homolog_update`),
+`130100` (cron via Vault). Falta só `180000_governanca_papeis`, que é front-coupled.
+
+**Cron reagendado** para `sync-anchors-cron-daily` com segredo no Vault. O risco de falha
+silenciosa foi fechado por prova, não por esperança: o digest que o Supabase expõe **é** sha256
+do valor, então dá para comparar function-secret × Vault × valor gerado sem invocar (invocar
+dispararia um sync real no Jira).
+
+**Nero: duplicatas reais encontradas.** A migration `170000` prevê falhar se houver duplicata nas
+chaves naturais, e havia — 4 em `Risk.codigo`. Mas o diagnóstico do review estava **errado sobre a
+causa**: não foi a corrida `findFirst → create`. Os pares têm descrição idêntica e foram criados
+com **413 segundos** de diferença — é um seed rodado duas vezes em 23/06. Deduplicado mantendo o
+mais antigo, com snapshot salvo e branch de backup no Neon; sem FK apontando para `Risk`, e os 8
+registros em `StateVersion` ficam como histórico (trilha append-only).
+
+**Os 13 CHECKs do Nero foram VALIDADOS**, não deixados `NOT VALID`: o pré-check mostrou 0 linhas
+fora do domínio, então valem para todas as linhas e não só para escrita nova.
+
+**`test:state`: 31/31** contra um branch Neon descartável (criado e removido). Cobre reserva de
+orçamento, auditoria com `actorEmail`, undo fora de ordem e undo com estado divergente.
 
 ## O que sabidamente NÃO tem garantia (não é esquecimento)
 
