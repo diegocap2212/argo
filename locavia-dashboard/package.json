@@ -24,7 +24,7 @@
     "@vercel/blob": "^2.4.1",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.1",
-    "lucide-react": "^0.577.0",
+    "lucide-react": "^1.27.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.14.2",
