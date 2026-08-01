@@ -14,7 +14,9 @@
     "test:rls": "tsx tests/rls/rls-matrix.ts",
     "test:migrations": "tsx tests/pg/apply-migrations.ts",
     "test:rls-local": "tsx tests/pg/rls-local.ts",
-    "test:anchors": "tsx tests/anchor-formulas.ts"
+    "test:anchors": "tsx tests/anchor-formulas.ts",
+    "test:perms": "tsx tests/perm-catalog.ts",
+    "test:rollback": "tsx tests/pg/rollback.ts"
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
