@@ -20,7 +20,7 @@
     "verify-all": "npm run test:performance && npm run audit:performance && npm test"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.110.2",
+    "@supabase/supabase-js": "^2.111.0",
     "@vercel/blob": "^2.4.1",
     "date-fns": "^4.4.0",
     "dotenv": "^17.4.1",
