@@ -68,12 +68,15 @@ function showGate(view: 'form' | 'sent') {
  * Elemento de cada porta no HTML. A permissão vem de `PORTAL_DOORS` (@neo/auth), a mesma lista
  * que a borda usa — o hub não mantém a sua. Se uma porta nova entrar lá sem elemento aqui, o
  * `?` do lookup a ignora em vez de quebrar a tela.
+ *
+ * `/admin` NÃO é um card: é um link discreto na barra de sessão. A mecânica de mostrar/esconder
+ * por permissão é a mesma — muda só onde o elemento mora. Ver o comentário no index.html.
  */
 const DOOR_ELEMENT_BY_PREFIX: Record<string, string> = {
   '/dash': 'door-performance',
   '/maturity': 'door-maturity',
   '/nero': 'door-nero',
-  '/admin': 'door-admin',
+  '/admin': 'link-admin',
 };
 
 /**
