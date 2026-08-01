@@ -7,6 +7,7 @@
     { "source": "/nero/:path*", "destination": "https://nero-portal.vercel.app/nero/:path*" },
     { "source": "/dash/:path*", "destination": "/dash/index.html" },
     { "source": "/maturity/:path*", "destination": "/maturity/index.html" },
+    { "source": "/admin/:path*", "destination": "/admin/index.html" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [

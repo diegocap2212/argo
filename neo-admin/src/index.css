@@ -1,0 +1,28 @@
+@import '@neo/design/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    background: var(--neo-paper);
+    color: var(--neo-ink);
+    font-family: var(--neo-font-sans);
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+  h1,
+  h2 {
+    font-family: var(--neo-font-display);
+    letter-spacing: -0.02em;
+  }
+  /* Foco visível em tudo: esta é a tela onde alguém concede poder — navegar por teclado
+     sem saber onde está é como assinar no escuro. */
+  :focus-visible {
+    outline: 2px solid var(--neo-brand-strong);
+    outline-offset: 2px;
+  }
+}

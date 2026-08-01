@@ -1,5 +1,5 @@
-// Build composto do Portal NEO: três apps Vite independentes servidos numa única origem.
-// hub em /, Performance Dash em /dash/, Maturity Model em /maturity/.
+// Build composto do Portal NEO: quatro apps Vite independentes servidos numa única origem.
+// hub em /, Performance Dash em /dash/, Maturity Model em /maturity/, Administração em /admin/.
 // O `--base` na CLI dispensa tocar nos vite.config de cada app — em dev cada um segue com base `/`.
 //
 // O Nero (/nero) NÃO entra aqui: é Next.js com runtime próprio, deployado como projeto
@@ -21,10 +21,16 @@ function run(command, cwd) {
 }
 
 // 1. Builds individuais (tsc de cada app é o gate de tipos; o dash usa project references).
+//
+// ⚠️ CADA LINHA TEM DE INCLUIR O TYPECHECK. `vite build` transpila sem checar tipos: um app
+// que só rode `vite build` aqui gera artefato APESAR de erro de tipo, e o gate vira decorativo
+// justo no caminho que a Vercel usa. O `maturitymodel` é a exceção conhecida — foi o achado
+// NEO-005 da revisão de 2026-07-31 — e está corrigido abaixo.
 for (const [app, build] of [
   ['neo-hub', 'npx tsc --noEmit && npx vite build'],
   ['locavia-dashboard', 'npx tsc -b && npx vite build --base=/dash/'],
-  ['maturitymodel', 'npx vite build --base=/maturity/'],
+  ['maturitymodel', 'npx tsc -b && npx vite build --base=/maturity/'],
+  ['neo-admin', 'npx tsc -b && npx vite build --base=/admin/'],
 ]) {
   run(build, path.join(root, app));
 }
@@ -35,5 +41,6 @@ if (existsSync(dist)) rmSync(dist, { recursive: true, force: true });
 cpSync(path.join(root, 'neo-hub', 'dist'), dist, { recursive: true });
 cpSync(path.join(root, 'locavia-dashboard', 'dist'), path.join(dist, 'dash'), { recursive: true });
 cpSync(path.join(root, 'maturitymodel', 'dist'), path.join(dist, 'maturity'), { recursive: true });
+cpSync(path.join(root, 'neo-admin', 'dist'), path.join(dist, 'admin'), { recursive: true });
 
-console.log('\n✔ Portal composto em dist/ (/, /dash, /maturity)');
+console.log('\n✔ Portal composto em dist/ (/, /dash, /maturity, /admin)');
