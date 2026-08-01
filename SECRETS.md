@@ -12,13 +12,28 @@ quem rotaciona. Valores vivem só nos projetos Vercel e nos consoles dos provedo
 | Variável | Para quê | Onde obter | Se faltar em produção |
 |---|---|---|---|
 | `SESSION_SECRET` | Raiz das SUBCHAVES de `neo_session`, `neo_tower`, `neo_nero` (HKDF por propósito) | gerar 32B; **tem de ser idêntico no `nero-portal`** | middleware 503 (fail-closed) |
-| `TOWER_PASSWORD` | Senha da Torre (`/dash/torre`) | gerada; rotacionada em 2026-07-15 | `/api/gate?scope=tower` 503 |
-| `NERO_PASSWORD` | Senha do Nero (`/nero`) | gerada em 2026-07-26 | `/api/gate?scope=nero` 503 |
+| `NEO_AUTHZ_SECRET` | `/api/authz` pergunta ao Postgres quem pode entrar no Nero. **Mesmo valor do segredo `neo_authz_secret` no Vault** | gerar 32B+ | `/api/authz` 503 → **Nero fecha** |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | Functions validam Bearer via RPC `is_neo_allowed` | console Supabase | `/api/data` 401 (fail-closed) |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Build dos apps (chave pública; a segurança real é RLS/JWT) | idem | hub não faz login |
 | `BLOB_READ_WRITE_TOKEN` | Dataset do Jira no Vercel Blob | Vercel → Storage | `/api/data` cai no fallback versionado |
 | `KV_REST_API_URL`, `KV_REST_API_TOKEN` | Upstash Redis: comentários + rate-limit do gate | Vercel → Storage | gate 503; comentários falham |
 | `ALLOWED_ORIGIN` | CORS de `/api/comments` | `https://neo-lm.vercel.app` | CORS bloqueia |
+
+### `TOWER_PASSWORD` e `NERO_PASSWORD` — a remover DEPOIS da janela do RBAC
+
+As duas saíram de uso em 2026-07-31: a Torre passou a depender de `dash.tower.view` e o Nero de
+`neo.nero.access`. **Nenhum código lê os cookies `neo_tower`/`neo_nero`** — `api/gate.ts` ainda
+os EMITE, mas não há mais quem os confira, então o endpoint está inerte.
+
+Elas continuam na tabela do projeto Vercel de propósito, e só até a janela fechar: apagá-las
+antes do promote quebraria o `/api/gate` do código ANTIGO, que é o que roda em produção até lá.
+Depois de promover as duas metades e confirmar que o Nero e a Torre abrem por permissão:
+
+```bash
+vercel env rm TOWER_PASSWORD production
+vercel env rm NERO_PASSWORD production
+# e então remover api/gate.ts, que passa a não ter chamador nenhum
+```
 
 `CRON_SECRET` e `GITHUB_DISPATCH_TOKEN`/`GITHUB_*` **não são mais usadas por nada.** Os
 endpoints que as consumiam (`/api/trigger-sync` e `/api/refresh`) foram removidos em
@@ -68,6 +83,21 @@ select vault.create_secret('<secret longa e aleatória>', 'anchor_sync_secret');
 dos dois segredos do Vault faltar, `net.http_post` recebe NULL e o cron não roda — fail-closed
 de propósito, em vez de cair para um default que funcione.
 
+### Vault: `neo_authz_secret` (lido por `neo_perms_for_email`)
+
+Mesma técnica, agora para o `/api/authz`. O Nero só tem o cookie do portal, não o JWT do
+Supabase, então quem pergunta "esta pessoa pode entrar?" é uma function sem usuário. Consultar
+com `service_role` seria repetir o P0 do `sync-anchors`; o que autoriza é este segredo.
+
+```sql
+select vault.create_secret('<segredo longo e aleatório, 32+ caracteres>', 'neo_authz_secret');
+```
+
+⚠️ **`neo_authz_secret` (Vault) e `NEO_AUTHZ_SECRET` (env do `neo-lm`) têm de ter o mesmo
+valor** — é a mesma pegadinha do par acima, e o modo de falha é o pior possível: a função
+devolve `{}` para todo mundo, `/api/authz` responde 403, e o **Nero fecha para a empresa
+inteira em silêncio**. Segredo com menos de 32 caracteres também é recusado pela função.
+
 ## Provedores
 
 | Serviço | O que hospeda | Console |
@@ -112,9 +142,17 @@ sozinho — dependeria de os QUATRO verificadores lembrarem de conferi-lo, e tr�
 cópias autocontidas (imposição do Edge Middleware da Vercel). Com subchave, a assinatura de
 outro propósito simplesmente não confere.
 
-O salt (`neo-portal/token-subkey/v1`) é público e vive em quatro arquivos que **têm de
-concordar**: `packages/neo-auth/src/index.ts`, `middleware.ts`, `api/session.ts`,
-`api/gate.ts`. `pnpm --filter @neo/auth test` falha se divergirem.
+O salt (`neo-portal/token-subkey/v1`) é público e vive em **cinco** arquivos que têm de
+concordar: `packages/neo-auth/src/index.ts`, `middleware.ts`, `api/session.ts`, `api/gate.ts` e
+`api/authz.ts` (a quarta cópia autocontida, de 31/07). `pnpm --filter @neo/auth test` falha se
+divergirem.
+
+Desde 31/07 o payload do `neo_session` carrega também `roles` e `perms` — as claims de
+navegação. **Ausente não é o mesmo que vazio**: cookie sem `perms` é anterior ao RBAC e a borda
+o manda ao hub para re-emissão (autocura); cookie com `perms: []` é de quem realmente não tem
+permissão. O `api/session.ts` tem um teto de tamanho (3.800 bytes): se o catálogo crescer a
+ponto de o cookie ser descartado pelo browser, ele emite a sessão SEM claims e grita no log —
+sessão sem claim ainda entra pelo hub, cookie descartado não entra em lugar nenhum.
 
 > ⚠️ **O deploy desta mudança derruba TODA sessão viva.** O formato do token mudou, então os
 > cookies existentes deixam de verificar: todos refazem login (OTP) e redigitam a senha da
@@ -126,8 +164,9 @@ concordar**: `packages/neo-auth/src/index.ts`, `middleware.ts`, `api/session.ts`
 
 | Segredo | Efeito da rotação |
 |---|---|
-| `SESSION_SECRET` | Atualizar nos **dois** projetos e redeployar ambos. Todos refazem login (OTP); Torre e Nero pedem senha de novo |
-| `TOWER_PASSWORD` / `NERO_PASSWORD` | Quem tinha acesso digita a nova. Sem outro efeito |
+| `SESSION_SECRET` | Atualizar nos **dois** projetos e redeployar ambos. Todos refazem login (OTP) |
+| `NEO_AUTHZ_SECRET` | Trocar no Vault (`neo_authz_secret`) **e** na env, na mesma janela. Enquanto divergirem, o Nero fecha para todos |
+| ~~`TOWER_PASSWORD` / `NERO_PASSWORD`~~ | Sem uso desde 31/07 — a remover depois da janela do RBAC (ver acima) |
 | `ANTHROPIC_API_KEY` | Chat e report param até atualizar |
 | Chaves Supabase / Blob / Upstash | Rotacionar no provedor e refletir na Vercel |
 

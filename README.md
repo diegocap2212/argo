@@ -9,36 +9,52 @@
 >
 > **Avaliando segurança?** [`SECURITY.md`](SECURITY.md) — cada garantia com **onde é imposta** e
 > **qual teste a prova**, mais a lista honesta do que ainda não tem garantia.
+>
+> **Vai mudar de nuvem ou de banco?** [`PORTABILIDADE.md`](PORTABILIDADE.md) — o que prende o
+> NEO ao Supabase e à Vercel, medido; e **o que quebra no dado ao migrar**. Leia antes de
+> exportar qualquer coisa: os vínculos de squad saem errados se exportados pelo caminho óbvio.
 
-Monorepo do **Portal NEO**: as quatro aplicações da parceria Venice/LM Mobilidade servidas numa **única origem** (`https://neo-lm.vercel.app`), com login único e acesso garantido só pelo hub.
+Monorepo do **Portal NEO**: as cinco aplicações da parceria Venice/LM Mobilidade servidas numa **única origem** (`https://neo-lm.vercel.app`), com login único e acesso garantido só pelo hub.
 
 | App | Pasta | Rota em produção | O que é |
 |---|---|---|---|
 | **NEO Hub** | [`neo-hub/`](neo-hub/) | `/` | Login (Magic Link/OTP) + portas para as aplicações. |
 | **Performance Dash** | [`locavia-dashboard/`](locavia-dashboard/) | `/dash/**` | Fluxo, entrega e previsibilidade por time/período (Jira + SFMKT). |
 | **Maturity Model (Portal MMA)** | [`maturitymodel/`](maturitymodel/) | `/maturity/**` | Ciclos de avaliação de maturidade por squad. |
-| **Nero** | [`nero-portal/`](nero-portal/) | `/nero/**` | Advisor de governança de dados (DAMA). **Acesso restrito**: exige a sessão NEO *e* senha própria. |
+| **Administração** | [`neo-admin/`](neo-admin/) | `/admin/**` | Pessoas, papéis e a matriz papel × função do NEO. |
+| **Nero** | [`nero-portal/`](nero-portal/) | `/nero/**` | Advisor de governança de dados (DAMA). **Acesso restrito** por permissão. |
 
 As functions serverless vivem em [`api/`](api/) na raiz (`/api/**`) e o [`middleware.ts`](middleware.ts) protege as rotas das apps na borda.
 
 ## Arquitetura (portal de origem única)
 
+**Uma origem pública, DOIS projetos Vercel.** `neo-lm` serve o hub, o Dash, o MMA, a
+Administração e as functions; `nero-portal` é um projeto separado, alcançado por rewrite.
+*(Este README afirmava "1 projeto Vercel" — contradizendo `ARCHITECTURE.md`, `ONBOARDING.md` e o
+próprio `vercel.json`. Era o achado NEO-006 da revisão de 2026-07-31, e a consequência prática
+era um operador deployar metade do portal.)*
+
 ```
-                    neo-lm.vercel.app (1 projeto Vercel)
-  usuário ──► /            NEO Hub — login OTP + portas (público)
+                    neo-lm.vercel.app (projeto Vercel: neo-lm)
+  usuário ──► /            NEO Hub — login OTP + portas (por permissão)
               /dash/**     Performance Dash ─┐  bloqueados na borda pelo
-              /maturity/** Portal MMA       ─┤  middleware.ts sem o cookie
-              /nero/**     Nero (rewrite p/ projeto Vercel separado) ─┘  + senha própria
-              /api/**      functions (Bearer + allowlist; fora do middleware)
+              /maturity/** Portal MMA       ─┤  middleware.ts: sessão +
+              /admin/**    Administração    ─┤  a PERMISSÃO da porta
+              /nero/**     Nero ── rewrite p/ projeto Vercel `nero-portal` ─┘
+              /api/**      functions (Bearer/segredo; fora do middleware)
                                              │
-  login no hub ──► POST /api/session ──► cookie neo_session (HMAC 12h, HttpOnly)
+  login no hub ──► POST /api/session ──► cookie neo_session (HMAC 12h, HttpOnly, com claims)
 ```
 
-- **Build composto** (`scripts/build-portal.mjs`): cada app é um Vite independente; o hub builda com base `/`, o Dash com `--base=/dash/`, o MMA com `--base=/maturity/`, e os três `dist/` são compostos em um só.
+- **Autorização é dado, não código:** `has_perm(permissao, squad)` no Postgres, com a matriz
+  papel × função em `neo_role_permissions` — editável em `/admin`. A borda faz **pré-filtro**
+  pelas claims do cookie; o ponto do dado decide de verdade (RLS, `/api/data`, `/api/authz`).
+  Ver `ARCHITECTURE.md`.
+- **Build composto** (`scripts/build-portal.mjs`): cada app é um Vite independente; o hub builda com base `/`, o Dash com `--base=/dash/`, o MMA com `--base=/maturity/`, a Administração com `--base=/admin/`, e os quatro `dist/` são compostos em um só. **Cada linha roda o typecheck antes do `vite build`** — `vite build` sozinho transpila sem checar tipos, e era assim que o MMA gerava artefato apesar de erro de tipo (achado NEO-005).
 - **Workspace pnpm** (`pnpm@11.17.0`, fixado em `packageManager`): um só lockfile (`pnpm-lock.yaml`) na raiz e `pnpm-workspace.yaml` declarando os apps e `packages/`. O `pnpm` NÃO está no PATH desta máquina — use `corepack pnpm`. *(Este README dizia até 2026-07-27 "sem npm workspaces de propósito … cada app roda `npm ci` com o próprio lockfile": era verdade antes da migração para pnpm e instruía procedimento que hoje não existe — não há nenhum `package-lock.json` no repo.)*
 - **Sessão única:** mesma origem ⇒ mesmo `localStorage` ⇒ a sessão Supabase criada no hub vale nas três apps. O antigo handoff por fragment (`#neo_at`) e o `postMessage` do iframe **não existem mais**.
 - **Acesso só pelo NEO (server-side):** após o login o hub chama `POST /api/session` (valida Bearer + RPC `is_neo_allowed`) que emite o cookie **`neo_session`** (HMAC-SHA256, 12h). O `middleware.ts` (Edge, Web Crypto) exige esse cookie para servir **qualquer coisa** sob `/dash` e `/maturity` — HTML e assets; sem ele, 302 para `/?next=<destino>` e o hub retoma o destino após o login. Logout (hub e apps) faz `DELETE /api/session`.
-- **Torre restrita:** o comparativo entre agilistas (`/dash/torre`) tem trava adicional por senha — `api/gate.ts` (`POST /api/gate?scope=tower`) valida identidade NEO + a env `TOWER_PASSWORD` server-side e emite o cookie `neo_tower` (12h). Nada de segredo no bundle. *(Era `api/tower.ts`; o arquivo foi unificado em `gate.ts`, que serve os escopos `tower` e `nero`.)*
+- **Torre e Nero por PERMISSÃO, não por senha (desde 31/07/2026):** o comparativo entre agilistas (`/dash/torre`) depende de `dash.tower.view`, resolvido server-side pelo `/api/data`; o Nero depende de `neo.nero.access`, perguntado pelo proxy dele ao `GET /api/authz` a cada navegação (memo de 60s ⇒ revogar corta o acesso em ≤1 min, sem novo login). `TOWER_PASSWORD` e `NERO_PASSWORD` saíram de uso; `api/gate.ts` ficou sem chamador e sai depois da janela de deploy. **Atenção:** o gate da Torre é de interface — o comparativo continua derivável do `/api/data` por quem quiser recalculá-lo. Ver `SECURITY.md` §6.
 - **Propósito criptográfico nos tokens:** `neo_session`, `neo_tower` e o token do Nero são assinados com **subchaves HKDF-SHA256 distintas** derivadas de `SESSION_SECRET` (salt `neo-portal/token-subkey/v1`, `info` = propósito). Um token de sessão não verifica no gate da Torre porque a chave é outra — não porque um campo foi conferido. As três cópias autocontidas (`middleware.ts`, `api/gate.ts`, `api/session.ts`) e o pacote `packages/neo-auth` derivam igual.
 - **Autorização:** allowlist NEO no Postgres — `is_neo_allowed()` libera `@lmmobilidade.com.br` + exceções em `neo_access` (migração em `maturitymodel/supabase/migrations/20260713120000_neo_access_allowlist.sql`). Papéis do MMA (`po/tl/sm/am/team`) via `squad_members` + RLS.
 - **Iframe de métricas (MMA → Dash):** same-origin (`/dash/time/:id?embed=1`) — compartilha a sessão pelo localStorage; `?embed=1` é só flag de layout. CSP `frame-ancestors 'self'`.
@@ -72,7 +88,19 @@ O portal composto valida-se com `corepack pnpm build:portal` (raiz). O teste fun
 
 ## Deploy
 
-**Um único projeto Vercel (`neo-lm`)**, deployado da **raiz** do monorepo via CLI (`vercel deploy`); Git desconectado. `vercel.json` define `buildCommand`, rewrites por prefixo e headers.
+**DOIS projetos Vercel**, e os dois precisam ser deployados:
+
+| Projeto | O que contém | Comando |
+|---|---|---|
+| `neo-lm` | hub, Dash, MMA, Administração, `api/**`, `middleware.ts` | `vercel deploy --target=production --skip-domain` na **raiz** |
+| `nero-portal` | o Nero (Next 16), servido por rewrite em `/nero` | idem, com `--local-config` (ver `ONBOARDING.md`) |
+
+Git desconectado nos dois: **deploy é sempre explícito por CLI**, `main` ≠ produção. `vercel.json`
+define `buildCommand`, rewrites por prefixo e headers.
+
+⚠️ **Os dois na MESMA janela.** `SESSION_SECRET` é compartilhado e o contrato de sessão é único:
+deployar só um lado deixa o outro rejeitando os cookies emitidos. Ordem: deploy nos dois → smoke
+nos dois → `promote` nos dois.
 
 Variáveis (Production e Preview):
 
@@ -80,7 +108,8 @@ Variáveis (Production e Preview):
 |---|---|
 | Build dos apps | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
 | Functions (auth) | `SUPABASE_URL`, `SUPABASE_ANON_KEY` |
-| Middleware/Torre | `SESSION_SECRET` (obrigatória em produção — **sem ela o gate FECHA**: 503), `TOWER_PASSWORD` |
+| Middleware/sessão | `SESSION_SECRET` (obrigatória em produção — **sem ela o gate FECHA**: 503) |
+| Autorização | `NEO_AUTHZ_SECRET` (mesmo valor do segredo `neo_authz_secret` no Vault — sem ele o **Nero fecha**) |
 | Dados | `BLOB_READ_WRITE_TOKEN`, `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
 | CORS | `ALLOWED_ORIGIN=https://neo-lm.vercel.app` |
 

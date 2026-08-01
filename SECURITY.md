@@ -149,3 +149,50 @@ Registrado aqui em vez de omitido:
   squad, e grava-se só `updatedAt` do servidor. É decisão documentada no código, mas quem confia no
   comentário como registro precisa saber.
 - **`script-src 'unsafe-inline'`** no portal — eliminar exige nonce/hash no build composto.
+
+### 6.1 O gate da Torre é de interface, não de dado (31/07/2026)
+
+A senha da Torre (`TOWER_PASSWORD`) foi substituída pela permissão `dash.tower.view`, decidida
+server-side no `/api/data`. **O ganho é identidade e offboarding, não confidencialidade.**
+
+O comparativo entre agilistas é calculado **no cliente** (`src/performance/smComparison.ts`) a
+partir dos mesmos `items` que qualquer sessão autenticada baixa do `/api/data`, cruzados com
+`src/config/sm-config.ts` — que é config estática do bundle, usada também pelo `App.tsx` e pelo
+`AppShell.tsx`. O plano do RBAC previa "omitir do payload os campos que alimentam o agregado";
+ao medir, **não existem tais campos**: o que alimenta o agregado é o campo de time (de que o
+Dash inteiro depende) mais um mapa que já está no JavaScript entregue ao browser.
+
+Portanto: quem tem sessão no NEO e sabe abrir o DevTools consegue reconstruir o comparativo,
+com ou sem a permissão. Isso já era verdade quando a trava era senha — a revisão de 31/07 é que
+o disse em voz alta.
+
+**O que fecharia de verdade:** `/api/data` devolver apenas os itens dos times que a pessoa pode
+ver. É mudança do contrato de dados do Dash e altera o que TODO mundo enxerga hoje.
+
+### DECISÃO TOMADA (Diego, 2026-07-31): fica aberto, e é intencional
+
+Perguntado explicitamente, com as duas opções na mesa, o dono do produto **optou por manter o
+Dash transparente**. Não é dívida, não é esquecimento e **não é para ser "consertado" por quem
+passar por aqui**: no Performance Dash, qualquer pessoa com acesso ao NEO vê todos os times, e o
+comparativo por agilista é derivável por qualquer uma delas.
+
+Consequências que decorrem disso e que precisam ser ditas em voz alta:
+
+- Dado de performance por time e por agilista **não é confidencial dentro da empresa**. Quem
+  publicar métrica ali deve assumir audiência = todo o NEO.
+- `dash.tower.view` é organização de interface (quem vê a tela pronta), não confidencialidade.
+- Se um dia entrar no Dash um dado que NÃO possa ser assim, esta decisão tem de ser revista
+  ANTES — não depois. O recorte por time no `/api/data` é o caminho, e o custo é mudar o que
+  todo mundo enxerga hoje.
+
+O recorte por squad **existe e funciona no MMA** (`mma.squad.read` é permissão de squad, então
+SM e member só enxergam os seus). A assimetria entre as duas ferramentas é deliberada.
+
+### 6.2 Fail-open em preview segue nos gates ANTIGOS
+
+`middleware.ts`, `api/gate.ts` e `isNeoAuthed` fecham só quando `VERCEL_ENV === 'production'`:
+em preview, env ausente **libera**. É o achado NEO-004 da revisão de 31/07 e continua aberto.
+
+O `api/authz.ts`, criado nessa mesma rodada, **não** repete o padrão: fecha em todo ambiente e
+tem uma saída de desenvolvimento (`NEO_AUTHZ_DEV_ALLOW=1`) que é impossível na Vercel, porque
+exige `process.env.VERCEL` ausente. Serve de modelo para quando os outros três forem corrigidos.
