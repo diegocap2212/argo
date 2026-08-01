@@ -10,6 +10,53 @@
 
 ---
 
+## 0. ANTES DE TUDO: talvez não seja preciso migrar nada
+
+O Supabase permite **transferir o projeto inteiro para outra organização**. Não é export/import:
+é o mesmo projeto mudando de dono. Schema, dados, `auth.users`, Vault, Edge Functions, chaves —
+tudo continua exatamente como está, **com as mesmas URLs e as mesmas credenciais**.
+
+Isso importa mais do que parece, porque **elimina o risco de dado descrito na §3**: como
+`auth.users` não é recriado, os UUIDs não mudam, e os vínculos de `squad_members` continuam
+válidos. Nenhum SM perde os squads. É a diferença entre uma tarde e um projeto.
+
+Dashboard → Project Settings → General → Transfer project.
+
+### Requisitos, verificados na documentação oficial (2026-07-31)
+
+| Condição | Situação aqui |
+|---|---|
+| Ser **owner da organização de origem** | conferir — hoje a org é `zwzadexqvdlxvratunom` |
+| Quem recebe precisa ser **ao menos membro da org de destino** | a Venice precisa ter uma org Supabase |
+| **Sem integração GitHub ativa** no projeto | conferir antes |
+| **Sem project-scoped roles** apontando para o projeto (Team/Enterprise) | conferir antes |
+| **Sem log drains** configurados | conferir antes |
+
+### O que a transferência NÃO faz
+
+- **Não muda de região.** O projeto está em `sa-east-1` e continua lá. Se o requisito for dado
+  em outra região, transferência não resolve — aí é migração de verdade (§1 em diante).
+- **Não leva a Vercel junto.** Os dois projetos (`neo-lm` e `nero-portal`) são handover
+  separado, pelo dashboard da Vercel.
+- **Não leva o banco do Nero.** Ele é Neon, não Supabase — transferência própria.
+- **Cuidado com o plano de destino:** ir de plano pago para Free pode causar **1–2 minutos de
+  indisponibilidade**, perder features e esbarrar no teto de 2 projetos do Free.
+- A cobrança é dividida pela data: a org de origem paga até a transferência, a de destino
+  depois.
+
+### Como escolher
+
+| Se o requisito é… | Caminho |
+|---|---|
+| "a Venice assume a operação" | **transferir o projeto** — horas, risco baixo |
+| "o dado tem de sair do Supabase / ir para a Azure" | migração de verdade — o resto deste documento |
+| "por ora transferir, depois avaliar" | transferir agora; este documento continua válido para depois |
+
+O resto deste documento trata do segundo caso. Se o primeiro resolver, **não leia adiante** —
+migrar por escolha estética é trocar um sistema que funciona por um projeto de meses.
+
+---
+
 ## A manchete
 
 **O schema é Postgres puro, e isso é prova, não opinião.**
@@ -152,7 +199,12 @@ o rastro de quem concedeu, quando, quem revogou e por quê, atravessam uma troca
 identidade **intactos**. Foi sorte de desenho — a chave é e-mail porque era preciso conceder
 acesso a quem ainda não tinha feito login.
 
-### ❌ QUEBRA: `squad_members`
+### ❌ QUEBRA: `squad_members` — **exceto se você transferir o projeto (§0)**
+
+> Numa **transferência de projeto** no Supabase nada disto acontece: `auth.users` não é
+> recriado, os UUIDs permanecem e os vínculos continuam válidos. O que segue vale para a
+> migração de verdade — banco novo, autenticação nova.
+
 
 É chaveada por `user_id` → `profiles.id` → `auth.users.id`. **Autenticação nova = UUIDs novos =
 todos os vínculos SM↔time e member↔time apontam para o nada.**
