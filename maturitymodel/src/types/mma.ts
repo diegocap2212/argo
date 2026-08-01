@@ -13,11 +13,25 @@ export type AxisKey = "processo" | "produto" | "time";
 export type Role = "sm" | "member";
 
 /**
- * Papel GLOBAL no portal (`portal_roles.role`), concedido por e-mail pelo admin.
- * `admin` faz tudo; `am` vê todos os squads e homologa, mas não reseta, não exclui
- * e não gerencia membros. É o que resolve "não vejo o que preciso homologar".
+ * Papel GLOBAL no portal (`portal_roles.role`), concedido por e-mail.
+ *
+ * Desde 2026-07-31 são TRÊS, e a divisão separa quem dá poder de quem usa poder:
+ *   · `admin_geral` — governa o acesso: concede/revoga papéis e edita a matriz de
+ *     papéis × funções. É o que o `admin` significava até 30/07 (o rótulo na tela já
+ *     dizia "Admin geral"), então quem era admin virou Admin Geral na migração.
+ *   · `admin`       — opera a estrutura: squads, membros, conteúdo do modelo e ações
+ *     destrutivas. NÃO concede papéis nem edita a matriz. Nasceu sem ninguém.
+ *   · `am`          — vê todos os squads, homologa, oficializa, devolve e arquiva.
+ *     Não mexe na estrutura da organização.
+ *
+ * ⚠️ Esta união é CONTRATO com o seed de `neo_roles` (escopo global + concedível), e
+ * `tests/journey-contract.ts` falha se divergir. Não é decoração: acrescentar papel no
+ * banco sem acrescentar aqui produz papel que a tela de administração nunca oferece.
+ *
+ * `todos`, `sm` e `member` NÃO entram aqui — `todos` é implícito (não se concede) e os
+ * outros dois são papel de squad, em `squad_members` (ver `Role`).
  */
-export type PortalRole = "admin" | "am";
+export type PortalRole = "admin_geral" | "admin" | "am";
 
 export type CycleStatus =
   | "pre_session"   // SM prepara a análise prévia (nota provisória + argumento) antes da sessão

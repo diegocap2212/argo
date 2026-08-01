@@ -10,6 +10,7 @@ packages:
   - 'locavia-dashboard'
   - 'maturitymodel'
   - 'nero-portal'
+  - 'neo-admin'
   - 'packages/*'
 
 # Scripts de instalação (postinstall) — o pnpm bloqueia todos por padrão e exige

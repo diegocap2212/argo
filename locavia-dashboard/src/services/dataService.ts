@@ -34,6 +34,15 @@ export interface DatasetProvenance {
   stale: boolean;
   count: number;
   hash: string | null;
+  /**
+   * A pessoa pode ver a Torre (`dash.tower.view`)? Decidido pelo SERVIDOR, com o JWT dela —
+   * substituiu a senha compartilhada, que não tinha identidade nem offboarding.
+   *
+   * ⚠️ É gate de INTERFACE. O comparativo continua derivável destes mesmos `items` cruzados com
+   * `sm-config.ts`, que está no bundle — ver o comentário longo em `api/data.ts`. Não trate
+   * este campo como se ele protegesse o dado.
+   */
+  tower: boolean;
 }
 
 let dataPromise: Promise<JiraItem[]> | null = null;
@@ -61,6 +70,9 @@ async function loadData(): Promise<JiraItem[]> {
     // `count` do servidor é conferido contra o que chegou: divergência = resposta truncada.
     count: typeof body?.count === 'number' ? body.count : items.length,
     hash: typeof body?.hash === 'string' ? body.hash : null,
+    // Ausente (endpoint antigo, durante a janela de deploy) = fechado. Um `!== false` aqui
+    // abriria a Torre para todo mundo enquanto as duas metades não estivessem no ar juntas.
+    tower: body?.tower === true,
   };
   if (provenance.count !== items.length) {
     console.error(

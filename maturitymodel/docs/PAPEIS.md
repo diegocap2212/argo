@@ -1,5 +1,29 @@
 # Papéis e jornada — Portal MMA
 
+> # ⚠️ SUPERADO PELO RBAC DO NEO (2026-07-31)
+>
+> **O modelo descrito abaixo continua verdadeiro na sua LÓGICA, mas não é mais onde ele mora.**
+> Em 31/07/2026 a permissão deixou de ser código e virou DADO, e o escopo deixou de ser o MMA e
+> passou a ser o NEO inteiro. O que mudou:
+>
+> | Antes (27/07, este documento) | Agora (31/07, RBAC do NEO) |
+> |---|---|
+> | `is_portal_admin()` / `is_portal_am()` / `is_sm()` em ~34 policies | **`has_perm('perm', team)`**, um predicado só |
+> | Papel `admin` acumulava governar acesso e operar a estrutura | **`admin_geral`** governa acesso · **`admin`** opera o resto |
+> | A matriz da §3 vivia em SQL e TypeScript | `neo_role_permissions` — **tabela editável** |
+> | Mudar quem pode o quê era migration + deploy | Tela **`/admin` → Papéis × Funções** |
+> | Torre e Nero por senha compartilhada | `dash.tower.view` e `neo.nero.access` |
+>
+> **A fonte de verdade agora é o catálogo semeado em
+> [`20260731120000_neo_rbac.sql`](../supabase/migrations/20260731120000_neo_rbac.sql)** — e, para
+> o estado corrente (que é editável), a própria tela de administração. Uma tabela de permissões
+> em markdown envelheceria no primeiro clique de quem administra, então a §3 abaixo passa a ser
+> **registro histórico do ponto de partida**, não a matriz vigente.
+>
+> Este arquivo permanece porque o RACIOCÍNIO nele — por que AM virou global, por que a escalada
+> SM→AM desapareceu, os três defeitos que só a execução achou — continua explicando decisões que
+> o RBAC herdou. Ver `ARCHITECTURE.md` para o modelo novo.
+
 > **STATUS: NO AR** (2026-07-27). Migration aplicada em produção com as 11 pós-condições verdes
 > (4 → 4 AMs globais, 2 → 2 admins, 41 → 41 vínculos) e front promovido
 > (`dpl_CbMZHZVXrUkcyWSopMXufw7KWgvj`). E2E do portal contra produção: 20/21.
@@ -54,6 +78,11 @@ repetir `is_portal_admin() or is_portal_am()` em ~15 policies. **Por isso ela n�
 exclusivas de admin**, que continuam checando `is_portal_admin()` direto.
 
 ## 3. Matriz de permissão
+
+> **HISTÓRICO.** Esta é a matriz de 27/07 — a mesma que virou a **semente** do RBAC em 31/07
+> (`neo_role_permissions_default`). Ela não é mais a verdade corrente: a matriz vigente é
+> editável na tela `/admin` → Papéis × Funções, e o botão "Restaurar padrão" volta exatamente
+> para o que esta tabela descreve. A coluna `admin` daqui virou `admin_geral`.
 
 | Ação | admin | AM | SM | member |
 |---|:---:|:---:|:---:|:---:|

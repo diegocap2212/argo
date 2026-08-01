@@ -8,6 +8,8 @@ e onde estão as **restrições de plataforma que já custaram tempo a alguém**
 - Variáveis e segredos: [`SECRETS.md`](SECRETS.md)
 - Estado operacional corrente: [`HANDOFF.md`](HANDOFF.md)
 - Papéis e jornada do MMA: [`maturitymodel/docs/PAPEIS.md`](maturitymodel/docs/PAPEIS.md)
+- **Sair do Supabase / da Vercel:** [`PORTABILIDADE.md`](PORTABILIDADE.md) — o acoplamento
+  medido peça por peça, e o que quebra ao migrar (leia antes de exportar qualquer dado)
 
 > **Sobre navegar esta documentação em graph (Obsidian).** Os `.md` deste repositório usam
 > **links markdown padrão** de propósito, para renderizarem no GitHub — onde a consultoria vai
@@ -22,23 +24,24 @@ e onde estão as **restrições de plataforma que já custaram tempo a alguém**
 
 ## O sistema em uma tela
 
-Uma origem (`neo-lm.vercel.app`), quatro apps, dois projetos Vercel.
+Uma origem (`neo-lm.vercel.app`), cinco apps, dois projetos Vercel.
 
 ```
                        neo-lm.vercel.app          projeto Vercel: neo-lm
   ┌──────────────────────────────────────────────────────────────────────┐
-  │  /              neo-hub          login OTP + as 3 portas (público)   │
+  │  /              neo-hub          login OTP + as portas (por permissão)│
   │  /dash/**       locavia-dashboard ─┐                                 │
   │  /maturity/**   maturitymodel     ─┤ barrados na BORDA por           │
-  │  /nero/**       ──── rewrite ─────┐│ middleware.ts sem neo_session   │
+  │  /admin/**      neo-admin         ─┤ middleware.ts: sessão + a        │
+  │  /nero/**       ──── rewrite ─────┐│ PERMISSÃO da porta               │
   │  /api/**        functions          │ (fora do matcher; validam       │
-  │                                    │  Bearer por conta)              │
+  │                                    │  Bearer/segredo por conta)      │
   └────────────────────────────────────┼─────────────────────────────────┘
                                        │  rewrite externa
                                        ▼
                           nero-portal.vercel.app     projeto Vercel: nero-portal
                           Next.js 16, basePath /nero
-                          exige neo_session E neo_nero
+                          exige neo_session + GET /api/authz (ao vivo)
 ```
 
 | App | Pasta | Rota | Stack | LOC |
@@ -46,11 +49,38 @@ Uma origem (`neo-lm.vercel.app`), quatro apps, dois projetos Vercel.
 | NEO Hub | `neo-hub/` | `/` | TS puro + Vite | 293 |
 | Performance Dash | `locavia-dashboard/` | `/dash/**` | React Router + recharts | 4.145 |
 | Maturity Model | `maturitymodel/` | `/maturity/**` | React Router + TanStack Query | 9.776 |
+| Administração | `neo-admin/` | `/admin/**` | React 19 + TanStack Query | ~1.500 |
 | Nero | `nero-portal/` | `/nero/**` | Next 16 + Prisma + Claude | 7.859 |
-| — | `packages/neo-auth` | — | contrato de sessão | ~120 |
+| — | `packages/neo-auth` | — | contrato de sessão + mapa de portas | ~200 |
 | — | `packages/neo-design` | — | tokens de design | — |
 
-## Por que quatro apps e não um
+### Autorização: permissão é DADO (RBAC do NEO, 2026-07-31)
+
+Um predicado só decide tudo: **`has_perm(permissao, squad)`** no Postgres. A matriz papel ×
+função vive em `neo_role_permissions` — tabela, não código — e é editável na tela `/admin`.
+
+```
+PAPEL GLOBAL (portal_roles, por e-mail)      PAPEL DE SQUAD (squad_members)
+  admin_geral  governa acesso                  sm      facilita um squad
+  admin        opera a estrutura                member  participa de um squad
+  am           vê todos, homologa
+  todos        IMPLÍCITO: toda pessoa com acesso ao NEO
+```
+
+**A borda decide navegação; o ponto do dado decide dado.** Nunca a mesma camada:
+
+| Superfície | Pré-filtro (claims do cookie) | Autoritativo (ao vivo) |
+|---|---|---|
+| `/dash/**` | `neo.dash.access` | `/api/data` chama `has_perm` |
+| `/maturity/**` | `neo.mma.access` | RLS com o JWT |
+| `/admin/**` | `neo.admin.access` | RLS com o JWT |
+| `/nero/**` | `neo.nero.access` | `proxy.ts` → `/api/authz` (memo 60s) |
+
+As claims do cookie **envelhecem** — só fazem a porta aparecer. Recusa na borda não é "acesso
+negado": é um 302 para o hub, que re-emite o cookie com claims frescas e só então dá a palavra
+final (com trava de repetição, para não virar ping-pong).
+
+## Por que cinco apps e não um
 
 Porque fundir custaria portar ~14 mil LOC de duas ferramentas em uso diário, recém
 estabilizadas (recalibração de saúde, redesenho de papéis, matriz RLS, rodadas de QA e
@@ -63,7 +93,19 @@ unificado são as **costuras**: uma instalação (pnpm workspaces), um contrato 
 diferentes de propósito.
 
 **Quando reconsiderar:** se o Dash precisar de acesso a dados server-side (por exemplo mover
-o comparativo da Torre para o servidor), ou se chegar uma quinta ferramenta.
+o comparativo da Torre para o servidor), ou se chegar uma quinta **ferramenta**.
+
+> ### A quinta caixa chegou — e a resposta ao próprio gatilho acima
+>
+> `neo-admin` é o quinto app, e o parágrafo anterior mandava reavaliar a divisão quando isso
+> acontecesse. A reavaliação, escrita na hora: **o `neo-admin` não é uma quinta ferramenta de
+> produto.** É a superfície de GOVERNANÇA das outras quatro — e é exatamente por isso que não
+> pode morar dentro de nenhuma delas. Enquanto a administração vivia em `/maturity/admin`,
+> "quem administra o MMA" e "quem administra o NEO" eram a mesma pessoa por acidente de layout.
+>
+> O gatilho, portanto, segue de pé para a próxima ferramenta de PRODUTO. E ele fica mais afiado:
+> hoje o portal tem um app de ~1.500 LOC que existe só para editar duas tabelas. Se um dia
+> houver um segundo app dessa natureza, a pergunta a fazer é se não deviam ser um só.
 
 ---
 

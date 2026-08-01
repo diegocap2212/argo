@@ -17,9 +17,13 @@ O Nero hoje já funciona: catálogo vivo, radar de maturidade DAMA, report quinz
 tudo com trilha de auditoria e undo. O que muda ao levar para o domínio do LM não é a
 capacidade — é **quem responde pelo dado, pela identidade e pela conta**.
 
+> **Atualizado em 2026-07-31.** A linha de identidade mudou desde a redação original: a senha
+> compartilhada do Nero **foi eliminada** e substituída por RBAC individual, em produção. O que
+> era o item nº 1 da incorporação (§6) está fechado pela metade — falta o SSO, não o RBAC.
+
 | Dimensão | Hoje (operado pela Blite) | Enterprise (ativo do LM) |
 |---|---|---|
-| Identidade | Sessão do portal NEO + senha compartilhada | SSO corporativo (Entra ID/OIDC) + RBAC por papel de governança |
+| Identidade | Portal NEO (OTP) + **RBAC individual por permissão** ✅ | SSO corporativo (Entra ID/OIDC) sobre o RBAC que já existe |
 | Dado | Postgres gerenciado (Neon), fora do perímetro do LM | Postgres no perímetro do LM, com retenção e classificação próprias |
 | Modelo | Claude API direto | Claude API, Bedrock ou Azure — decisão de compliance, não técnica |
 | Custo | ~US$ 0,086/turno, teto de US$ 20/mês | Modelo por porte, com FinOps e teto por área |
@@ -137,21 +141,47 @@ O que precisa endurecer para escala:
 
 ## 6. Identidade e acesso
 
-**Hoje:** sessão do portal NEO (OTP + allowlist) + senha compartilhada do Nero. Adequado para
-uma equipe pequena de governança; **não** adequado para uma empresa de grande porte.
+> ### ✅ ENTREGUE EM 2026-07-31 — metade desta seção saiu do "alvo"
+>
+> Esta seção dizia que trocar a senha compartilhada por RBAC era **o item de maior redução de
+> risco por unidade de esforço**. Foi feito, e está em produção.
+>
+> **O que mudou:** o Nero deixou de ter senha. Cada navegação pergunta ao portal
+> `GET /api/authz?perm=neo.nero.access`, que resolve a permissão da pessoa no banco. A
+> autorização virou **dado** — uma matriz papel × função editável por tela, com trilha de
+> auditoria — em vez de estar espalhada em código.
+>
+> | | Antes de 31/07 | Agora |
+> |---|---|---|
+> | Quem entra no Nero | quem sabe a senha | quem tem `neo.nero.access` |
+> | Offboarding | trocar a senha de **todo mundo** | revogar o papel de **uma** pessoa |
+> | Tempo até valer | próxima troca de senha | **≤ 60s**, sem novo login |
+> | Quem fez o quê | senha não tem identidade | e-mail em toda mutação, com trilha |
+> | Mudar quem pode o quê | migration + deploy | tela `/admin`, sem engenharia |
+>
+> **O que isto NÃO resolve, e continua sendo alvo:** a autenticação segue sendo OTP por e-mail
+> do portal NEO, não SSO corporativo. O RBAC deu *autorização* individual; falta a *identidade*
+> vir do IdP do LM. As duas coisas são independentes — e agora a que falta é só a primeira
+> coluna da tabela abaixo.
+
+**Hoje:** sessão do portal NEO (OTP + allowlist) + **RBAC individual por permissão**. Adequado
+para a equipe de governança atual; a lacuna para uma empresa de grande porte é a autenticação.
 
 **Alvo:**
 
-| Camada | Alvo |
-|---|---|
-| Autenticação | **Entra ID / OIDC** — sem senha compartilhada, com MFA da política do LM |
-| Autorização | **RBAC por papel de governança**: Data Owner, Steward, Custodian, leitor. Já existe precedente no portal (papéis do MMA em RLS) |
-| Auditoria | Quem leu o quê, não só quem escreveu. Hoje a escrita é auditada; a leitura de catálogo sensível também deveria ser |
-| Retenção | Política de retenção de conversas e artefatos, alinhada à do LM |
-| Offboarding | Saída no IdP revoga acesso em minutos — hoje depende de trocar senha compartilhada |
+| Camada | Alvo | Estado |
+|---|---|---|
+| Autenticação | **Entra ID / OIDC** — com MFA da política do LM | ⛔ falta |
+| Autorização | RBAC por papel de governança | ✅ **feito** — modelo genérico (`has_perm`), com papéis do NEO. Criar papéis DAMA (Data Owner, Steward, Custodian) é acrescentar linhas na matriz, sem código |
+| Auditoria de escrita | quem escreveu o quê | ✅ **feito** — `StateVersion` no Nero, `destructive_audit` e trilha da matriz no portal |
+| Auditoria de leitura | quem **leu** catálogo sensível | ⛔ falta |
+| Retenção | política de conversas e artefatos alinhada à do LM | ⛔ falta |
+| Offboarding | saída revoga acesso em minutos | ✅ **feito** (≤60s) — melhora ainda mais com SSO, que corta na origem |
 
-A troca de senha compartilhada por SSO é a **primeira** coisa a fazer na incorporação: é o item
-que mais reduz risco por unidade de esforço.
+Com o RBAC entregue, **a primeira coisa a fazer na incorporação passa a ser o SSO**. O ganho
+agora é menor do que era em 26/07 — o risco grande (acesso sem identidade, sem offboarding) já
+foi fechado; o que o SSO acrescenta é MFA, ciclo de vida da conta no IdP corporativo e um lugar
+só para desligar alguém de tudo.
 
 ---
 
@@ -183,12 +213,30 @@ por token igual — motivo pelo qual o teto de orçamento existe.
 
 ## 8. Hospedagem — três cenários
 
+> 📎 **O detalhe técnico de (b) e (c) está em [`PORTABILIDADE.md`](../../PORTABILIDADE.md)**
+> (raiz do monorepo, escrito em 2026-07-31). Ele mede peça por peça o que prende o sistema ao
+> Supabase e à Vercel, com o equivalente na Azure e o custo de cada um — em vez de cenários.
+>
+> Os três achados que mudam esta conversa:
+>
+> 1. **O schema é Postgres puro**, e isso é prova, não opinião: as 60 migrations aplicam num
+>    Postgres limpo (PGlite/WASM) no CI. A superfície Supabase inteira cabe num shim de ~90
+>    linhas — `auth.uid()`, `auth.jwt()`, `auth.users`, três papéis e o Vault.
+> 2. **A maior dependência não é a autenticação, é o PostgREST.** O browser fala direto com o
+>    banco e a RLS é o enforcement. Migrar significa subir o PostgREST (open source) **ou**
+>    escrever uma API e reescrever a camada de dados — e essa é uma decisão de arquitetura, não
+>    de hospedagem.
+> 3. **Um risco de dado concreto:** `squad_members` é chaveada por `user_id` → `auth.users.id`.
+>    Autenticação nova = UUIDs novos = vínculos quebrados, **sem erro** — a lista só vem vazia.
+>    O SQL de exportação por e-mail está lá, já executado contra o schema real.
+
 | | (a) Gerenciado (hoje) | (b) Cloud do LM | (c) VPC isolada |
 |---|---|---|---|
 | Compute | Vercel | Container (ECS/Container Apps/GKE) | idem, sem egress público |
 | Banco | Neon | Postgres gerenciado do LM | Postgres no VPC |
+| Camada de dados | PostgREST (Supabase) | PostgREST self-hosted **ou** API própria | idem |
 | LLM | Claude API | Bedrock ou Azure (rede do LM) | idem, via endpoint privado |
-| Identidade | portal NEO | Entra ID | Entra ID |
+| Identidade | portal NEO + RBAC | Entra ID **sobre o RBAC existente** | idem |
 | Quem opera | Blite | LM | LM |
 | Esforço | — | médio | alto |
 
@@ -271,12 +319,19 @@ não é terceirizável, porque é o dono do conteúdo.
 
 ## 11. Plano de incorporação
 
-### Fase 1 — Identidade e perímetro (4–6 semanas)
+### Fase 1 — Identidade e perímetro (4–6 semanas → **2–4**, ver abaixo)
 
-- SSO Entra ID substituindo a senha compartilhada
-- RBAC por papel de governança
+- ~~RBAC por papel de governança~~ ✅ **FEITO em 2026-07-31** (§6). Papéis DAMA (Data Owner,
+  Steward, Custodian) são linhas novas na matriz, pela tela — não é trabalho de engenharia.
+- ~~Substituir a senha compartilhada~~ ✅ **FEITO** — o Nero não tem mais senha.
+- SSO Entra ID **sobre o RBAC que já existe** (a autorização não precisa mudar; muda de onde vem
+  a identidade)
 - Migração do banco para o perímetro do LM, com política de retenção
 - **Entregável:** Nero rodando com identidade do LM, dado no perímetro do LM
+
+> A fase encolheu porque metade dela foi entregue. O prazo original supunha desenhar e construir
+> o modelo de autorização; hoje ele existe, está em produção e tem 145 asserções de teste
+> cobrindo quem pode o quê.
 - **Fica com a Blite:** condução técnica
 
 ### Fase 2 — Infraestrutura e operação (4–6 semanas)

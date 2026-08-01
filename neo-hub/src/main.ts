@@ -1,5 +1,8 @@
 import './tokens.css';
 import type { Session } from '@supabase/supabase-js';
+// Subpath `/doors`: o índice de @neo/auth toca `process.env` e exigiria @types/node numa app
+// de browser — o que faria `process.env` compilar calado no cliente. Ver src/doors.ts.
+import { PORTAL_DOORS, doorForPath } from '@neo/auth/doors';
 import { supabase } from './supabase';
 import { safeNextPath } from './next';
 
@@ -8,6 +11,7 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const loading = $('auth-loading');
 const gate = $('gate');
 const doors = $('doors');
+const doorMessage = $('door-message');
 const sessionBar = $('session-bar');
 const sessionUser = $('session-user');
 const btnLogout = $<HTMLButtonElement>('btn-logout');
@@ -60,12 +64,54 @@ function showGate(view: 'form' | 'sent') {
   sentView.hidden = view !== 'sent';
 }
 
-function showDoors(session: Session) {
+/**
+ * Elemento de cada porta no HTML. A permissão vem de `PORTAL_DOORS` (@neo/auth), a mesma lista
+ * que a borda usa — o hub não mantém a sua. Se uma porta nova entrar lá sem elemento aqui, o
+ * `?` do lookup a ignora em vez de quebrar a tela.
+ */
+const DOOR_ELEMENT_BY_PREFIX: Record<string, string> = {
+  '/dash': 'door-performance',
+  '/maturity': 'door-maturity',
+  '/nero': 'door-nero',
+  '/admin': 'door-admin',
+};
+
+/**
+ * Permissões GLOBAIS da pessoa, lidas AO VIVO do banco (não do cookie).
+ *
+ * O hub é o lugar onde a resposta precisa ser fresca: é ele quem re-emite o cookie e quem dá a
+ * palavra final quando a borda recusa. Ler a claim aqui só repetiria o que a borda já leu, com
+ * a mesma idade — e o ping-pong nunca terminaria.
+ *
+ * Falha devolve `null`, que o chamador trata como "não sei": mostra todas as portas em vez de
+ * nenhuma. Uma porta que não deveria aparecer só custa um 302 de volta; esconder todas por
+ * causa de um RPC intermitente faz o portal parecer vazio para quem tem acesso.
+ */
+async function fetchPerms(): Promise<string[] | null> {
+  try {
+    const { data, error } = await supabase.rpc('my_neo_claims');
+    if (error) return null;
+    const row = Array.isArray(data) ? data[0] : data;
+    const perms = (row as { perms?: unknown } | null)?.perms;
+    return Array.isArray(perms) && perms.every((p) => typeof p === 'string') ? (perms as string[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function showDoors(session: Session, perms: string[] | null) {
   loading.hidden = true;
   gate.hidden = true;
   doors.hidden = false;
   sessionBar.hidden = false;
   sessionUser.textContent = `Conectado como ${firstName(session)}`;
+
+  for (const door of PORTAL_DOORS) {
+    const el = document.getElementById(DOOR_ELEMENT_BY_PREFIX[door.prefix] ?? '');
+    if (!el) continue;
+    // `perms === null` = não consegui perguntar → mostra tudo (ver fetchPerms).
+    el.hidden = perms !== null && !perms.includes(door.perm);
+  }
 }
 
 function showError(message: string) {
@@ -115,30 +161,122 @@ function pendingNext(): string | null {
   return safeNextPath(next);
 }
 
+/** A borda marca `negado=<perm>` quando a recusa foi por PERMISSÃO, não por falta de sessão. */
+function deniedPerm(): string | null {
+  return new URLSearchParams(window.location.search).get('negado');
+}
+
+/**
+ * TRAVA DO PING-PONG.
+ *
+ * A autocura manda a pessoa de volta ao destino depois de re-emitir o cookie. Isso resolve o
+ * caso normal (claim velha) e cria um caso patológico: se o cookie não CONSEGUE carregar a
+ * claim — o teto de tamanho de `api/session.ts` derrubando as permissões, por exemplo —, a
+ * borda recusa de novo, o hub re-emite de novo, e a pessoa fica presa num redirecionamento
+ * infinito, que é pior do que uma negativa clara.
+ *
+ * A janela de 30s é o que separa os dois casos: um ping-pong acontece em segundos; voltar ao
+ * mesmo destino horas depois é uso normal e não pode ficar bloqueado.
+ */
+const ATTEMPT_KEY = 'neo:next-attempt';
+const ATTEMPT_WINDOW_MS = 30_000;
+
+function attemptedRecently(next: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(ATTEMPT_KEY);
+    if (!raw) return false;
+    const { path, at } = JSON.parse(raw) as { path?: string; at?: number };
+    return path === next && typeof at === 'number' && Date.now() - at < ATTEMPT_WINDOW_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markAttempt(next: string) {
+  try {
+    sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify({ path: next, at: Date.now() }));
+  } catch {
+    // sessionStorage bloqueado (modo restrito): sem trava, mas o caminho normal segue.
+  }
+}
+
+function clearAttempt() {
+  try {
+    sessionStorage.removeItem(ATTEMPT_KEY);
+  } catch {
+    /* idem */
+  }
+}
+
+/** Mensagem na tela de portas quando um destino não pôde ser aberto. */
+function showDoorMessage(message: string) {
+  doorMessage.textContent = message;
+  doorMessage.hidden = false;
+}
+
 // Decide o que mostrar a partir da sessão: autorizado → doors; logado-mas-não-autorizado → erro; sem sessão → form.
 async function reconcile(session: Session | null) {
   if (!session) {
     showGate('form');
     return;
   }
-  if (await isAllowed(session)) {
-    const sessionReady = await establishNeoSession(session);
-    if (!sessionReady) {
-      showGate('form');
-      showError('Não foi possível estabelecer a sessão segura do NEO. Atualize a página e tente novamente.');
-      return;
-    }
-    const next = pendingNext();
-    if (next) {
-      window.location.replace(next);
-      return;
-    }
-    showDoors(session);
-  } else {
+  if (!(await isAllowed(session))) {
     await supabase.auth.signOut();
     showGate('form');
     showError('Este e-mail não tem acesso ao NEO. Use sua conta @lmmobilidade.com.br ou fale com o administrador.');
+    return;
   }
+
+  // Re-emite o cookie com as claims FRESCAS. É este passo que cura a claim velha — a pessoa
+  // que acabou de ganhar um papel entra sem precisar refazer login.
+  const sessionReady = await establishNeoSession(session);
+  if (!sessionReady) {
+    showGate('form');
+    showError('Não foi possível estabelecer a sessão segura do NEO. Atualize a página e tente novamente.');
+    return;
+  }
+
+  const perms = await fetchPerms();
+  const next = pendingNext();
+  if (!next) {
+    clearAttempt();
+    showDoors(session, perms);
+    return;
+  }
+
+  const door = doorForPath(new URL(next, window.location.origin).pathname);
+  // Sem dado fresco (RPC fora do ar), acredita no veredito da borda: insistir num destino que
+  // ela acabou de recusar por permissão é garantir o ping-pong.
+  const podeEntrar = !door
+    ? true
+    : perms !== null
+      ? perms.includes(door.perm)
+      : deniedPerm() === null;
+
+  if (!podeEntrar) {
+    clearAttempt();
+    showDoors(session, perms);
+    showDoorMessage(
+      `Você não tem acesso a ${door?.label ?? 'essa área'}. Se precisar, peça a um administrador do NEO.`,
+    );
+    return;
+  }
+
+  if (attemptedRecently(next)) {
+    // Tem a permissão e MESMO ASSIM voltou. Não é caso de permissão — é o cookie não estar
+    // carregando a claim. A pessoa não tem como resolver, então a mensagem diz isso, e o
+    // diagnóstico está no log de `/api/session`.
+    clearAttempt();
+    showDoors(session, perms);
+    showDoorMessage(
+      `Não foi possível abrir ${door?.label ?? 'essa área'} mesmo com a permissão concedida. ` +
+        'Avise o time do NEO — o acesso está bloqueado por um problema técnico, não por permissão.',
+    );
+    return;
+  }
+
+  markAttempt(next);
+  window.location.replace(next);
 }
 
 async function init() {

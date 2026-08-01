@@ -4,7 +4,7 @@ import { SM_CONFIGS } from '../config/sm-config';
 import { usePerformancePortfolio } from '../hooks/usePerformancePortfolio';
 import { computeSMComparison } from '../performance/smComparison';
 import { TowerComparison } from '../components/TowerComparison';
-import { authHeaders } from '../services/authService';
+import { fetchData, getDatasetProvenance } from '../services/dataService';
 import '../styles/redesign.css';
 
 const PERIODS = [4, 8, 12, 16, 24];
@@ -13,41 +13,37 @@ type GateState = 'checking' | 'locked' | 'open';
 
 /**
  * Visão restrita "Torre": comparativo entre agilistas (SM × SM e time × time).
- * A senha é validada server-side em /api/gate?scope=tower (env TOWER_PASSWORD) e vira o
- * cookie HttpOnly neo_tower de 12h — nada de segredo no bundle. Sem a env configurada
- * (dev), abre direto. O mesmo endpoint atende ?scope=nero (a porta 03 do portal).
+ *
+ * A SENHA SAIU em 31/07/2026. Quem decide agora é a permissão `dash.tower.view`, resolvida
+ * server-side pelo `/api/data` com o JWT da pessoa e devolvida no campo `tower`. Ganho concreto
+ * sobre a senha compartilhada: existe QUEM, revogar uma pessoa não obriga a trocar a senha de
+ * todas, e sair da empresa tira o acesso.
+ *
+ * ⚠️ ISTO NÃO FECHA O VAZAMENTO, e fingir que fecha seria pior do que não mexer. O comparativo
+ * é calculado AQUI, no cliente, a partir dos mesmos `items` que qualquer sessão baixa, cruzados
+ * com `sm-config.ts` — que está no bundle e é usado também pelo App e pelo AppShell. Não há
+ * campo a omitir do payload. Fechar de verdade exige `/api/data` devolver só os times que a
+ * pessoa pode ver, o que muda o que o Dash mostra para todo mundo. Ver SECURITY.md §6.
  */
-const GATE_URL = '/api/gate?scope=tower';
 export default function TowerView() {
   const [gate, setGate] = useState<GateState>('checking');
-  const [password, setPassword] = useState('');
-  const [gateError, setGateError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [weeks, setWeeks] = useState(8);
 
   useEffect(() => {
-    fetch(GATE_URL)
-      .then(r => setGate(r.ok ? 'open' : 'locked'))
-      .catch(() => setGate('locked'));
+    let alive = true;
+    // `fetchData` é memoizado no dataService: isto não gera uma segunda ida à rede quando o
+    // conteúdo montar e pedir os mesmos dados.
+    fetchData()
+      .then(() => {
+        if (alive) setGate(getDatasetProvenance()?.tower ? 'open' : 'locked');
+      })
+      .catch(() => {
+        if (alive) setGate('locked');
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
-
-  const unlock = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!password || submitting) return;
-    setSubmitting(true);
-    setGateError('');
-    try {
-      const headers = { 'Content-Type': 'application/json', ...(await authHeaders()) };
-      const r = await fetch(GATE_URL, { method: 'POST', headers, body: JSON.stringify({ password }) });
-      if (r.ok) setGate('open');
-      else setGateError(r.status === 403 ? 'Senha incorreta.' : 'Não foi possível validar agora. Tente de novo.');
-    } catch {
-      setGateError('Não foi possível validar agora. Tente de novo.');
-    } finally {
-      setSubmitting(false);
-      setPassword('');
-    }
-  };
 
   if (gate !== 'open') {
     return (
@@ -59,28 +55,17 @@ export default function TowerView() {
               <div>
                 <span className="eyebrow">Acesso restrito</span>
                 <h1>Torre</h1>
-                <p>O comparativo entre agilistas é protegido por senha.</p>
+                <p>O comparativo entre agilistas depende de permissão.</p>
               </div>
             </div>
           </section>
           {gate === 'checking' ? (
             <div className="rd-state">Verificando acesso…</div>
           ) : (
-            <form onSubmit={unlock} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 24 }}>
-              <input
-                type="password"
-                className="rd-select"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="Senha da torre"
-                aria-label="Senha da torre"
-                autoFocus
-              />
-              <button type="submit" className="btn-dark" disabled={submitting || !password}>
-                {submitting ? 'Validando…' : 'Entrar na torre'}
-              </button>
-              {gateError && <p style={{ color: 'var(--red)', fontSize: 13, margin: 0 }}>{gateError}</p>}
-            </form>
+            <p className="rd-state" style={{ marginTop: 24 }}>
+              Você não tem a função <strong>Ver o comparativo entre agilistas (Torre)</strong>.
+              Peça a um administrador do NEO — não há senha a digitar. Se acabou de receber, recarregue.
+            </p>
           )}
         </div>
       </div>

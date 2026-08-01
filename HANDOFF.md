@@ -6,15 +6,76 @@
 
 ---
 
-# ▶ RETOMADA — o que atacar primeiro (escrito 2026-07-27, fim do dia)
+# ▶ RETOMADA — o que atacar primeiro (atualizado 2026-07-31)
 
-**Onde as coisas estão:** a onda de hardening do code review **está na `main` e o CI está
-inteiramente verde**. O que NÃO aconteceu: **deploy**. Nenhum dos dois projetos Vercel tem
-conexão git, então `main` ≠ produção neste momento — produção roda o código de antes do
-hardening. Isso é seguro e proposital, mas significa que **as correções não estão valendo
+**Onde as coisas estão:** duas ondas empilhadas, nenhuma em produção.
+
+1. **Hardening do code review (27/07)** — na `main`, CI verde, **não deployado**.
+2. **RBAC do NEO (31/07)** — no worktree, **não commitado**. Permissão virou dado, nasceu o
+   app `/admin`, e as senhas compartilhadas da Torre e do Nero saíram do caminho.
+
+Nenhum dos dois projetos Vercel tem conexão git, então `main` ≠ produção — produção roda o
+código de antes do hardening. É seguro e proposital, e significa que **nada disso está valendo
 para ninguém ainda**.
 
 Verificar o estado em 1 comando: `corepack pnpm verify` (sai 0; ~15 min).
+
+## A onda de 31/07 — RBAC do NEO
+
+Permissão deixou de estar espalhada em 34 policies e em TypeScript: virou **`neo_role_permissions`**,
+uma tabela, com um predicado único `has_perm(permissao, squad)` e uma tela onde uma pessoa leiga
+edita a matriz papel × função. Os dois papéis que eram um se separaram: **`admin_geral`** governa
+acesso (concede papel, edita a matriz) e **`admin`** opera a estrutura.
+
+| Onde | O que mudou |
+|---|---|
+| Banco | `20260731120000_neo_rbac.sql` (modelo, catálogo, matriz, 34 policies) + `20260731130000_neo_authz_rpc.sql` (o RPC do `/api/authz`, autorizado por segredo do Vault) |
+| Sessão | `neo_session` passa a carregar `roles`/`perms`; **ausente ≠ vazio** (cookie velho vai para autocura, não para "acesso negado") |
+| Borda | `middleware.ts` confere a permissão da porta e ganhou o matcher `/admin`; recusa vira 302 para o hub, que dá a palavra final |
+| Hub | Portas aparecem por permissão; `?next=` com trava de repetição para não virar ping-pong |
+| App novo | `neo-admin` em `/admin/**` — Pessoas · Papéis × Funções · Acesso ao NEO · Squads · Auditoria |
+| Ficha da pessoa | *Pessoas* é lista + ficha: nome, papel global, squads e "desligar" num lugar só. RPC `offboard_person` faz o desligamento em transação, com trilha (`docs/superpowers/specs/2026-07-31-ficha-da-pessoa-design.md`) |
+| Nero | `proxy.ts` pergunta `GET /api/authz?perm=neo.nero.access` (memo 60s). **Senha eliminada** |
+| Dash | Torre por `dash.tower.view`, decidido no `/api/data`. **Senha eliminada** |
+| MMA | `/maturity/admin` virou redirect para `/admin`; `AdminMMA.tsx` removido |
+
+**O que precisa de VOCÊ antes do deploy:**
+
+1. **Conferir quem recebe `neo.nero.access` e `dash.tower.view`.** A matriz semente chuta
+   AM + Admin + Admin Geral. Hoje quem entra é quem sabe a senha, e não existe registro de
+   quem são. Se a lista real for outra, é **conceder o papel ANTES** de a senha sair — esquecer
+   isso tranca o time fora numa sexta.
+2. **Criar o segredo do Vault e a env**, com o MESMO valor (ver `SECRETS.md`):
+   `select vault.create_secret('<32+ chars>', 'neo_authz_secret');` e
+   `vercel env add NEO_AUTHZ_SECRET production`. Divergir = Nero fechado para todos, em silêncio.
+3. **Avisar o time**: além do logout do HKDF, quem usava a senha da Torre/do Nero não vai mais
+   ter onde digitá-la — e só entra se tiver o papel.
+
+**O escopo do RBAC, decidido e fechado (Diego, 31/07):** a matriz semente foi conferida linha a
+linha e está como se quer.
+
+- **Admin Geral** governa acesso · **Admin** faz todo o resto — as duas únicas linhas de
+  diferença são `neo.roles.manage` e `neo.matrix.manage`.
+- **AM** vê e OPERA o ciclo (homologa, devolve, arquiva) em **todos** os squads, nas três
+  ferramentas. Não é papel de leitura — confirmado como intencional.
+- **SM / member** enxergam só os próprios squads **no MMA**. No Dash, não: ver abaixo.
+
+⚠️ **O recorte do SM no MMA é DADO, não configuração.** Quem decide o que um SM enxerga é o
+vínculo em `squad_members(user_id, team_id, role='sm')` — a permissão `mma.squad.read` é de
+escopo squad e só vale onde há vínculo. Consequência direta: **SM sem vínculo abre o MMA e não
+vê squad nenhum.** Conferir a lista de SM × times antes da janela é pré-requisito, não ajuste
+posterior (item 9b). A tela é `/admin` → Squads e membros depois do deploy; antes dele, a
+`/maturity/admin` que ainda está em produção.
+
+**O gate da Torre é de INTERFACE, e isso foi ACEITO — não é pendência.** O comparativo entre
+agilistas continua derivável do `/api/data` por qualquer sessão, porque é calculado no cliente
+a partir dos mesmos itens cruzados com `sm-config.ts`, que está no bundle. O plano previa
+"omitir do payload os campos que alimentam o agregado"; medindo, **não existem tais campos**.
+Com as duas opções na mesa (fechar com recorte por time no servidor × manter transparente), a
+escolha foi **manter transparente**: no Dash, toda pessoa do NEO vê todos os times.
+
+⚠️ Quem for mexer nisso depois: **não é bug**. O detalhamento e as condições para revisar a
+decisão estão em `SECURITY.md` §6.1.
 
 ## A ordem importa — duas coisas quebram se invertidas
 
@@ -57,12 +118,16 @@ valor**, senão o cron toma 401 em silêncio.
 |---|---|---|---|
 | 1 | P0 do `sync-anchors` | ✅ **FECHADO** — nome antigo republicado com a implementação autorizada; anon key agora toma 401. O `functions delete` fica para a janela do deploy | — |
 | 2 | Migrations do Prisma (`20260727160000`, `20260727170000`) | ✅ **APLICADAS** no Neon, com backup antes; os 13 CHECKs foram **validados** (não ficaram `NOT VALID`) | — |
-| 3 | **Avisar o time**: subchaves HKDF **derrubam toda sessão viva** | ⛔ **você** | você |
-| 4 | **Janela coordenada: portal + Nero JUNTOS** (ver aviso abaixo) + migration `20260727180000` + `functions delete sync-anchors` | ⛔ gated no item 3 | você |
+| 3 | **Avisar o time**: subchaves HKDF **derrubam toda sessão viva**; e as senhas da Torre/Nero deixam de existir | ⛔ **você** | você |
+| 4 | **Janela coordenada: portal + Nero JUNTOS** (ver aviso abaixo) + migrations `20260727180000`, `20260731120000`, `20260731130000`, `20260731140000` + `functions delete sync-anchors` | ⛔ gated nos itens 3 e 9 | você |
 | 5 | `test:state` contra base descartável | ✅ **31/31** num branch Neon descartável, já removido | — |
 | 6 | Definir `NERO_USER_MONTHLY_BUDGET_USD` | ⛔ decisão de negócio | você |
 | 7 | Rotações de segredo pendentes | ⛔ ver [`SECRETS.md`](SECRETS.md) | você |
 | 8 | Backup/restore **testado**, RPO/RTO, retenção, preview isolado do Nero | ⛔ exige console Neon/Vercel | operador |
+| 9 | **Conferir a linha `neo.nero.access`/`dash.tower.view` da matriz semente** + criar `neo_authz_secret` (Vault) e `NEO_AUTHZ_SECRET` (env) com o mesmo valor | ⛔ **bloqueia o item 4** | você |
+| 9b | **Vincular cada SM aos times dele em `squad_members`** (`role='sm'`). Diego informa a lista | ⛔ **bloqueia o item 4** | você |
+| 10 | Depois da janela: `vercel env rm TOWER_PASSWORD/NERO_PASSWORD` + remover `api/gate.ts` (ficou sem chamador) | ⛔ pós-deploy | você |
+| 11 | Commitar a onda de 31/07 — **nada dela está no git** | ⛔ aguarda sua ordem | você |
 
 ### ⚠️ Portal e Nero têm de subir na MESMA janela (medido em 2026-07-30)
 
@@ -78,17 +143,30 @@ fallback para o formato antigo**. Consequência:
 Os dois projetos Vercel são separados, então isso é sequência manual: `deploy` nos dois,
 smoke nos dois, `promote` nos dois — de preferência em minutos, não horas.
 
-**Ordem dentro da janela:**
-1. avisar o time (todos refazem login OTP e redigitam a senha da Torre/do Nero);
-2. `vercel deploy --target=production --skip-domain` no portal **e** no `nero-portal`;
-3. smoke nos dois → `vercel promote` nos dois;
-4. aplicar `20260727180000_governanca_papeis` **logo em seguida** — ela dropa
-   `restart_assessment(uuid)` de 1 argumento, e o front antigo chama com 1; o novo já manda
-   `p_reason`. A janela em que o botão "Reiniciar assessment" fica quebrado é o intervalo entre
-   o promote e esta migration, então rode junto;
-5. `supabase functions delete sync-anchors` + apagar
+**Ordem dentro da janela** (revista em 31/07 para incluir o RBAC):
+
+1. avisar o time (todos refazem login OTP; a senha da Torre/do Nero deixa de existir);
+2. **backup do Supabase** — 34 policies reescritas, com rollback ensaiado em PGlite mas nunca
+   em produção;
+3. criar `neo_authz_secret` no Vault e `NEO_AUTHZ_SECRET` no projeto `neo-lm`, **mesmo valor**;
+4. **aplicar as migrations ANTES do código.** Ordem obrigatória:
+   `20260727180000_governanca_papeis` → `20260731120000_neo_rbac` → `20260731130000_neo_authz_rpc`
+   → `20260731140000_offboard_person`.
+   `has_perm` tem de existir antes de qualquer app chamá-lo, e a de RBAC empilha sobre a de
+   governança;
+5. **conferir a matriz semente** com a lista real de quem deve entrar no Nero e na Torre, e
+   conceder os papéis que faltarem — ainda antes do deploy do código;
+6. `vercel deploy --target=production --skip-domain` no portal **e** no `nero-portal`;
+7. smoke nos dois → `vercel promote` nos dois;
+8. `supabase functions delete sync-anchors` + apagar
    `maturitymodel/supabase/functions/sync-anchors/` (o shim), depois de conferir no bundle de
-   produção que ele chama `sync-anchors-user`.
+   produção que ele chama `sync-anchors-user`;
+9. depois de tudo verde: `vercel env rm TOWER_PASSWORD/NERO_PASSWORD` e remover `api/gate.ts`.
+
+**A janela entre o passo 4 e o passo 7 é a mais delicada desta rodada.** Com as migrations
+aplicadas e o front antigo ainda no ar, as policies já falam `has_perm` e o front antigo não
+sabe disso — é a mesma lição de 27/07 registrada mais abaixo ("a janela entre migration e
+deploy"), agora sobre 34 policies em vez de uma. Mantenha o intervalo em minutos.
 
 ## Execução de 2026-07-30 — o que foi fechado
 

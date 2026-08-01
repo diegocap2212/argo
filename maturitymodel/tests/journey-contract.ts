@@ -17,7 +17,7 @@
  *
  * Uso: npx tsx tests/journey-contract.ts
  */
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
@@ -33,6 +33,32 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS = join(HERE, "..", "supabase", "migrations");
 const read = (f: string) => readFileSync(join(MIGRATIONS, f), "utf8");
 
+/**
+ * A ÚLTIMA migration que define algo — e por que este helper existe.
+ *
+ * Este teste lia `20260726120000_portal_roles.sql` por NOME, cravado em três lugares. Quando
+ * `20260731120000_neo_rbac.sql` reescreveu `enforce_cycle_transition()` e trocou o CHECK de
+ * `portal_roles.role` por uma FK, o teste continuou VERDE — validando a versão morta do
+ * trigger e afirmando um CHECK que não existe mais. 21 asserções passando, zero medindo o
+ * banco vivo.
+ *
+ * É o mesmo modo de falha que o `typecheck` no-op descrito no topo deste arquivo: teste verde
+ * que não guarda nada treina o time a confiar nele. Ler sempre a definição MAIS RECENTE faz o
+ * contrato seguir o banco automaticamente — a próxima migration não reabre este buraco.
+ */
+function latestDefining(pattern: RegExp, oQue: string): { file: string; sql: string } {
+  const files = readdirSync(MIGRATIONS)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .reverse();
+  for (const file of files) {
+    const sql = read(file);
+    if (pattern.test(sql)) return { file, sql };
+  }
+  console.error(`Nenhuma migration define ${oQue} (padrão ${pattern}).`);
+  process.exit(2);
+}
+
 let passed = 0;
 let failed = 0;
 function check(label: string, ok: boolean, detail?: string) {
@@ -47,13 +73,14 @@ function check(label: string, ok: boolean, detail?: string) {
 const setOf = (xs: readonly string[]) => [...new Set(xs)].sort().join(",");
 
 // ── 1. Os status que o BANCO aceita (CHECK constraint) ─────────────────────────
-const preSession = read("20260724130000_pre_session.sql");
-const checkMatch = preSession.match(/check \(status in \(([^)]+)\)\)/);
+const statusSrc = latestDefining(/check \(status in \(/, "o CHECK de assessment_cycles.status");
+const checkMatch = statusSrc.sql.match(/check \(status in \(([^)]+)\)\)/);
 if (!checkMatch) {
-  console.error("Não achei o CHECK de status em 20260724130000_pre_session.sql.");
+  console.error(`Não achei o CHECK de status em ${statusSrc.file}.`);
   process.exit(2);
 }
 const dbStatuses = [...checkMatch[1]!.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]!);
+console.log(`  (CHECK de status lido de ${statusSrc.file})`);
 
 console.log("\nJornada: TypeScript × banco\n");
 console.log("Cobertura de status:");
@@ -94,8 +121,14 @@ check(
 
 // ── 3. O trigger do banco aceita exatamente as mesmas transições ───────────────
 // Extrai os pares (old → new) do corpo de enforce_cycle_transition().
-const roles = read("20260726120000_portal_roles.sql");
-const trigger = roles.slice(roles.indexOf("function public.enforce_cycle_transition"));
+const triggerSrc = latestDefining(
+  /function public\.enforce_cycle_transition/,
+  "enforce_cycle_transition()",
+);
+const trigger = triggerSrc.sql.slice(
+  triggerSrc.sql.indexOf("function public.enforce_cycle_transition"),
+);
+console.log(`  (trigger lido de ${triggerSrc.file})`);
 const sqlTransitions = new Map<string, Set<string>>();
 for (const m of trigger.matchAll(
   /old\.status = '([a-z_]+)' and new\.status (?:= '([a-z_]+)'|in \(([^)]+)\))/g,
@@ -131,19 +164,90 @@ for (const from of sqlTransitions.keys()) {
   );
 }
 
-// ── 4. Papéis: o TS não pode conhecer papel que o banco recusa ────────────────
-console.log("\nPapéis:");
-const squadRoleCheck = roles.match(/check \(role in \('sm','member'\)\)/);
-check("squad_members.role no banco é ('sm','member')", !!squadRoleCheck);
-const portalRoleCheck = roles.match(/check \(role in \('admin','am'\)\)/);
-check("portal_roles.role no banco é ('admin','am')", !!portalRoleCheck);
+/**
+ * O reinício (qualquer status → pre_session) é o `restart_assessment`, e no trigger ele NÃO é
+ * um par (old → new): é um ramo sobre `new.status` sozinho, invisível para o parser acima.
+ *
+ * Ele fica FORA de CYCLE_TRANSITIONS de propósito — a UI não oferece "voltar para a
+ * pré-sessão" como passo da jornada, é ação destrutiva de administração. Mas se o ramo
+ * desaparecer do trigger, o reinício perde a checagem de permissão e nada mais acusaria.
+ */
 check(
-  "is_am(uuid) foi removida na migration",
-  /drop function if exists is_am\(uuid\)/.test(roles),
+  "o trigger tem o ramo do reinício (qualquer → pre_session), com permissão",
+  /if new\.status = 'pre_session' then/.test(trigger) &&
+    /mma\.cycle\.restart/.test(trigger),
+  "sem este ramo o restart_assessment fica sem guarda de permissão no banco",
+);
+
+// ── 4. Papéis: o TS não pode conhecer papel que o banco recusa ────────────────
+//
+// Esta seção lia o CHECK `role in ('admin','am')` de portal_roles. O RBAC substituiu esse
+// CHECK por uma FK para `neo_roles`, então a fonte da verdade dos papéis virou o SEED daquela
+// tabela — é lá que se lê quais existem, qual é global e qual pode ser concedido.
+console.log("\nPapéis:");
+
+const mma = readFileSync(join(HERE, "..", "src", "types", "mma.ts"), "utf8");
+/** Extrai os membros de uma união de string literals do TS: `export type X = "a" | "b";` */
+function tsUnion(nome: string): string[] {
+  const m = mma.match(new RegExp(`export type ${nome} =([^;]+);`));
+  if (!m) {
+    console.error(`Não achei \`export type ${nome}\` em src/types/mma.ts.`);
+    process.exit(2);
+  }
+  return [...m[1]!.matchAll(/"([a-z_]+)"/g)].map((x) => x[1]!);
+}
+
+// ── papel de SQUAD: continua sendo CHECK, e é ele que impede a escalação SM→AM ──
+const squadSrc = latestDefining(/check \(role in \('sm','member'\)\)/, "o CHECK de squad_members.role");
+check(`squad_members.role no banco é ('sm','member') (${squadSrc.file})`, true);
+check(
+  "type Role do TS == papéis de squad do banco",
+  setOf(tsUnion("Role")) === setOf(["sm", "member"]),
+  `ts=[${setOf(tsUnion("Role"))}] sql=[member,sm]`,
+);
+
+// ── papel GLOBAL: agora vem do seed de neo_roles ──
+const rolesSrc = latestDefining(/insert into public\.neo_roles/, "o seed de neo_roles");
+const seedBlock = rolesSrc.sql.slice(rolesSrc.sql.indexOf("insert into public.neo_roles"));
+// Cada linha do seed é `('id', 'label', 'desc…', 'escopo', rank, grantable)`. O que interessa
+// é id + escopo + grantable; o rótulo e a descrição são texto livre com vírgulas e acentos.
+const seeded = [
+  ...seedBlock.matchAll(/\(\s*'([a-z_]+)',[\s\S]*?'(global|squad)',\s*\d+,\s*(true|false)\s*\)/g),
+].map((m) => ({ id: m[1]!, scope: m[2]!, grantable: m[3]! === "true" }));
+
+check("o seed de neo_roles foi encontrado e tem 6 papéis", seeded.length === 6, `${seeded.length}`);
+check(
+  "os papéis de squad do seed batem com o CHECK",
+  setOf(seeded.filter((r) => r.scope === "squad").map((r) => r.id)) === setOf(["sm", "member"]),
+  `seed=[${setOf(seeded.filter((r) => r.scope === "squad").map((r) => r.id))}]`,
+);
+
+// A asserção que o modelo antigo não tinha como fazer: o TS conhece EXATAMENTE os papéis
+// globais concedíveis. `admin_geral` existir no banco e não no tipo é como um papel que a
+// tela de administração nunca oferece — e foi assim que `pre_session` sumiu da jornada.
+const globaisConcediveis = seeded.filter((r) => r.scope === "global" && r.grantable).map((r) => r.id);
+check(
+  "type PortalRole do TS == papéis globais concedíveis do banco",
+  setOf(tsUnion("PortalRole")) === setOf(globaisConcediveis),
+  `ts=[${setOf(tsUnion("PortalRole"))}] sql=[${setOf(globaisConcediveis)}]`,
 );
 check(
-  "portal_admins foi removida na migration",
-  /drop table if exists public\.portal_admins/.test(roles),
+  "o papel implícito NÃO é concedível (não pode aparecer em portal_roles)",
+  seeded.some((r) => r.id === "todos" && !r.grantable),
+);
+
+// ── remoções do modelo antigo: fatos históricos, cada um na migration que o fez ──
+check(
+  "is_am(uuid) foi removida",
+  /drop function if exists is_am\(uuid\)/.test(
+    latestDefining(/drop function if exists is_am\(uuid\)/, "o drop de is_am(uuid)").sql,
+  ),
+);
+check(
+  "portal_admins foi removida",
+  /drop table if exists public\.portal_admins/.test(
+    latestDefining(/drop table if exists public\.portal_admins/, "o drop de portal_admins").sql,
+  ),
 );
 
 console.log(`\n${passed} passaram, ${failed} falharam.`);

@@ -1,3 +1,14 @@
+// ⚠️ SEM CHAMADOR DESDE 2026-07-31 — A REMOVER DEPOIS DA JANELA DO RBAC.
+//
+// A Torre passou a depender de `dash.tower.view` (decidido no `api/data.ts`) e o Nero de
+// `neo.nero.access` (decidido no `api/authz.ts`). Nada mais LÊ os cookies `neo_tower`/
+// `neo_nero`, então este endpoint ainda os emite para ninguém: é inerte, não é buraco.
+//
+// Por que não foi removido junto: até o promote, produção roda o código ANTIGO, que ainda
+// chama `/api/gate`. Apagá-lo agora quebraria a Torre e o Nero em produção antes de a
+// substituição estar no ar. Sai depois da janela, junto com `TOWER_PASSWORD` e
+// `NERO_PASSWORD` — ver SECRETS.md.
+//
 // Trava adicional por senha para superfícies restritas do Portal NEO. Substitui o antigo
 // api/tower.ts, agora parametrizado por escopo:
 //

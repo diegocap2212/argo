@@ -10,7 +10,7 @@
     "lint": "corepack pnpm -r --if-present lint",
     "typecheck": "tsc -p tsconfig.json --noEmit && corepack pnpm -r --if-present typecheck",
     "test:portal": "playwright test",
-    "verify": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm --filter @neo/auth test && corepack pnpm --filter locavia-dashboard test:performance && corepack pnpm --filter locavia-dashboard test:sync && corepack pnpm --filter maturitymodel test:journey && corepack pnpm --filter maturitymodel test:anchors && corepack pnpm --filter maturitymodel test:migrations && corepack pnpm --filter maturitymodel test:rls-local && corepack pnpm --filter nero-portal test:core"
+    "verify": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm --filter @neo/auth test && corepack pnpm --filter locavia-dashboard test:performance && corepack pnpm --filter locavia-dashboard test:sync && corepack pnpm --filter maturitymodel test:journey && corepack pnpm --filter maturitymodel test:anchors && corepack pnpm --filter maturitymodel test:perms && corepack pnpm --filter maturitymodel test:migrations && corepack pnpm --filter maturitymodel test:rls-local && corepack pnpm --filter maturitymodel test:rollback && corepack pnpm --filter nero-portal test:core"
   },
   "dependencies": {
     "@upstash/redis": "^1.38.0",

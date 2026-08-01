@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { parseCookie, readToken, verifyToken } from "@neo/auth";
+import { parseCookie, readToken } from "@neo/auth";
 import { BASE_PATH } from "@/lib/base-path";
 import { ACTOR_EMAIL_HEADER } from "@/lib/state/actor";
 
@@ -10,9 +10,18 @@ import { ACTOR_EMAIL_HEADER } from "@/lib/state/actor";
  * o Dash e o Maturity:
  *   1. `neo_session` — a sessão do Portal NEO (login OTP + allowlist), emitida por
  *      /api/session no hub. É a MESMA trava das outras duas ferramentas.
- *   2. `neo_nero`    — a senha específica do Nero, emitida por /api/gate?scope=nero.
+ *   2. `neo.nero.access` — a PERMISSÃO da pessoa, perguntada ao portal a cada navegação.
  *
- * A tela /login exige só a (1): é onde o usuário digita a senha para obter a (2).
+ * A trava (2) era, até 31/07/2026, o cookie `neo_nero` obtido digitando a `NERO_PASSWORD`
+ * compartilhada. Senha compartilhada não tem QUEM: não havia offboarding (sair da empresa não
+ * tirava o acesso — só trocar a senha de todo mundo tirava) e nem como distinguir duas pessoas.
+ *
+ * O PREÇO DESTA ESCOLHA, EXPLÍCITO: o Nero passa a depender do portal em tempo de execução.
+ * Portal lento = Nero lento; portal fora do ar = Nero FECHA (fail-closed, coerente com a regra
+ * do repo). Isso é o custo da revogação imediata, e está escrito aqui para não virar surpresa
+ * durante um incidente.
+ *
+ * A tela /login não pede mais senha: ela explica que o acesso não está liberado.
  *
  * DEFESA EM PROFUNDIDADE: o middleware do neo-lm já barra /nero/** na borda. Validar de
  * novo aqui é redundante DE PROPÓSITO — se o matcher de lá for mal configurado algum dia,
@@ -34,13 +43,60 @@ export const config = {
 };
 
 const SESSION_COOKIE = "neo_session";
-const GATE_COOKIE = "neo_nero";
+const NERO_PERM = "neo.nero.access";
 
 /** Volta ao hub do NEO preservando o destino, igual ao middleware do portal faz. */
 function toHub(req: NextRequest): NextResponse {
-  const origin = process.env.NEO_ORIGIN || "https://neo-lm.vercel.app";
   const next = encodeURIComponent(`${BASE_PATH}${req.nextUrl.pathname}${req.nextUrl.search}`);
-  return NextResponse.redirect(`${origin}/?next=${next}`);
+  return NextResponse.redirect(`${neoOrigin()}/?next=${next}`);
+}
+
+function neoOrigin(): string {
+  return process.env.NEO_ORIGIN || "https://neo-lm.vercel.app";
+}
+
+/**
+ * MEMO DE 60s, chaveado pela ASSINATURA do cookie.
+ *
+ * Sem ele, cada asset de uma página vira uma chamada HTTP ao portal — dezenas por navegação,
+ * cada uma somando latência ao carregamento. 60s é o teto de quanto tempo uma revogação pode
+ * demorar a valer aqui, e é o número que está documentado no HANDOFF: revogar papel fecha o
+ * Nero em ≤60s, sem exigir novo login.
+ *
+ * A chave é a assinatura (a parte depois do ponto), não o e-mail: dois cookies com o mesmo
+ * e-mail mas assinaturas diferentes são sessões diferentes, e um cookie expirado nem chega
+ * aqui (o `readToken` acima já o recusou).
+ *
+ * `Map` em escopo de módulo vive por isolate e some quando ele recicla — é cache, não estado.
+ * A poda por tamanho existe para o Map não crescer sem limite num isolate longevo.
+ */
+const authzMemo = new Map<string, { allowed: boolean; until: number }>();
+const AUTHZ_TTL_MS = 60_000;
+const AUTHZ_MEMO_MAX = 500;
+
+async function podeEntrarNoNero(cookieHeader: string, signature: string): Promise<boolean> {
+  const now = Date.now();
+  const hit = authzMemo.get(signature);
+  if (hit && hit.until > now) return hit.allowed;
+
+  let allowed = false;
+  try {
+    const r = await fetch(`${neoOrigin()}/api/authz?perm=${NERO_PERM}`, {
+      headers: { cookie: cookieHeader },
+      cache: "no-store",
+    });
+    // 204 = pode. 403 = não pode. 401/503/qualquer outra = não decidiu → fecha.
+    allowed = r.status === 204;
+    // NÃO memoizar a indisponibilidade: guardar um "não" que veio de 503 manteria o Nero
+    // fechado por 60s depois de o portal voltar. Erro se repergunta na próxima navegação.
+    if (r.status !== 204 && r.status !== 403) return false;
+  } catch {
+    return false;
+  }
+
+  if (authzMemo.size >= AUTHZ_MEMO_MAX) authzMemo.clear();
+  authzMemo.set(signature, { allowed, until: now + AUTHZ_TTL_MS });
+  return allowed;
 }
 
 export async function proxy(req: NextRequest) {
@@ -90,14 +146,14 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next({ request: { headers: h } });
   }
 
-  // A tela de senha é o único lugar que dispensa a trava (2) — é onde ela é obtida.
+  // A tela que explica a falta de acesso é o único lugar que dispensa a trava (2) — senão
+  // ela mesma redirecionaria para si própria.
   if (pathname === "/login") return passthroughWithActor();
 
-  // (2) Senha do Nero.
-  const gate = parseCookie(cookies, GATE_COOKIE);
-  if (!gate || !(await verifyToken(gate, secret, "nero"))) {
+  // (2) Permissão da pessoa, perguntada AO VIVO ao portal (com memo de 60s).
+  if (!session || !(await podeEntrarNoNero(cookies ?? "", session.split(".")[1] ?? session))) {
     if (pathname.startsWith("/api/")) {
-      return new NextResponse("Acesso ao Nero requer senha.", { status: 401 });
+      return new NextResponse("Sem permissão de acesso ao Nero.", { status: 403 });
     }
     const url = req.nextUrl.clone();
     url.pathname = "/login";

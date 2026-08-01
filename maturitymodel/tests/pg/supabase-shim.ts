@@ -80,7 +80,43 @@ export async function createSupabaseLikeDb(): Promise<PGlite> {
     grant select on auth.users to anon, authenticated, service_role;
   `);
 
+  // ── Schema vault ──────────────────────────────────────────────────────────
+  // Superfície mínima do Supabase Vault: a view `decrypted_secrets`, que é como o SQL do repo
+  // lê um segredo (`20260727130100` faz o mesmo para o cron das âncoras).
+  //
+  // Por que emular em vez de pular a migration: sem isto, `20260731130000_neo_authz_rpc.sql`
+  // teria de entrar na lista de SKIP, e a função que decide "esta pessoa pode entrar no Nero?"
+  // ficaria sem NENHUM teste — justo a que substitui uma senha compartilhada. Com a view
+  // emulada, o gate do segredo é exercitado de verdade: certo → permissões, errado → {}.
+  //
+  // ⚠️ SEM GRANT para anon/authenticated, igual ao Vault real. Se algum dia uma migration ler
+  // o Vault fora de `security definer`, o teste falha por permissão — que é o que se quer.
+  await db.exec(`
+    create schema if not exists vault;
+
+    create table vault.decrypted_secrets (
+      name             text primary key,
+      decrypted_secret text not null
+    );
+
+    grant usage on schema vault to service_role;
+    grant select on vault.decrypted_secrets to service_role;
+  `);
+
   return db;
+}
+
+/**
+ * Semeia um segredo no Vault emulado. O valor precisa ter ao menos 32 caracteres: a função
+ * `neo_perms_for_email` recusa segredo curto, e um teste que semeasse 'abc' provaria o
+ * caminho errado.
+ */
+export async function seedVaultSecret(db: PGlite, name: string, value: string): Promise<void> {
+  await db.query(
+    `insert into vault.decrypted_secrets (name, decrypted_secret) values ($1, $2)
+       on conflict (name) do update set decrypted_secret = excluded.decrypted_secret`,
+    [name, value],
+  );
 }
 
 /**
