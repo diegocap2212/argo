@@ -51,7 +51,56 @@ export interface SessionPayload {
    * em log em vez de "assinatura inválida" sem explicação.
    */
   purpose?: TokenPurpose;
+  /**
+   * Papéis GLOBAIS da pessoa (`portal_roles`), assados no login por `my_neo_claims()`.
+   * Só para rotular a pessoa na UI ("você é AM") — NUNCA para decidir acesso: quem decide é
+   * `perms`, e mesmo ele é só pré-filtro (ver abaixo).
+   */
+  roles?: string[];
+  /**
+   * Permissões GLOBAIS da pessoa, assadas no login por `my_neo_claims()`.
+   *
+   * ⚠️ AUSENTE (`undefined`) NÃO É O MESMO QUE VAZIO (`[]`) — e a distinção é load-bearing:
+   *   · `undefined` → o cookie é ANTERIOR ao RBAC, ou o RPC de claims falhou no login. A borda
+   *     não pode concluir "não tem acesso": manda ao hub, que re-emite o cookie com claims
+   *     frescas e devolve a pessoa ao destino (a autocura do §2 do plano).
+   *   · `[]` → as claims FORAM assadas e a pessoa não tem permissão global nenhuma. Aqui negar
+   *     é a resposta certa.
+   * Tratar os dois como "sem permissão" transformaria toda sessão viva de antes do deploy num
+   * "acesso negado" em vez de uma quicada pelo hub. Use `hasClaims()` para separar os casos.
+   *
+   * ISTO É PRÉ-FILTRO DE NAVEGAÇÃO, NÃO AUTORIZAÇÃO. A claim envelhece: quem perdeu o papel
+   * continua com a permissão no cookie até ele ser re-emitido. Ela só faz uma PORTA aparecer —
+   * atrás de toda porta há verificação ao vivo (RLS com o JWT, `has_perm` no `/api/data`,
+   * `/api/authz` no Nero). Nunca a use como única trava de um dado.
+   */
+  perms?: string[];
 }
+
+/**
+ * A pessoa tem esta permissão segundo a claim do cookie? Ver o aviso de `perms`: isto responde
+ * "mostro a porta?", nunca "libero o dado?".
+ */
+export function hasPerm(payload: SessionPayload | null | undefined, perm: string): boolean {
+  return Array.isArray(payload?.perms) && payload.perms.includes(perm);
+}
+
+/**
+ * As claims foram assadas neste token? Distingue o cookie velho (que merece autocura pelo hub)
+ * do cookie novo de quem realmente não tem permissão nenhuma (que merece "acesso negado").
+ */
+export function hasClaims(payload: SessionPayload | null | undefined): boolean {
+  return Array.isArray(payload?.perms);
+}
+
+// ── As portas do portal ──
+// Vivem em `./doors.ts` para poderem ser importadas por app de browser sem arrastar junto o
+// `process.env` deste arquivo (ver o cabeçalho de lá). Reexportadas aqui por conveniência de
+// quem já roda em Node.
+// Sem a extensão `.ts` de propósito: o `nero-portal` compila o SOURCE deste pacote sob o
+// tsconfig dele, que não liga `allowImportingTsExtensions` — com a extensão explícita, o
+// typecheck do Nero quebra num arquivo que não é dele.
+export { PORTAL_DOORS, doorForPath, type PortalDoor } from './doors';
 
 // ── base64url sem Buffer (Web APIs; funciona em Edge e Node) ──
 

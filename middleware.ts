@@ -1,6 +1,12 @@
-// Edge Middleware do Portal NEO: barra /dash/**, /maturity/** e /nero/** (HTML e assets)
-// sem o cookie neo_session emitido por /api/session após o login no hub. Roda na borda,
-// antes do filesystem. /api/** fica fora do matcher (as functions validam Bearer por conta).
+// Edge Middleware do Portal NEO: barra /dash/**, /maturity/**, /nero/** e /admin/** (HTML e
+// assets) sem o cookie neo_session emitido por /api/session após o login no hub. Roda na
+// borda, antes do filesystem. /api/** fica fora do matcher (as functions validam por conta).
+//
+// PRÉ-FILTRO, NÃO AUTORIZAÇÃO. Desde o RBAC ele também confere a PERMISSÃO da porta, lida das
+// claims do cookie — mas isso decide apenas se a porta APARECE. A claim envelhece (até 12h) e
+// esta camada nunca é a última: atrás de cada porta há verificação ao vivo (RLS com o JWT no
+// MMA e no admin, `has_perm` no /api/data do Dash, /api/authz no Nero). Recusa aqui não é
+// "acesso negado" — é "vá ao hub", que tem o dado fresco e dá a palavra final.
 //
 // ⚠️ ESTE ARQUIVO É AUTOCONTIDO POR IMPOSIÇÃO DA PLATAFORMA — NÃO ADICIONE IMPORTS.
 // O Edge Middleware standalone da Vercel (middleware.ts na raiz de um projeto não-Next) não
@@ -15,9 +21,31 @@
 // token. Se alguém mudar um lado só, o teste quebra. Mexeu aqui? Rode:
 //   pnpm --filter @neo/auth test
 
-export const config = { matcher: ['/dash/:path*', '/maturity/:path*', '/nero/:path*'] };
+export const config = {
+  matcher: ['/dash/:path*', '/maturity/:path*', '/nero/:path*', '/admin/:path*'],
+};
 
 const COOKIE = 'neo_session';
+
+/**
+ * CÓPIA do mapa de portas de `packages/neo-auth` (`PORTAL_DOORS`). O Edge Middleware não
+ * bundleia imports, então a duplicação é imposta — e `packages/neo-auth/test.ts` compara as
+ * duas linha a linha. Divergir aqui faz a borda proteger uma rota com a permissão errada, o
+ * que é indistinguível de "protegida" até alguém tentar entrar.
+ */
+export const DOORS: ReadonlyArray<{ prefix: string; perm: string }> = [
+  { prefix: '/dash', perm: 'neo.dash.access' },
+  { prefix: '/maturity', perm: 'neo.mma.access' },
+  { prefix: '/nero', perm: 'neo.nero.access' },
+  { prefix: '/admin', perm: 'neo.admin.access' },
+];
+
+export function doorForPath(pathname: string): { prefix: string; perm: string } | null {
+  for (const door of DOORS) {
+    if (pathname === door.prefix || pathname.startsWith(`${door.prefix}/`)) return door;
+  }
+  return null;
+}
 
 export function parseCookie(header: string | null, name: string): string | null {
   if (!header) return null;
@@ -81,10 +109,21 @@ async function purposeKey(secret: string, purpose: string): Promise<CryptoKey> {
   return crypto.subtle.importKey('raw', bits, { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']);
 }
 
-/** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de @neo/auth) + exp. */
-export async function verifyToken(token: string, secret: string): Promise<boolean> {
+/** O que a borda lê do payload. `perms` ausente ≠ vazio — ver o aviso em @neo/auth. */
+export interface EdgePayload {
+  email?: string;
+  exp: number;
+  purpose?: string;
+  perms?: string[];
+}
+
+/**
+ * Verifica assinatura + expiração e DEVOLVE o payload (null se inválido). A borda precisa do
+ * conteúdo, não só do veredito: é de `perms` que sai a decisão de porta.
+ */
+export async function readPayload(token: string, secret: string): Promise<EdgePayload | null> {
   const [payload, sig] = token.split('.');
-  if (!payload || !sig) return false;
+  if (!payload || !sig) return null;
   try {
     const key = await purposeKey(secret, PURPOSE);
     const valid = await crypto.subtle.verify(
@@ -93,13 +132,42 @@ export async function verifyToken(token: string, secret: string): Promise<boolea
       b64urlToBytes(sig) as unknown as ArrayBuffer,
       new TextEncoder().encode(payload),
     );
-    if (!valid) return false;
-    const { exp, purpose } = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload)));
-    if (typeof exp !== 'number' || exp <= Date.now()) return false;
-    return purpose === undefined || purpose === PURPOSE;
+    if (!valid) return null;
+    const parsed = JSON.parse(new TextDecoder().decode(b64urlToBytes(payload))) as EdgePayload;
+    if (typeof parsed.exp !== 'number' || parsed.exp <= Date.now()) return null;
+    if (parsed.purpose !== undefined && parsed.purpose !== PURPOSE) return null;
+    return parsed;
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** Verifica `payload.assinatura` (HMAC-SHA256 base64url — mesmo formato de @neo/auth) + exp. */
+export async function verifyToken(token: string, secret: string): Promise<boolean> {
+  return (await readPayload(token, secret)) !== null;
+}
+
+/**
+ * A DECISÃO DA BORDA, isolada da requisição para poder ser testada sem servidor.
+ *
+ *   'passa'      → segue para o filesystem
+ *   'sem-sessao' → não há cookie válido: hub para autenticar
+ *   'sem-claims' → cookie válido de ANTES do RBAC (ou emitido sem claims): hub para re-emitir.
+ *                  É a autocura. Negar aqui derrubaria toda sessão viva no deploy.
+ *   'sem-perm'   → claims assadas e a permissão não está lá. AINDA ASSIM vai ao hub, não a um
+ *                  403: a claim pode estar velha para o outro lado (a pessoa acabou de ganhar
+ *                  o papel). Quem tem o dado fresco é o hub, e é lá que a mensagem final é
+ *                  dada — com trava de repetição, senão isto vira ping-pong.
+ */
+export type EdgeDecision = 'passa' | 'sem-sessao' | 'sem-claims' | 'sem-perm';
+
+export function decide(payload: EdgePayload | null, perm: string | null): EdgeDecision {
+  if (!payload) return 'sem-sessao';
+  // Rota fora do mapa de portas: o matcher não deveria trazê-la, mas se trouxer, ter sessão
+  // válida basta — inventar uma permissão aqui trancaria uma rota nova em silêncio.
+  if (!perm) return 'passa';
+  if (!Array.isArray(payload.perms)) return 'sem-claims';
+  return payload.perms.includes(perm) ? 'passa' : 'sem-perm';
 }
 
 export default async function middleware(request: Request): Promise<Response | undefined> {
@@ -117,18 +185,27 @@ export default async function middleware(request: Request): Promise<Response | u
     return undefined;
   }
 
-  const token = parseCookie(request.headers.get('cookie'), COOKIE);
-  if (token && (await verifyToken(token, secret))) return undefined;
-
-  // Sem sessão NEO: volta ao hub (login) preservando o destino para retomar após autenticar.
-  // Response construída na mão: Response.redirect() tem headers imutáveis e o
-  // `headers.set` posterior lançaria TypeError no runtime Edge.
   const url = new URL(request.url);
+  const door = doorForPath(url.pathname);
+  const token = parseCookie(request.headers.get('cookie'), COOKIE);
+  const payload = token ? await readPayload(token, secret) : null;
+
+  const decision = decide(payload, door?.perm ?? null);
+  if (decision === 'passa') return undefined;
+
+  // Volta ao hub preservando o destino. Response construída na mão: Response.redirect() tem
+  // headers imutáveis e o `headers.set` posterior lançaria TypeError no runtime Edge.
+  //
+  // `negado` viaja junto quando a recusa foi por PERMISSÃO (e não por falta de sessão ou de
+  // claims): é o que permite ao hub dizer qual porta foi negada sem ter de refazer o
+  // mapeamento — e é o sinal de que ele deve parar o ping-pong se a segunda tentativa também
+  // falhar. Sem ele o hub não distingue "acabou de logar" de "voltou negado".
   const next = encodeURIComponent(url.pathname + url.search);
+  const negado = decision === 'sem-perm' && door ? `&negado=${encodeURIComponent(door.perm)}` : '';
   return new Response(null, {
     status: 302,
     headers: {
-      Location: new URL(`/?next=${next}`, request.url).toString(),
+      Location: new URL(`/?next=${next}${negado}`, request.url).toString(),
       'Cache-Control': 'no-store',
     },
   });

@@ -66,6 +66,17 @@
     .nero-copy p{margin:0;max-width:520px}
     .nero .door-foot{margin-top:22px}
     .badge-lock{display:inline-flex;align-items:center;gap:6px;font-size:8px;text-transform:uppercase;letter-spacing:1.5px;border:1px solid var(--green);color:var(--green);border-radius:99px;padding:7px 11px}
+    /* ── Porta 04: Administração (card largo, como o Nero) ──
+       Só aparece para quem tem `neo.admin.access`; o main.ts a esconde pelo id. */
+    .admin{grid-column:1/-1;min-height:0;background:rgba(255,255,255,.76);border:1px solid rgba(255,255,255,.92);color:var(--ink);padding:30px 38px;box-shadow:0 16px 52px rgba(25,32,27,.07)}
+    .admin-body{display:flex;align-items:center;gap:34px;margin-top:22px;flex-wrap:wrap}
+    .admin-copy{flex:1;min-width:240px}
+    .admin-copy h2{margin:0 0 8px}
+    .admin-copy p{margin:0;max-width:520px}
+    .admin .door-foot{margin-top:22px}
+    .admin .arrow{background:#151916;color:var(--green)}
+    /* Mensagem de porta negada (o hub é quem dá a palavra final, não a borda). */
+    .door-message{width:min(1200px,90vw);margin:0 auto 20px;padding:14px 18px;border-radius:14px;background:rgba(255,255,255,.8);border:1px solid var(--line);color:#5c635d;font-size:13px;line-height:1.5}
     .footer{margin-top:auto;padding:24px 6vw;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
     /* ── Gate de acesso (login Microsoft) ── */
     .auth-loading{margin:0 auto 72px;color:var(--muted);font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:2.4px}
@@ -166,6 +177,8 @@
       <button class="btn-logout" id="btn-logout" type="button">Sair</button>
     </div>
 
+    <p class="door-message" id="door-message" hidden role="status"></p>
+
     <section class="doors" id="doors" hidden aria-label="Aplicações NEO">
       <a class="door performance" id="door-performance" href="/dash/">
         <div class="glow"></div><div class="door-top"><span class="number">01</span><span class="tag">Operação</span></div>
@@ -190,6 +203,16 @@
           </div>
         </div>
         <div class="door-foot"><span>Acessar Nero · Governança de Dados</span><b class="arrow">→</b></div>
+      </a>
+      <a class="door admin" id="door-admin" href="/admin/" hidden>
+        <div class="door-top"><span class="number">04</span><span class="tag">Governança de acesso</span></div>
+        <div class="admin-body">
+          <div class="admin-copy">
+            <h2>Administre quem<br>pode o quê.</h2>
+            <p>Pessoas, papéis e a matriz de papéis × funções do NEO inteiro — em linguagem de negócio, com trilha de auditoria.</p>
+          </div>
+        </div>
+        <div class="door-foot"><span>Acessar Administração</span><b class="arrow">→</b></div>
       </a>
     </section>
     <footer class="footer"><span>Venice by Blite × LM Mobilidade</span><span>NEO · Performance · Maturidade · Governança</span></footer>

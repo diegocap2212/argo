@@ -12,8 +12,12 @@
 import crypto from 'node:crypto';
 import {
   bearerFrom,
+  doorForPath,
   emailFromJwt,
+  hasClaims,
+  hasPerm,
   parseCookie,
+  PORTAL_DOORS,
   readToken,
   safeSecretEqual,
   serializeCookie,
@@ -26,16 +30,34 @@ import {
 import {
   parseCookie as mwParseCookie,
   verifyToken as mwVerifyToken,
+  readPayload as mwReadPayload,
+  decide as mwDecide,
+  doorForPath as mwDoorForPath,
+  DOORS as MW_DOORS,
 } from '../../middleware.ts';
 // api/session.ts também é autocontida (as functions da Vercel não resolvem código
 // compartilhado — ver o aviso no cabeçalho dela). Mesma ideia: o contrato é testado.
-import { makeToken as fnMakeToken, emailFromJwt as fnEmailFromJwt } from '../../api/session.ts';
+import {
+  makeToken as fnMakeToken,
+  emailFromJwt as fnEmailFromJwt,
+  parseClaims as fnParseClaims,
+  fitsInCookie as fnFitsInCookie,
+  MAX_COOKIE_VALUE_BYTES,
+} from '../../api/session.ts';
 import {
   isScope,
   parseCookie as gateParseCookie,
   safeSecretEqual as gateSafeSecretEqual,
   verifyToken as gateVerifyToken,
 } from '../../api/gate.ts';
+// api/authz.ts é a QUARTA cópia autocontida do HMAC (as functions da Vercel não resolvem
+// código compartilhado). Mesmo contrato das outras três.
+import {
+  emailFromSession as authzEmailFromSession,
+  parseCookie as authzParseCookie,
+  isPermId,
+  devBypassEnabled,
+} from '../../api/authz.ts';
 
 let pass = 0;
 let fail = 0;
@@ -335,6 +357,229 @@ async function main() {
     check('isScope rejeita desconhecido', !isScope('admin'));
     check('isScope rejeita vazio/undefined', !isScope('') && !isScope(undefined));
     check('isScope rejeita array', !isScope(['tower']));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CLAIMS DE AUTORIZAÇÃO NO COOKIE (etapa 3 do RBAC)
+  //
+  // `api/session.ts` passa a assar `roles`/`perms` no payload do `neo_session`. Três
+  // propriedades precisam valer, e as três são testadas aqui:
+  //
+  //   1. A claim é ASSINADA. Se o payload pudesse ser editado sem invalidar a assinatura,
+  //      qualquer pessoa se daria `neo.admin.access` no próprio cookie.
+  //   2. AUSENTE ≠ VAZIO. Cookie de antes do RBAC (sem `perms`) tem de ser distinguível de
+  //      cookie novo de quem não tem permissão nenhuma — o primeiro merece autocura pelo hub,
+  //      o segundo merece "acesso negado". Confundir os dois derruba TODA sessão viva no deploy.
+  //   3. As 3 cópias autocontidas continuam concordando com o pacote COM o campo novo. O
+  //      payload cresce ~1 KB; nenhuma delas pode ter suposição de tamanho embutida.
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('\n▶ Claims: hasPerm / hasClaims');
+  {
+    const comPerms = { exp: future, perms: ['neo.admin.access', 'mma.cycle.homologate'] };
+    // Montada por concatenação DE PROPÓSITO: `tests/perm-catalog.ts` varre o TS atrás de
+    // `hasPerm(x, 'literal')` e exige que o literal exista no catálogo. Uma permissão
+    // inexistente escrita como literal faria aquele teste falhar — com razão.
+    const ausenteDoCatalogo = 'mma.cycle.' + 'nao-existe';
+
+    check('hasPerm acha a permissão presente', hasPerm(comPerms, 'neo.admin.access'));
+    check('hasPerm nega a ausente', !hasPerm(comPerms, ausenteDoCatalogo));
+    check('hasPerm não casa por prefixo', !hasPerm({ exp: future, perms: ['neo.admin.access.x'] }, 'neo.admin.access'));
+    check('hasPerm em payload sem claims é false', !hasPerm({ exp: future }, 'neo.admin.access'));
+    check('hasPerm em null não lança', !hasPerm(null, 'neo.admin.access'));
+    check('hasPerm em undefined não lança', !hasPerm(undefined, 'neo.admin.access'));
+
+    // A distinção que sustenta a autocura da borda.
+    check('hasClaims: claims assadas e vazias → true', hasClaims({ exp: future, perms: [] }));
+    check('hasClaims: sem o campo → false', !hasClaims({ exp: future }));
+    check('hasClaims: null → false', !hasClaims(null));
+    check('perms vazio nega tudo', !hasPerm({ exp: future, perms: [] }, 'neo.admin.access'));
+  }
+
+  console.log('\n▶ Claims: sobrevivem ao token e são assinadas');
+  {
+    const perms = ['neo.admin.access', 'mma.cycle.homologate', 'mma.kaizen.write'];
+    const roles = ['admin_geral'];
+    const tok = await signToken({ email: 'a@b.c', exp: future, roles, perms }, SECRET, 'neo_session');
+
+    const lido = await readToken(tok, SECRET, 'neo_session');
+    check('perms voltam intactas do token', JSON.stringify(lido?.perms) === JSON.stringify(perms));
+    check('roles voltam intactos do token', JSON.stringify(lido?.roles) === JSON.stringify(roles));
+    check('hasPerm sobre o payload lido', hasPerm(lido, 'mma.cycle.homologate'));
+
+    // A propriedade de segurança: escalada por edição do cookie é impossível.
+    const [b64] = tok.split('.');
+    const adulterado = JSON.parse(Buffer.from(b64, 'base64url').toString());
+    adulterado.perms = [...perms, 'neo.matrix.manage'];
+    const forjado = `${Buffer.from(JSON.stringify(adulterado)).toString('base64url')}.${tok.split('.')[1]}`;
+    check('payload com permissão acrescentada NÃO verifica', !(await verifyToken(forjado, SECRET, 'neo_session')));
+    check('e o middleware também recusa o forjado', !(await mwVerifyToken(forjado, SECRET)));
+    check('e o gate também recusa o forjado', !gateVerifyToken(forjado, SECRET, 'neo_session'));
+
+    // Token SEM claims continua válido — é o cookie de toda sessão viva hoje.
+    const semClaims = await signToken({ email: 'a@b.c', exp: future }, SECRET, 'neo_session');
+    check('token sem claims continua verificando', await verifyToken(semClaims, SECRET, 'neo_session'));
+    check('token sem claims: perms é undefined, não []', (await readToken(semClaims, SECRET, 'neo_session'))?.perms === undefined);
+  }
+
+  console.log('\n▶ Contrato: token COM claims nas 3 cópias autocontidas');
+  {
+    // 26 permissões e 2 papéis: o tamanho real do catálogo semeado, não um caso de brinquedo.
+    const perms = Array.from({ length: 26 }, (_, i) => `mma.dominio${i}.acao_de_nome_realista`);
+    const payload = { email: 'pessoa.com.nome.longo@lmmobilidade.com.br', exp: future, roles: ['admin', 'am'], perms };
+
+    const emitido = fnMakeToken(payload, SECRET);
+    check('token com claims: function == pacote, byte a byte', emitido === (await signToken(payload, SECRET, 'neo_session')));
+    check('token com claims passa no pacote', await verifyToken(emitido, SECRET, 'neo_session'));
+    check('token com claims passa no middleware', await mwVerifyToken(emitido, SECRET));
+    check('token com claims passa no gate como sessão', gateVerifyToken(emitido, SECRET, 'neo_session'));
+    check('token com claims NÃO abre a Torre', !gateVerifyToken(emitido, SECRET, 'tower'));
+    check('token com claims NÃO abre o Nero', !gateVerifyToken(emitido, SECRET, 'nero'));
+    check('as 26 permissões voltam inteiras', (await readToken(emitido, SECRET, 'neo_session'))?.perms?.length === 26);
+  }
+
+  console.log('\n▶ api/session.ts: parseClaims (resposta do RPC my_neo_claims)');
+  {
+    // `returns table(...)` no PostgREST vem como ARRAY de uma linha.
+    const linha = [{ roles: ['am'], perms: ['mma.cycle.homologate'] }];
+    check('lê o formato do PostgREST (array de 1 linha)', fnParseClaims(linha)?.perms[0] === 'mma.cycle.homologate');
+    check('lê também objeto direto', fnParseClaims({ roles: [], perms: ['x'] })?.perms[0] === 'x');
+    check('sem papel nenhum devolve arrays vazios', JSON.stringify(fnParseClaims([{ roles: [], perms: [] }])) === '{"roles":[],"perms":[]}');
+    check('roles ausente vira [] (perms é que manda)', JSON.stringify(fnParseClaims([{ perms: ['x'] }])?.roles) === '[]');
+
+    // Resposta torta do banco não pode virar exceção nem claim inventada: null = "sem claims",
+    // que é o caminho de autocura, e não "sem permissão", que é negação.
+    check('perms ausente devolve null', fnParseClaims([{ roles: ['am'] }]) === null);
+    check('perms não-array devolve null', fnParseClaims([{ perms: 'admin' }]) === null);
+    check('perms com não-string devolve null', fnParseClaims([{ perms: ['ok', 42] }]) === null);
+    check('array vazio devolve null', fnParseClaims([]) === null);
+    check('null devolve null', fnParseClaims(null) === null);
+    check('string devolve null', fnParseClaims('erro') === null);
+    check('erro do PostgREST devolve null', fnParseClaims({ code: 'PGRST202', message: 'not found' }) === null);
+  }
+
+  console.log('\n▶ api/session.ts: teto do cookie');
+  {
+    // Cookie acima do limite do RFC 6265 é DESCARTADO em silêncio pelo browser — e sem
+    // `neo_session` a pessoa não entra em nada. O corte tem de ser nas claims, nunca na sessão.
+    const realista = fnMakeToken(
+      { email: 'pessoa@lmmobilidade.com.br', exp: future, roles: ['admin_geral'], perms: Array.from({ length: 26 }, (_, i) => `mma.dominio${i}.acao_de_nome_realista`) },
+      SECRET,
+    );
+    check('catálogo do tamanho de hoje cabe no cookie', fnFitsInCookie(realista), `${realista.length} bytes de token`);
+
+    const absurdo = fnMakeToken(
+      { email: 'pessoa@lmmobilidade.com.br', exp: future, roles: [], perms: Array.from({ length: 400 }, (_, i) => `mma.dominio${i}.acao_de_nome_realista`) },
+      SECRET,
+    );
+    check('catálogo grande demais é detectado', !fnFitsInCookie(absurdo), `${absurdo.length} bytes de token`);
+    check('o teto tem folga para os atributos do cookie', MAX_COOKIE_VALUE_BYTES < 4096);
+    // E a saída de emergência tem de caber sempre: sessão sem claims é o fallback.
+    check('sessão sem claims sempre cabe', fnFitsInCookie(fnMakeToken({ email: 'pessoa@lmmobilidade.com.br', exp: future }, SECRET)));
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PORTAS E PRÉ-FILTRO DA BORDA (etapa 4 do RBAC)
+  //
+  // O mapa rota → permissão existe DUAS vezes: `PORTAL_DOORS` em @neo/auth (que o hub e o
+  // Nero importam) e uma cópia inline em `middleware.ts` (que não pode importar nada). Uma
+  // divergência aqui não quebra nada visivelmente — a borda passa a proteger a rota com a
+  // permissão errada, e isso é indistinguível de "protegida" até alguém tentar entrar.
+  // ══════════════════════════════════════════════════════════════════════════
+  console.log('\n▶ Contrato: mapa de portas @neo/auth × middleware.ts');
+  {
+    check('as duas listas têm o mesmo tamanho', PORTAL_DOORS.length === MW_DOORS.length, `pacote=${PORTAL_DOORS.length} middleware=${MW_DOORS.length}`);
+    for (const door of PORTAL_DOORS) {
+      const mw = MW_DOORS.find((d) => d.prefix === door.prefix);
+      check(`${door.prefix} → mesma permissão nos dois`, mw?.perm === door.perm, `pacote=${door.perm} middleware=${mw?.perm}`);
+    }
+    // E o casamento de caminho tem de concordar, inclusive nos casos de borda.
+    for (const path of ['/dash', '/dash/', '/dash/x/y', '/maturity/squad/1', '/nero', '/admin/pessoas', '/dashboard', '/', '/admins', '/nerofoo', '/maturity']) {
+      const pkg = doorForPath(path)?.perm ?? null;
+      const mw = mwDoorForPath(path)?.perm ?? null;
+      check(`doorForPath concorda: ${path} (${pkg})`, pkg === mw, `pacote=${pkg} middleware=${mw}`);
+    }
+    // `/dashboard` não é `/dash`. Casar por prefixo cru abriria rotas vizinhas por acidente.
+    check('/dashboard NÃO é a porta do Dash', doorForPath('/dashboard') === null);
+    check('/nerofoo NÃO é a porta do Nero', doorForPath('/nerofoo') === null);
+    check('a raiz não é porta nenhuma', doorForPath('/') === null);
+  }
+
+  console.log('\n▶ Pré-filtro da borda: decide()');
+  {
+    const comPerm = { exp: future, perms: ['neo.dash.access'] };
+    const semPerm = { exp: future, perms: ['neo.mma.access'] };
+    const semClaims = { exp: future };
+
+    check('sem payload → sem-sessao', mwDecide(null, 'neo.dash.access') === 'sem-sessao');
+    check('com a permissão → passa', mwDecide(comPerm, 'neo.dash.access') === 'passa');
+    check('sem a permissão → sem-perm', mwDecide(semPerm, 'neo.dash.access') === 'sem-perm');
+
+    // A distinção que impede o deploy de deslogar todo mundo: cookie de ANTES do RBAC vai para
+    // a autocura, não para "acesso negado".
+    check('cookie sem claims → sem-claims (autocura)', mwDecide(semClaims, 'neo.dash.access') === 'sem-claims');
+    check('claims assadas e VAZIAS → sem-perm, não sem-claims', mwDecide({ exp: future, perms: [] }, 'neo.dash.access') === 'sem-perm');
+
+    // Rota fora do mapa: sessão válida basta. Inventar permissão aqui trancaria rota nova.
+    check('rota sem porta mapeada → passa com sessão', mwDecide(comPerm, null) === 'passa');
+    check('rota sem porta mapeada → ainda exige sessão', mwDecide(null, null) === 'sem-sessao');
+  }
+
+  console.log('\n▶ Contrato: middleware.readPayload × @neo/auth.readToken');
+  {
+    const perms = ['neo.dash.access', 'neo.admin.access'];
+    const tok = await signToken({ email: 'a@b.c', exp: future, perms }, SECRET, 'neo_session');
+    const doMw = await mwReadPayload(tok, SECRET);
+    const doPkg = await readToken(tok, SECRET, 'neo_session');
+    check('as duas leituras dão o mesmo email', doMw?.email === doPkg?.email);
+    check('as duas leituras dão as mesmas perms', JSON.stringify(doMw?.perms) === JSON.stringify(doPkg?.perms));
+
+    for (const [nome, token, secret] of [
+      ['expirado', await signToken({ exp: past }, SECRET, 'neo_session'), SECRET],
+      ['secret errado', tok, OTHER_SECRET],
+      ['token de tower', await signToken({ exp: future }, SECRET, 'tower'), SECRET],
+      ['lixo', '%%%.###', SECRET],
+    ] as Array<[string, string, string]>) {
+      check(`readPayload recusa: ${nome}`, (await mwReadPayload(token, secret)) === null);
+    }
+  }
+
+  console.log('\n▶ api/authz.ts (4ª cópia autocontida)');
+  {
+    const perms = ['neo.nero.access'];
+    const emitido = fnMakeToken({ email: 'pessoa@lmmobilidade.com.br', exp: future, perms }, SECRET);
+
+    // O que /api/authz precisa do cookie é o E-MAIL — é ele o sujeito da pergunta ao banco.
+    check('extrai o e-mail do cookie emitido pela sessão', authzEmailFromSession(emitido, SECRET) === 'pessoa@lmmobilidade.com.br');
+    check('secret errado não extrai e-mail', authzEmailFromSession(emitido, OTHER_SECRET) === null);
+    check('token expirado não extrai e-mail', authzEmailFromSession(fnMakeToken({ email: 'x@y.z', exp: past }, SECRET), SECRET) === null);
+    // Um cookie do Nero (senha) não pode servir de identidade para o /api/authz — seria a
+    // confusão de token de volta, agora no endpoint que decide o acesso ao próprio Nero.
+    check('cookie de nero NÃO vale como sessão', authzEmailFromSession(await signToken({ email: 'x@y.z', exp: future }, SECRET, 'nero'), SECRET) === null);
+    check('cookie de tower NÃO vale como sessão', authzEmailFromSession(await signToken({ email: 'x@y.z', exp: future }, SECRET, 'tower'), SECRET) === null);
+    // Sessão anônima (sem e-mail no payload) não dá para autorizar: não há sujeito.
+    check('payload sem e-mail devolve null', authzEmailFromSession(fnMakeToken({ exp: future }, SECRET), SECRET) === null);
+    check('lixo devolve null sem lançar', authzEmailFromSession('%%%.###', SECRET) === null);
+
+    for (const [nome, header] of [
+      ['normal', 'neo_session=abc.def'],
+      ['malformado', 'neo_session=%'],
+      ['ausente', 'outro=1'],
+    ] as Array<[string, string]>) {
+      check(`authz.parseCookie concorda: ${nome}`, authzParseCookie(header, 'neo_session') === parseCookie(header, 'neo_session'));
+    }
+
+    check('isPermId aceita id válido', isPermId('neo.nero.access') && isPermId('mma.cycle.homologate'));
+    check('isPermId recusa vazio e undefined', !isPermId('') && !isPermId(undefined));
+    check('isPermId recusa segmento faltando', !isPermId('neo.nero'));
+    check('isPermId recusa caractere estranho', !isPermId('neo.nero.access; drop') && !isPermId('neo/nero/access'));
+    check('isPermId recusa string absurdamente longa', !isPermId('a.b.' + 'x'.repeat(200)));
+
+    // O bypass de desenvolvimento tem de ser IMPOSSÍVEL na Vercel — inclusive em preview, que
+    // é onde o resto do portal ainda abre por env ausente (achado NEO-004).
+    check('bypass local exige a flag', !devBypassEnabled({}));
+    check('bypass local funciona sem VERCEL', devBypassEnabled({ NEO_AUTHZ_DEV_ALLOW: '1' }));
+    check('bypass NÃO funciona em preview da Vercel', !devBypassEnabled({ NEO_AUTHZ_DEV_ALLOW: '1', VERCEL: '1', VERCEL_ENV: 'preview' }));
+    check('bypass NÃO funciona em produção', !devBypassEnabled({ NEO_AUTHZ_DEV_ALLOW: '1', VERCEL: '1', VERCEL_ENV: 'production' }));
   }
 
   console.log(`\n${fail === 0 ? '✔' : '✖'} ${pass} passaram, ${fail} falharam\n`);
