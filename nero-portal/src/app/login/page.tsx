@@ -1,64 +1,24 @@
-"use client";
-
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { NeroLogo } from "@/components/nero-logo";
-import { BASE_PATH } from "@/lib/base-path";
 
 /**
- * Trava de acesso do Nero — a segunda das duas (ver src/proxy.ts).
+ * "Seu acesso ao Nero não está liberado."
  *
- * Quem chega aqui JÁ passou pela sessão do Portal NEO (login OTP + allowlist): o proxy só
- * serve esta tela para quem tem `neo_session`. O que falta é a senha específica do Nero,
- * porque ele contém informação proprietária.
+ * ESTA TELA DEIXOU DE PEDIR SENHA em 31/07/2026. Até então ela era a segunda trava: quem
+ * tinha sessão do NEO digitava a `NERO_PASSWORD` compartilhada e recebia o cookie `neo_nero`.
+ * Agora quem decide é a permissão `neo.nero.access`, perguntada pelo proxy ao `/api/authz` do
+ * portal a cada navegação — não há nada para a pessoa digitar aqui.
  *
- * O POST vai para `/api/gate?scope=nero` — caminho ABSOLUTO, de propósito FORA do basePath:
- * essa function vive no projeto `neo-lm` (a mesma origem serve o hub, o Dash, o Maturity e
- * este app). É o mesmo endpoint que a Torre do Dash usa com ?scope=tower, e a senha nunca
- * entra no bundle: fica na env NERO_PASSWORD e é comparada server-side, com rate-limit.
+ * Por que a tela continua existindo em vez de um 403: quem chega aqui TEM sessão do NEO e
+ * errou de porta, não de credencial. Um 403 seco mandaria essa pessoa procurar um problema
+ * técnico; o que ela precisa saber é a quem pedir.
  *
- * Substituiu o login por senha única própria do Nero (APP_PASSWORD + cookie nero_session de
- * 30 dias, sem identidade): agora a identidade vem do NEO e o TTL é de 12h.
+ * Server Component de propósito: não há estado, não há formulário, não há `fetch`. Era
+ * `"use client"` só por causa do campo de senha.
  */
-const GATE_URL = "/api/gate?scope=nero";
-
 export default function LoginPage() {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function unlock(e: React.FormEvent) {
-    e.preventDefault();
-    if (!password || submitting) return;
-    setSubmitting(true);
-    setError("");
-    try {
-      const r = await fetch(GATE_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
-      if (r.ok) {
-        // Recarrega pela raiz do app (com basePath) — agora com o cookie neo_nero.
-        window.location.assign(`${BASE_PATH}/`);
-        return;
-      }
-      if (r.status === 403) setError("Senha incorreta.");
-      else if (r.status === 429) setError("Muitas tentativas. Aguarde alguns minutos.");
-      else if (r.status === 401) setError("Sua sessão do NEO expirou. Recarregue a página.");
-      else setError("Não foi possível validar agora. Tente de novo.");
-    } catch {
-      setError("Não foi possível validar agora. Tente de novo.");
-    } finally {
-      setSubmitting(false);
-      setPassword("");
-    }
-  }
-
   return (
     <main className="flex flex-1 items-center justify-center px-4 py-16">
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="mb-6 flex flex-col items-center gap-3 text-center">
           <NeroLogo size={64} className="drop-shadow-md" />
           <div>
@@ -67,26 +27,30 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <form onSubmit={unlock} className="space-y-3 rounded-2xl border bg-card p-5 shadow-sm">
-          <label htmlFor="password" className="block text-sm font-medium">
-            Senha de acesso
-          </label>
-          <Input
-            id="password"
-            name="password"
-            type="password"
-            autoFocus
-            required
-            placeholder="••••••••"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {submitting ? "Validando…" : "Entrar"}
-          </Button>
-        </form>
+        <div className="space-y-3 rounded-2xl border bg-card p-6 shadow-sm">
+          <h2 className="font-serif text-base font-semibold">Seu acesso ao Nero não está liberado</h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Você está autenticado no NEO, mas ainda não tem a permissão{" "}
+            <strong className="font-medium text-foreground">Entrar no Nero</strong>. Peça a um
+            administrador do NEO — ele concede na área de Administração, sem precisar de senha
+            nova para ninguém.
+          </p>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Se o acesso acabou de ser concedido, recarregue esta página: a liberação vale em até
+            um minuto, sem novo login.
+          </p>
+          {/* Âncora crua e URL ABSOLUTA de propósito: o destino é o hub do NEO, que é OUTRO
+              app servido pela mesma origem — não é rota deste Next. `next/link` faria
+              navegação client-side para uma rota que não existe aqui, e um href relativo `/`
+              seria reescrito pelo basePath `/nero`. O `NEO_ORIGIN` é lido em tempo de build
+              porque esta é uma página estática sem estado. */}
+          <a
+            href={process.env.NEXT_PUBLIC_NEO_ORIGIN || "https://neo-lm.vercel.app"}
+            className="mt-2 inline-flex text-sm font-medium text-foreground underline underline-offset-4"
+          >
+            ← Voltar ao NEO
+          </a>
+        </div>
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
           Acesso restrito à equipe de Governança.

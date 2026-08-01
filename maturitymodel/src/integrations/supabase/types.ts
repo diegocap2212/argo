@@ -791,6 +791,120 @@ export type Database = {
         }
         Relationships: []
       }
+      neo_permissions: {
+        Row: {
+          app: string
+          description: string
+          group_label: string
+          id: string
+          label: string
+          rank: number
+          scope: string
+        }
+        Insert: {
+          app: string
+          description: string
+          group_label: string
+          id: string
+          label: string
+          rank: number
+          scope: string
+        }
+        Update: {
+          app?: string
+          description?: string
+          group_label?: string
+          id?: string
+          label?: string
+          rank?: number
+          scope?: string
+        }
+        Relationships: []
+      }
+      neo_role_permissions: {
+        Row: {
+          permission_id: string
+          role_id: string
+        }
+        Insert: {
+          permission_id: string
+          role_id: string
+        }
+        Update: {
+          permission_id?: string
+          role_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "neo_role_permissions_permission_id_fkey"
+            columns: ["permission_id"]
+            isOneToOne: false
+            referencedRelation: "neo_permissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "neo_role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "neo_roles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      neo_role_permissions_audit: {
+        Row: {
+          action: string
+          actor_email: string | null
+          at: string
+          id: string
+          permission_id: string
+          role_id: string
+        }
+        Insert: {
+          action: string
+          actor_email?: string | null
+          at?: string
+          id?: string
+          permission_id: string
+          role_id: string
+        }
+        Update: {
+          action?: string
+          actor_email?: string | null
+          at?: string
+          id?: string
+          permission_id?: string
+          role_id?: string
+        }
+        Relationships: []
+      }
+      neo_roles: {
+        Row: {
+          description: string
+          grantable: boolean
+          id: string
+          label: string
+          rank: number
+          scope: string
+        }
+        Insert: {
+          description: string
+          grantable?: boolean
+          id: string
+          label: string
+          rank: number
+          scope: string
+        }
+        Update: {
+          description?: string
+          grantable?: boolean
+          id?: string
+          label?: string
+          rank?: number
+          scope?: string
+        }
+        Relationships: []
+      }
       portal_roles: {
         Row: {
           created_at: string
@@ -1372,15 +1486,22 @@ export type Database = {
         }
         Returns: boolean
       }
+      has_perm: { Args: { p_perm: string; p_team?: string }; Returns: boolean }
+      has_perm_prefix: { Args: { p_prefix: string; p_team?: string }; Returns: boolean }
       is_admin: { Args: { _user_id: string }; Returns: boolean }
       is_approved: { Args: { _user_id: string }; Returns: boolean }
-      is_member: { Args: { t: string }; Returns: boolean }
       is_neo_allowed: { Args: never; Returns: boolean }
       is_neo_email_allowed: { Args: { check_email: string }; Returns: boolean }
-      is_portal_admin: { Args: never; Returns: boolean }
-      is_portal_am: { Args: never; Returns: boolean }
-      is_sm: { Args: { t: string }; Returns: boolean }
+      my_neo_claims: {
+        Args: never
+        Returns: {
+          perms: string[]
+          roles: string[]
+        }[]
+      }
+      my_permissions: { Args: never; Returns: string[] }
       my_portal_roles: { Args: never; Returns: string[] }
+      my_squad_permissions: { Args: { p_team: string }; Returns: string[] }
       officialize_cycle: { Args: { p_cycle: string }; Returns: undefined }
       reconcile_portal_role_user: { Args: never; Returns: undefined }
       restart_assessment: { Args: { p_team: string; p_reason: string }; Returns: string }

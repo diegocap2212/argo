@@ -69,7 +69,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           <RailLink to="/torre" label="Torre de squads" icon={<Building2 />} />
           {mySquad && <RailLink to={`/s/${mySquad.team_id}`} label="Meu squad" icon={<Users />} />}
           <RailLink to="/guia" label="Guia do modelo" icon={<BookOpen />} />
-          {isAdmin && <RailLink to="/admin" label="Administração" icon={<Settings />} />}
+          {/* Sai deste app: a administração virou o `/admin` do NEO (31/07/2026). Âncora
+              comum, não RailLink — `to="/admin"` cairia no redirecionador interno e daria dois
+              saltos para chegar ao mesmo lugar. */}
+          {isAdmin && (
+            <Tooltip delayDuration={120}>
+              <TooltipTrigger asChild>
+                <a className="editorial-rail-link" href="/admin/" aria-label="Administração do NEO">
+                  <Settings />
+                </a>
+              </TooltipTrigger>
+              <TooltipContent side="right">Administração · NEO</TooltipContent>
+            </Tooltip>
+          )}
         </nav>
         <div className="editorial-rail-footer">
           <Tooltip delayDuration={120}>

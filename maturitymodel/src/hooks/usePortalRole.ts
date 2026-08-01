@@ -42,12 +42,25 @@ export function usePortalRole() {
   });
 
   const roles = query.data ?? [];
-  const isAdmin = roles.includes("admin");
+
+  /**
+   * Governa o ACESSO: concede/revoga papel e edita a matriz de papéis × funções.
+   * Era o que `admin` significava até 30/07; quem era admin virou `admin_geral` na migração.
+   */
+  const isAdminGeral = roles.includes("admin_geral");
+
+  /**
+   * OPERA a estrutura: squads, membros, conteúdo do modelo, ações destrutivas.
+   * Admin Geral faz tudo o que o Admin faz, então entra aqui — do mesmo jeito que `isAM`
+   * já incluía o admin. Quem NÃO entra é o contrário: Admin não governa acesso.
+   */
+  const isAdmin = isAdminGeral || roles.includes("admin");
 
   return {
     roles,
+    isAdminGeral,
     isAdmin,
-    // Admin faz tudo, inclusive homologar — espelha is_portal_am() no banco.
+    // Admin faz tudo, inclusive homologar.
     isAM: isAdmin || roles.includes("am"),
     isLoading: query.isLoading,
   };

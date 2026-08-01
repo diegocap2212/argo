@@ -1,17 +1,16 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes, useParams } from "react-router-dom";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/hooks/useAuth";
-import { ProtectedRoute, RequireAdmin } from "@/components/ProtectedRoute";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppShell } from "@/components/layout/AppShell";
 
 const Inicio = lazy(() => import("@/pages/Inicio"));
 const Torre = lazy(() => import("@/pages/Torre"));
 const Guia = lazy(() => import("@/pages/Guia"));
-const AdminMMA = lazy(() => import("@/pages/AdminMMA"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const Jornada = lazy(() => import("@/pages/squad/Jornada"));
 const Sessao = lazy(() => import("@/pages/squad/Sessao"));
@@ -45,6 +44,24 @@ function TeamRedirect({ suffix = "" }: { suffix?: string }) {
   return <Navigate to={`/s/${teamId}${suffix}`} replace />;
 }
 
+/**
+ * `/maturity/admin` → `/admin`. O destino é outro app do portal (mesma origem, outro bundle),
+ * então tem de ser navegação do browser: `<Navigate/>` só se move dentro deste BrowserRouter e
+ * produziria `/maturity/admin` de novo.
+ *
+ * `replace` para o botão Voltar não cair no redirecionador e ricochetear.
+ */
+function RedirectToNeoAdmin() {
+  useEffect(() => {
+    window.location.replace("/admin/");
+  }, []);
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-venice-textTertiary">
+      A administração agora fica no NEO. Levando você para lá…
+    </div>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -59,16 +76,16 @@ function App() {
                   <Route path="/" element={<Shell><Inicio /></Shell>} />
                   <Route path="/torre" element={<Shell><Torre /></Shell>} />
                   <Route path="/guia" element={<Shell><Guia /></Shell>} />
-                  <Route
-                    path="/admin"
-                    element={
-                      <Shell>
-                        <RequireAdmin>
-                          <AdminMMA />
-                        </RequireAdmin>
-                      </Shell>
-                    }
-                  />
+                  {/* A administração saiu do MMA e virou o app `/admin` do NEO (31/07/2026):
+                      administrar a organização não é usar o modelo de maturidade, e enquanto a
+                      tela morava aqui "quem administra o MMA" e "quem administra o NEO" eram a
+                      mesma pessoa por acidente de layout.
+
+                      A rota FICA, como redirecionamento: `/maturity/admin` está em favorito, em
+                      link de mensagem e na memória de quem usava. Removê-la seca daria 404 sem
+                      dizer para onde ir. É redirect de navegador (não <Navigate/>) porque o
+                      destino é OUTRO app do portal, fora deste BrowserRouter. */}
+                  <Route path="/admin" element={<RedirectToNeoAdmin />} />
 
                   <Route path="/s/:teamId" element={<Shell><Jornada /></Shell>} />
                   <Route path="/s/:teamId/sessao" element={<Shell><Sessao /></Shell>} />

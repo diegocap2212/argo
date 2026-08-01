@@ -33,13 +33,16 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Gate do /admin: SÓ admin global do portal.
+ * Gate de rota administrativa DENTRO do MMA.
  *
- * Antes era "admin OU gestor (SM/AM) de algum squad", porque SM/AM gerenciavam os
- * membros do próprio squad. Desde 2026-07-26 estrutura da organização (quem existe, quem
- * está em qual squad, quem tem papel global) é ação de admin — e o AM é GLOBAL, então
- * "gerenciar o próprio squad" passaria a significar gerenciar todos. Deixar a tela
- * acessível a quem a RLS recusa é pior que não mostrá-la: o formulário só falha no envio.
+ * ⚠️ SEM USO desde 31/07/2026: a administração saiu deste app e virou o `/admin` do NEO, cuja
+ * porta é guardada pela borda (`neo.admin.access`) e pela RLS. Ficou aqui, e não foi apagado,
+ * porque a regra que ele carrega — **nunca renderizar tela que a RLS vai recusar, porque o
+ * formulário só falha no envio** — continua valendo para a próxima rota restrita que este app
+ * criar. Se a próxima não vier, apague: guarda sem guardado é ruído.
+ *
+ * Histórico: antes de 2026-07-26 era "admin OU gestor (SM/AM) de algum squad". Com o AM virando
+ * GLOBAL, "gerenciar o próprio squad" passaria a significar gerenciar todos.
  */
 export function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { isAdmin, isLoading } = usePortalRole();
