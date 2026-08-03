@@ -23,9 +23,28 @@ export function requireSecret(): string {
   return s;
 }
 
-/** Cookie de sessão do portal (o que o hub emite após o login OTP). */
-export async function neoSessionCookie(baseURL: string, email = 'e2e@lmmobilidade.com.br') {
-  const token = await signToken({ email, exp: Date.now() + TTL_MS }, requireSecret());
+/**
+ * Cookie de sessão do portal (o que o hub emite após o login OTP).
+ *
+ * ⚠️ AS CLAIMS SÃO OBRIGATÓRIAS DESDE O RBAC (2026-07-31). Antes bastava e-mail + `exp`; hoje a
+ * borda também confere a permissão da porta, e um cookie sem `perms` é lido como "anterior ao
+ * RBAC" — a borda manda ao hub para re-emissão em vez de servir a app. Sem estas claims, todo
+ * caso que espera 200 numa porta falharia por limitação da fixture, não por defeito do produto.
+ *
+ * Assinar claims aqui NÃO é furar a segurança: quem tem o SESSION_SECRET já podia forjar
+ * qualquer sessão. E as claims são só PRÉ-FILTRO de navegação — atrás de cada porta há
+ * verificação ao vivo (RLS com o JWT, has_perm no /api/data, /api/authz no Nero), que este
+ * cookie não abre. É por isso que o caso positivo do Nero saiu da suíte.
+ *
+ * O default cobre as portas que toda pessoa do NEO tem (`todos` na matriz). Passe `perms`
+ * explícito para exercitar ausência de permissão.
+ */
+export async function neoSessionCookie(
+  baseURL: string,
+  email = 'e2e@lmmobilidade.com.br',
+  perms: string[] = ['neo.dash.access', 'neo.mma.access'],
+) {
+  const token = await signToken({ email, exp: Date.now() + TTL_MS, perms }, requireSecret());
   return cookieFor(baseURL, 'neo_session', token);
 }
 

@@ -1,8 +1,10 @@
+// `gateCookie` saiu daqui em 2026-07-31: o único caso que o usava era "o Nero abre com sessão
+// + senha", e a senha deixou de existir. O helper continua em fixtures.ts enquanto api/gate.ts
+// existir; os dois saem juntos, depois da janela.
 import {
   expect,
   expiredSessionCookie,
   forgedSessionCookie,
-  gateCookie,
   neoSessionCookie,
   test,
 } from './fixtures.ts';
@@ -129,16 +131,75 @@ test.describe('com sessão do NEO', () => {
     expect(await neoPage.locator('#door-nero').getAttribute('href')).toMatch(/^\/nero\/?$/);
   });
 
-  test('Dash e Maturity abrem com só a sessão do NEO', async ({ neoContext }) => {
+  test('a Administração é link discreto, não uma quarta porta', async ({ neoPage }) => {
+    await neoPage.goto('/');
+    // Existe no DOM (a visibilidade depende de `neo.admin.access`, que exige sessão Supabase —
+    // fica no roteiro manual, como as outras portas).
+    await expect(neoPage.locator('#link-admin')).toHaveCount(1);
+    expect(await neoPage.locator('#link-admin').getAttribute('href')).toMatch(/^\/admin\/?$/);
+    // E NÃO pode ter voltado a ser card: governança de acesso não é vitrine, e um card do
+    // tamanho dos outros anuncia a existência dela para quem só passa os olhos.
+    await expect(neoPage.locator('#door-admin')).toHaveCount(0);
+  });
+
+  test('Dash e Maturity abrem com sessão + a permissão da porta', async ({ neoContext }) => {
     for (const path of ['/dash/', '/maturity/']) {
       expect((await neoContext.request.get(path, { maxRedirects: 0 })).status()).toBe(200);
     }
   });
 
-  test('o Nero NÃO abre só com a sessão — exige a senha própria', async ({ neoContext }) => {
-    test.skip(!FULL_STACK, 'exige o Nero já cortado para o código novo (basePath + proxy de 2 travas)');
+  // ── As duas recusas da borda, que só existem desde o RBAC ──
+  // Elas parecem iguais de fora (302 para o hub) e são casos DIFERENTES. Confundi-los foi o
+  // risco central do desenho: tratar "cookie velho" como "sem permissão" transformaria toda
+  // sessão viva num acesso negado no dia do deploy.
+
+  test('cookie de ANTES do RBAC vai para a autocura, não para acesso negado', async ({
+    browser,
+    baseURL,
+  }) => {
+    const ctx = await browser.newContext();
+    // `perms: undefined` — exatamente o cookie que existia antes de 31/07.
+    await ctx.addCookies([await neoSessionCookie(baseURL!, 'e2e@lmmobilidade.com.br', undefined)]);
+    const r = await ctx.request.get('/maturity/', { maxRedirects: 0 });
+    expect(r.status()).toBe(302);
+    const loc = r.headers()['location'] ?? '';
+    expect(loc).toContain('next=');
+    // SEM `negado=`: é o hub que decide, e ele vai re-emitir o cookie com claims frescas.
+    // Se este marcador aparecer, a borda está chamando de "sem permissão" o que é só "velho".
+    expect(loc).not.toContain('negado=');
+    await ctx.close();
+  });
+
+  test('claims assadas SEM a permissão da porta são recusa explícita', async ({
+    browser,
+    baseURL,
+  }) => {
+    const ctx = await browser.newContext();
+    // Tem claims, mas não a do MMA — o caso de quem realmente não pode entrar.
+    await ctx.addCookies([
+      await neoSessionCookie(baseURL!, 'e2e@lmmobilidade.com.br', ['neo.dash.access']),
+    ]);
+    const r = await ctx.request.get('/maturity/', { maxRedirects: 0 });
+    expect(r.status()).toBe(302);
+    expect(r.headers()['location'] ?? '').toContain('negado=neo.mma.access');
+    // E a porta que ELE tem continua abrindo — a recusa é da porta, não da sessão.
+    expect((await ctx.request.get('/dash/', { maxRedirects: 0 })).status()).toBe(200);
+    await ctx.close();
+  });
+
+  // ⚠️ ESTE CASO MUDOU DE MOTIVO EM 2026-07-31, MANTENDO O COMPORTAMENTO.
+  //
+  // Ele se chamava "o Nero NÃO abre só com a sessão — exige a senha própria". A senha
+  // compartilhada foi eliminada: quem decide agora é a permissão `neo.nero.access`, perguntada
+  // pelo proxy ao /api/authz a cada navegação. O redirecionamento para /nero/login continua
+  // acontecendo — mas porque falta PERMISSÃO, não porque falta senha. A tela de destino também
+  // mudou: não pede mais nada, explica a quem pedir.
+  //
+  // O e-mail que a fixture forja não tem papel no banco, então /api/authz responde 403 e o
+  // proxy fecha. É exatamente o caminho que uma pessoa sem acesso percorre.
+  test('o Nero NÃO abre sem a permissão neo.nero.access', async ({ neoContext }) => {
+    test.skip(!FULL_STACK, 'exige o Nero já cortado para o código novo (basePath + proxy)');
     const r = await neoContext.request.get('/nero/', { maxRedirects: 0 });
-    // Redireciona para a tela de senha — e NÃO para o hub, porque a sessão do portal é válida.
     // 307 e não 302: quem responde aqui é o proxy do Next (do Nero), não o middleware do
     // portal, que monta a Response à mão com 302. São camadas diferentes com convenções
     // diferentes; a primeira versão deste teste confundia as duas.
@@ -146,42 +207,62 @@ test.describe('com sessão do NEO', () => {
     expect(r.headers()['location'] ?? '').toContain('/nero/login');
   });
 
-  test('o Nero abre com sessão + senha', async ({ browser, baseURL }) => {
-    test.skip(!FULL_STACK, 'exige o Nero já cortado para o código novo');
-    const ctx = await browser.newContext();
-    await ctx.addCookies([await neoSessionCookie(baseURL!), await gateCookie(baseURL!, 'nero')]);
-    expect((await ctx.request.get('/nero/', { maxRedirects: 0 })).status()).toBe(200);
-    await ctx.close();
+  // O CAMINHO POSITIVO SAIU DAQUI, e a ausência é deliberada.
+  //
+  // Era "o Nero abre com sessão + senha": bastava forjar os dois cookies. Com permissão
+  // individual não há atalho equivalente — abrir o Nero exige que o e-mail do cookie TENHA
+  // `neo.nero.access` no banco. Forjar isso significaria conceder papel real a um e-mail de
+  // teste em PRODUÇÃO (é contra produção que esta suíte roda) e depois revogá-lo, deixando
+  // rastro na trilha de auditoria e uma janela em que um e-mail inventado tem acesso.
+  //
+  // Trocar uma verificação automática por um risco em produção é mau negócio. O caminho
+  // positivo fica no roteiro manual do ONBOARDING, com conta real — junto com "as portas
+  // aparecem", que já estava lá pelo mesmo tipo de limitação de fixture.
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// /api/authz — o endpoint que substituiu a senha do Nero
+//
+// Sem sessão não há o que perguntar. Estes casos não precisam forjar cookie, então rodam
+// sempre — inclusive no cron, que é onde a regressão apareceria.
+// ════════════════════════════════════════════════════════════════════════════
+test.describe('/api/authz — autorização ao vivo', () => {
+  test('sem sessão é 401, nunca 200', async ({ request }) => {
+    const r = await request.get('/api/authz?perm=neo.nero.access');
+    expect(r.status()).toBe(401);
+  });
+
+  test('permissão malformada é 400 — não vira consulta ao banco', async ({ request }) => {
+    for (const perm of ['lixo', 'neo.nero', 'neo.nero.access; drop', '']) {
+      const r = await request.get(`/api/authz?perm=${encodeURIComponent(perm)}`);
+      expect(r.status()).toBe(400);
+    }
+  });
+
+  test('sem o parâmetro perm é 400', async ({ request }) => {
+    expect((await request.get('/api/authz')).status()).toBe(400);
+  });
+
+  test('método não suportado é 405', async ({ request }) => {
+    expect((await request.fetch('/api/authz?perm=neo.nero.access', { method: 'POST' })).status()).toBe(405);
+  });
+
+  test('a resposta nunca é cacheável', async ({ request }) => {
+    const r = await request.get('/api/authz?perm=neo.nero.access');
+    expect(r.headers()['cache-control'] ?? '').toContain('no-store');
   });
 });
 
-test.describe('/api/gate — com sessão do NEO', () => {
-  test.skip(!HAS_SECRET, 'NEO_SESSION_SECRET ausente — não é possível forjar cookie');
-  // NUNCA contra produção: o teste abaixo gasta uma tentativa do rate-limit, que é POR IP e
-  // COMPARTILHADO com as pessoas de verdade. Rodando a suíte 4x contra produção eu tranquei
-  // o Diego fora do Nero em 2026-07-26 — e como o gate renova o EXPIRE em toda tentativa,
-  // inclusive nas já bloqueadas, cada retry dele empurrava o desbloqueio mais para frente.
-  // Ligue com NEO_ALLOW_RATE_LIMIT_BURN=1 só contra staging ou harness descartável.
-  test.skip(
-    process.env.NEO_ALLOW_RATE_LIMIT_BURN !== '1',
-    'consome tentativa do rate-limit (compartilhado por IP com usuários reais) — só em staging',
-  );
-  // Vive aqui e não no bloco "com sessão do NEO"? Não: PRECISA da sessão, e o `test.skip` no
-  // corpo não salva — a fixture `neoContext` roda ANTES do corpo e falharia ao forjar o cookie
-  // sem o segredo. Por isso o guarda é do describe inteiro, abaixo.
-  test('senha errada com sessão válida é 403 (ou 503 sem rate-limit)', async ({
-    neoContext,
-  }) => {
-    const r = await neoContext.request.post('/api/gate?scope=nero', {
-      data: { password: 'senha-errada-de-proposito' },
-    });
-    // 503 = fail-closed deliberado quando o Upstash não está configurado: o gate se recusa a
-    // validar senha sem proteção anti-brute-force. Ver QA-REVIEW §9.
-    expect([403, 503]).toContain(r.status());
-  });
-});
-
-test.describe('/api/gate — a trava por senha', () => {
+// ⚠️ ENDPOINT LEGADO, SEM CHAMADOR DESDE 2026-07-31.
+//
+// A Torre passou a depender de `dash.tower.view` e o Nero de `neo.nero.access`. Ninguém mais LÊ
+// os cookies `neo_tower`/`neo_nero`, então este endpoint emite para ninguém — está inerte.
+//
+// Os casos abaixo FICAM até o arquivo sair (depois da janela, junto com TOWER_PASSWORD e
+// NERO_PASSWORD — ver SECRETS.md). Enquanto o endpoint estiver no ar ele precisa continuar se
+// comportando: escopo inválido é 400, sem sessão é 401. Um endpoint inerte que passa a aceitar
+// qualquer coisa é pior do que um endpoint em uso.
+test.describe('/api/gate — legado, sem chamador (sai com o arquivo)', () => {
   test('escopo inválido é 400, não cai num escopo padrão', async ({ request }) => {
     // Aceitar escopo desconhecido apontaria para env/cookie inexistentes e poderia abrir.
     for (const q of ['?scope=admin', '?scope=', '']) {
