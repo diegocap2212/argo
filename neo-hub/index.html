@@ -14,7 +14,7 @@
     html,body{margin:0;min-height:100%;font-family:Inter,Arial,sans-serif;background:var(--paper);color:var(--ink)}
     body:before{content:"";position:fixed;inset:0;background:radial-gradient(circle at 50% -10%,rgba(43,232,107,.13),transparent 34%),linear-gradient(90deg,rgba(255,255,255,.42) 1px,transparent 1px),linear-gradient(rgba(255,255,255,.4) 1px,transparent 1px);background-size:auto,72px 72px,72px 72px;pointer-events:none}
     .page{position:relative;min-height:100vh;display:flex;flex-direction:column}
-    .brandbar{min-height:126px;padding:26px 6vw;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid var(--line)}
+    .brandbar{min-height:126px;padding:26px 6vw;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;border-bottom:1px solid var(--line);position:relative}
     .brand{width:210px;height:66px;display:flex;align-items:center}
     .brand:last-child{justify-self:end;justify-content:flex-end}
     .venice{width:150px;height:auto;filter:brightness(0);opacity:1}
@@ -66,14 +66,18 @@
     .nero-copy p{margin:0;max-width:520px}
     .nero .door-foot{margin-top:22px}
     .badge-lock{display:inline-flex;align-items:center;gap:6px;font-size:8px;text-transform:uppercase;letter-spacing:1.5px;border:1px solid var(--green);color:var(--green);border-radius:99px;padding:7px 11px}
-    /* ── Administração: link discreto na barra de sessão, NÃO uma porta ──
-       Ele já foi um card do tamanho do Dash e do MMA, e estava errado por duas razões: dá a
-       uma superfície de GOVERNANÇA o mesmo peso visual das ferramentas de produto, e anuncia
-       a existência dela para quem passa os olhos. Governança de acesso não é vitrine.
-       Continua escondido por permissão (`neo.admin.access`) — o discreto é o tratamento, não
-       a proteção. */
-    .btn-admin{background:none;border:0;border-right:1px solid var(--line);padding:0 14px 0 0;margin-right:14px;color:#858c86;font:inherit;font-size:10px;text-transform:uppercase;letter-spacing:1.4px;cursor:pointer;text-decoration:none;transition:color .2s}
+    /* ── Administração: link no canto superior direito, NÃO uma porta ──
+       Ele já foi um card do tamanho do Dash e do MMA — errado, porque dá a uma superfície de
+       GOVERNANÇA o mesmo peso das ferramentas de produto e anuncia a existência dela para quem
+       só passa os olhos. Depois esteve na `session-bar`, também errado: aquela faixa é
+       CENTRALIZADA e tem linhas decorativas dos dois lados, o oposto de discreto.
+       Agora é absoluto dentro do cabeçalho, então fica no canto sem entrar na grade de três
+       colunas e sem desalinhar os logos.
+       Continua escondido por permissão (`neo.admin.access`) — discreto é o tratamento, não a
+       proteção. */
+    .btn-admin{position:absolute;top:12px;right:6vw;color:#9aa19a;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;text-decoration:none;transition:color .2s}
     .btn-admin:hover{color:var(--ink)}
+    .btn-admin:focus-visible{outline:2px solid var(--green);outline-offset:3px;border-radius:2px}
     /* Mensagem de porta negada (o hub é quem dá a palavra final, não a borda). */
     .door-message{width:min(1200px,90vw);margin:0 auto 20px;padding:14px 18px;border-radius:14px;background:rgba(255,255,255,.8);border:1px solid var(--line);color:#5c635d;font-size:13px;line-height:1.5}
     .footer{margin-top:auto;padding:24px 6vw;border-top:1px solid var(--line);display:flex;justify-content:space-between;color:#858c86;font-size:9px;text-transform:uppercase;letter-spacing:1.4px}
@@ -127,6 +131,7 @@
       <div class="brand"><img class="venice" src="/venice-by-blite.svg" alt="Venice by Blite"></div>
       <div class="partnership">Experiências digitais</div>
       <div class="brand"><img class="lm" src="/lm-mobilidade.png" alt="LM Mobilidade"></div>
+      <a class="btn-admin" id="link-admin" href="/admin/" hidden>Administração</a>
     </header>
     <section class="hero">
       <div class="neo-lockup" aria-label="NEO"><span class="neo-mark" aria-hidden="true"></span><span class="neo-word">NEO</span></div>
@@ -173,7 +178,6 @@
 
     <div class="session-bar" id="session-bar" hidden>
       <span id="session-user"></span>
-      <a class="btn-admin" id="link-admin" href="/admin/" hidden>Administração</a>
       <button class="btn-logout" id="btn-logout" type="button">Sair</button>
     </div>
 
