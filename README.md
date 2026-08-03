@@ -10,6 +10,10 @@
 > **Avaliando segurança?** [`SECURITY.md`](SECURITY.md) — cada garantia com **onde é imposta** e
 > **qual teste a prova**, mais a lista honesta do que ainda não tem garantia.
 >
+> **Assumindo a operação (handover)?** [`TRANSFERENCIA.md`](TRANSFERENCIA.md) — runbook em 4
+> fases: transferir a propriedade, criar as credenciais novas, revogar as antigas e **provar que
+> morreram**. Nenhum valor de credencial escrito; só onde, quem e em que ordem.
+>
 > **Vai mudar de nuvem ou de banco?** [`PORTABILIDADE.md`](PORTABILIDADE.md) — o que prende o
 > NEO ao Supabase e à Vercel, medido; e **o que quebra no dado ao migrar**. Leia antes de
 > exportar qualquer coisa: os vínculos de squad saem errados se exportados pelo caminho óbvio.

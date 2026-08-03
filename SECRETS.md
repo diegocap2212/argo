@@ -196,6 +196,19 @@ Enquanto a coluna **Revogado em** estiver vazia, considere a credencial VIVA.
 | 5 | Escopo do `GITHUB_DISPATCH_TOKEN` | — | Diego | token de escopo mínimo | — | — |
 | 6 | 2FA em Vercel / GitHub / Supabase / cron-job.org | — | Diego | — | — | — |
 | 7 | **Anon key do projeto Supabase** | migration `20260712190000_anchor_sync_cron.sql`, no **histórico do git** | Diego | cron passou a usar `ANCHOR_SYNC_CRON_SECRET` (Vault) | — | — |
+| 8 | **Chave secreta do projeto** `sb_secret_55qL…` | conversa de 2026-07-31 (colada no chat) | Diego | chave nova em `Settings → API Keys` | — | — |
+| 9 | Token pessoal Supabase `sbp_11903c…` | conversa de 2026-07-31 (colado no chat) | Diego | conta de serviço, não token pessoal | — | — |
+| 10 | `NERO_PASSWORD` | conversa de 2026-07-31 + arquivo `Nero-LM-2026.md` na raiz | Diego | **nenhum** — a senha deixou de existir com o RBAC | — | — |
+
+> **A linha 8 é a mais grave da tabela, incluindo as anteriores.** `sb_secret_` é a sucessora do
+> `service_role`: ela **ignora RLS inteiramente**. Quem a tem lê e escreve qualquer linha de
+> qualquer tabela, passando por cima das 62 policies que entraram em produção em 31/07 — inclusive
+> `portal_roles` e `neo_role_permissions`, ou seja, pode conceder a si mesmo qualquer papel. Ao
+> contrário da linha 7, esta **não** é higiene: é contenção.
+>
+> A linha 10 fecha sozinha quando o Nero for verificado sem senha: nenhum código lê mais o cookie
+> `neo_nero`. Mas a senha ainda está em texto puro no `Nero-LM-2026.md`, que não é versionado e
+> continua no disco — apagar o arquivo é parte de fechá-la.
 
 Como preencher (exemplo do que conta como evidência):
 
