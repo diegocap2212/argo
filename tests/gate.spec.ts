@@ -159,7 +159,7 @@ test.describe('com sessão do NEO', () => {
   }) => {
     const ctx = await browser.newContext();
     // `perms: undefined` — exatamente o cookie que existia antes de 31/07.
-    await ctx.addCookies([await neoSessionCookie(baseURL!, 'e2e@lmmobilidade.com.br', undefined)]);
+    await ctx.addCookies([await neoSessionCookie(baseURL!, 'e2e@neo.test', undefined)]);
     const r = await ctx.request.get('/maturity/', { maxRedirects: 0 });
     expect(r.status()).toBe(302);
     const loc = r.headers()['location'] ?? '';
@@ -177,7 +177,7 @@ test.describe('com sessão do NEO', () => {
     const ctx = await browser.newContext();
     // Tem claims, mas não a do MMA — o caso de quem realmente não pode entrar.
     await ctx.addCookies([
-      await neoSessionCookie(baseURL!, 'e2e@lmmobilidade.com.br', ['neo.dash.access']),
+      await neoSessionCookie(baseURL!, 'e2e@neo.test', ['neo.dash.access']),
     ]);
     const r = await ctx.request.get('/maturity/', { maxRedirects: 0 });
     expect(r.status()).toBe(302);

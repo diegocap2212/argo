@@ -16,8 +16,8 @@
 > deploy desta revisão" dizia que o código estava na branch `feat/sessao-colaborativa`
 > e **ainda não mergeado**, com a `main` desalinhada do banco. Isso já não é verdade —
 > a sessão colaborativa está em produção. E a lista de acesso não é mais "só Diego tem
-> login": o login é OTP no Hub, liberado pela allowlist `is_neo_allowed()` (todo
-> `@lmmobilidade.com.br` + exceções em `neo_access`).
+> login": o login é OTP no Hub, liberado pela allowlist `is_neo_allowed()` — desde
+> 09/09/2026, apenas quem está aprovado em `neo_access` (não há mais regra de domínio).
 >
 > Do hardening de 2026-07-27: a Edge Function `sync-anchors` virou **duas**
 > (`sync-anchors-user` com JWT + papel, `sync-anchors-cron` com secret do Vault),
@@ -63,7 +63,7 @@ e a `feat/sessao-colaborativa` não é a branch de trabalho.
 
 ~~Só Diego Caporusso tem login funcional confirmado (email de senha reenviado).~~
 **Obsoleto**: não há mais senha nem convite por senha. Login é **OTP no NEO Hub**, liberado
-pela allowlist `is_neo_allowed()` — todo `@lmmobilidade.com.br` mais exceções em `neo_access`.
+pela allowlist `is_neo_allowed()` — desde 09/09/2026, só quem está aprovado em `neo_access`.
 Os "convites travados em rate limit" da tabela acima deixaram de existir como problema: quem
 está na allowlist entra sozinho. O que ainda importa da tabela é o **mapa de papéis por squad**
 (`squad_members` + `portal_roles`), não o estado de convite.

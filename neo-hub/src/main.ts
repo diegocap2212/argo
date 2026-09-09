@@ -34,19 +34,15 @@ const btnResendCode = $<HTMLButtonElement>('btn-resend-code');
 let pendingEmail = '';
 let resendTimer: ReturnType<typeof setInterval> | null = null;
 
-const ALLOWED_DOMAIN = '@lmmobilidade.com.br';
-
 function firstName(session: Session): string {
   const meta = session.user.user_metadata ?? {};
   const name: string = meta.full_name || meta.name || session.user.email || '';
   return name.split(/[\s@]/)[0] || 'você';
 }
 
-// Autorização: domínio corporativo OU exceção aprovada em neo_access (via RPC is_neo_allowed).
-// O domínio cobre o caso comum sem round-trip; o RPC resolve as exceções e é resiliente a falha.
-async function isAllowed(session: Session): Promise<boolean> {
-  const email = (session.user.email || '').toLowerCase();
-  if (email.endsWith(ALLOWED_DOMAIN)) return true;
+// Autorização: a allowlist `neo_access`, via RPC is_neo_allowed. Não há mais atalho por
+// domínio — o round-trip é o preço de ter uma fonte da verdade só. Falha do RPC nega.
+async function isAllowed(): Promise<boolean> {
   try {
     const { data, error } = await supabase.rpc('is_neo_allowed');
     return !error && data === true;
@@ -223,10 +219,10 @@ async function reconcile(session: Session | null) {
     showGate('form');
     return;
   }
-  if (!(await isAllowed(session))) {
+  if (!(await isAllowed())) {
     await supabase.auth.signOut();
     showGate('form');
-    showError('Este e-mail não tem acesso ao NEO. Use sua conta @lmmobilidade.com.br ou fale com o administrador.');
+    showError('Este e-mail não tem acesso ao NEO. Peça a um administrador para liberar o seu acesso.');
     return;
   }
 
@@ -298,12 +294,12 @@ async function init() {
     if (!email) return;
     btnSend.disabled = true;
     btnSend.textContent = 'Verificando…';
-    // A allowlist decide quem pode receber o link: domínio @lmmobilidade OU exceção aprovada.
+    // A allowlist decide quem pode receber o código: estar aprovado em neo_access.
     const { data: allowed, error: allowErr } = await supabase.rpc('is_neo_email_allowed', { check_email: email });
     if (allowErr || allowed !== true) {
       btnSend.disabled = false;
       btnSend.textContent = 'Receber link de acesso';
-      showError('Este e-mail não tem acesso ao NEO. Use sua conta @lmmobilidade.com.br ou fale com o administrador.');
+      showError('Este e-mail não tem acesso ao NEO. Peça a um administrador para liberar o seu acesso.');
       return;
     }
     btnSend.textContent = 'Enviando…';

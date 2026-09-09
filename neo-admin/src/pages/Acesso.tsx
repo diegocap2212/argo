@@ -1,9 +1,9 @@
 /**
  * ACESSO AO NEO — a allowlist `neo_access`.
  *
- * Ela decide quem pode RECEBER o código de acesso, antes de qualquer papel: o domínio
- * @lmmobilidade.com.br entra sozinho, e esta lista é a das EXCEÇÕES (consultoria, parceiro,
- * conta pessoal de alguém em transição).
+ * Ela decide quem pode RECEBER o código de acesso, antes de qualquer papel. Desde a saída da
+ * LM Mobilidade (2026-09-09) não existe mais liberação por domínio: esta lista não é a das
+ * exceções, é A lista. Quem não está aqui não entra.
  *
  * Até agora só existia no dashboard do Supabase — ou seja, mexer nela exigia acesso de
  * engenharia ao banco. Ganho barato desta rodada: quem governa acesso passa a fazer isso aqui.
@@ -34,11 +34,6 @@ export function Acesso() {
     mutationFn: async () => {
       const alvo = email.trim().toLowerCase();
       if (!alvo.includes('@')) throw new Error('Informe um e-mail válido.');
-      if (alvo.endsWith('@lmmobilidade.com.br')) {
-        throw new Error(
-          'E-mails @lmmobilidade.com.br já entram pelo domínio — não precisam (nem devem) estar na lista de exceções.',
-        );
-      }
       const { error } = await supabase
         .from('neo_access')
         .upsert({ email: alvo, approved: true, note: nota.trim() || null }, { onConflict: 'email' });
@@ -74,7 +69,7 @@ export function Acesso() {
     <div>
       <PageTitle
         title="Acesso ao NEO"
-        subtitle="Exceções à regra do domínio. Quem tem e-mail @lmmobilidade.com.br entra sem estar aqui; esta lista é para quem não tem."
+        subtitle="Quem pode entrar no NEO. Não há liberação automática por domínio: e-mail que não está aqui não recebe código de acesso."
       />
 
       {erro ? (
@@ -85,12 +80,12 @@ export function Acesso() {
 
       {podeGerir ? (
         <Card className="mb-4">
-          <h2 className="mb-3 text-lg text-ink">Liberar um e-mail de fora do domínio</h2>
+          <h2 className="mb-3 text-lg text-ink">Liberar um e-mail</h2>
           <div className="flex flex-wrap items-center gap-2">
             <Input
               className="max-w-xs"
               type="email"
-              placeholder="pessoa@parceiro.com"
+              placeholder="pessoa@exemplo.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -108,12 +103,12 @@ export function Acesso() {
       ) : null}
 
       <Card>
-        <h2 className="mb-3 text-lg text-ink">Exceções cadastradas</h2>
+        <h2 className="mb-3 text-lg text-ink">E-mails com acesso</h2>
         <QueryState
           isLoading={permsLoading || lista.isLoading}
           error={lista.error}
           empty={linhas.length === 0}
-          emptyLabel="Nenhuma exceção — só o domínio corporativo entra."
+          emptyLabel="Nenhum e-mail liberado — ninguém consegue entrar no NEO."
         />
         {linhas.length > 0 ? (
           <Table>

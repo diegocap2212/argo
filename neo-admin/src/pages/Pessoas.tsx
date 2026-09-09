@@ -284,7 +284,7 @@ export function Pessoas() {
                     <Input
                       className="max-w-xs"
                       type="email"
-                      placeholder="pessoa@lmmobilidade.com.br"
+                      placeholder="pessoa@exemplo.com"
                       value={novoEmail}
                       onChange={(e) => setNovoEmail(e.target.value)}
                     />

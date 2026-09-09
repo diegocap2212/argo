@@ -73,7 +73,7 @@ export const PORTAL_ROLES_MIGRATION = "20260726120000_portal_roles.sql";
  * `20260726120000` referencia `is_portal_admin()`, que `20260731120000` remove de propósito.
  * O que importa verificar é que a migration sendo INTRODUZIDA sobrevive a um `db push` repetido.
  */
-export const NEWEST_MIGRATION = "20260731150000_fix_orfaos_view_rls.sql";
+export const NEWEST_MIGRATION = "20260909120000_remove_lm_domain_allowlist.sql";
 
 /** A migration que introduz o modelo RBAC — reaplicada à parte no teste de idempotência. */
 export const RBAC_MIGRATION = "20260731120000_neo_rbac.sql";

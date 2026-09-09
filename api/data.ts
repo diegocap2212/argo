@@ -25,7 +25,7 @@ interface ApiResponse {
 
 // Autentica (JWT do Supabase via Authorization: Bearer) E autoriza (allowlist do NEO) numa
 // única chamada ao RPC is_neo_allowed: o PostgREST rejeita token inválido, e a função retorna
-// true só para @lmmobilidade.com.br ou exceção aprovada em neo_access. Ver NEO README.
+// true só para quem está aprovado em neo_access. Ver NEO README.
 async function verifyBearer(req: ApiRequest): Promise<boolean> {
   const url = process.env.SUPABASE_URL;
   const anon = process.env.SUPABASE_ANON_KEY;

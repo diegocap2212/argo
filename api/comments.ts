@@ -20,7 +20,7 @@ interface ApiResponse {
 
 // Autentica (JWT do Supabase via Authorization: Bearer) E autoriza (allowlist do NEO) numa
 // única chamada ao RPC is_neo_allowed: o PostgREST rejeita token inválido, e a função retorna
-// true só para @lmmobilidade.com.br ou exceção aprovada em neo_access. Ver NEO README.
+// true só para quem está aprovado em neo_access. Ver NEO README.
 async function verifyBearer(req: ApiRequest): Promise<boolean> {
   const url = process.env.SUPABASE_URL;
   const anon = process.env.SUPABASE_ANON_KEY;
@@ -74,8 +74,8 @@ function encodeField(squadId: string, releaseId: string, quinzenaId: string, met
   return [squadId, releaseId, quinzenaId, metricId].map(encodeURIComponent).join(SEP);
 }
 
-// Limites de input. Autz é por sessão NEO (qualquer @lmmobilidade logado escreve — ferramenta
-// interna, não há modelo de membership por squad no Dash). Aqui barramos abuso: tipos errados,
+// Limites de input. Autz é por sessão NEO (qualquer pessoa da allowlist logada escreve —
+// ferramenta interna, não há membership por squad no Dash). Aqui barramos abuso: tipos errados,
 // identificadores gigantes (chave do Redis) e textos que estourariam o hash.
 const MAX_ID_LEN = 200;
 const MAX_TEXT_LEN = 4000;

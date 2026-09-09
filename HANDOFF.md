@@ -20,6 +20,35 @@ para ninguém ainda**.
 
 Verificar o estado em 1 comando: `corepack pnpm verify` (sai 0; ~15 min).
 
+## Rodada 2026-09-09 — Saída da LM: a allowlist vira a única porta
+
+A LM Mobilidade não opera mais o NEO. O domínio `@lmmobilidade.com.br`, que desde 13/07 liberava
+acesso **automaticamente**, deixou de significar qualquer coisa — inclusive para os dois admins,
+que eram e-mails LM. **Não existe mais liberação implícita:** quem entra é quem está aprovado em
+`neo_access`, gerido em Administração → Acesso.
+
+| Onde | O que mudou |
+|---|---|
+| Banco | `20260909120000_remove_lm_domain_allowlist.sql` — `is_neo_allowed()` e `is_neo_email_allowed()` perdem a cláusula de domínio; a allowlist nova entra; papéis LM revogados |
+| Hub | `ALLOWED_DOMAIN` e o atalho sem round-trip saíram de `neo-hub/src/main.ts`; copy do gate não cita mais a LM |
+| Portal MMA | `useAuth.tsx` não tem mais o `endsWith` — só o RPC decide |
+| Admin | `Acesso.tsx` deixa de recusar e-mail LM e de se chamar "lista de exceções": é A lista |
+| Testes | asserção nova em `rls-local.ts` trava o domínio contra reintrodução; fixtures que dependiam dele migraram para allowlist explícita |
+
+**ORDEM LOAD-BEARING na migration** (documentada nela): o admin novo entra na allowlist e recebe
+`admin_geral` **antes** de o domínio cair, e os papéis LM são revogados **por último**. Invertido,
+o trigger `assert_admin_path_reachable` aborta a transação — corretamente, porque o estado final
+não teria ninguém capaz de administrar acesso.
+
+**Quem tem acesso agora:** `diegocaporusso@gmail.com` (admin_geral), `carlinha4m@gmail.com`,
+`tordiego@gmail.com`, `elainemendes0978@gmail.com` (os três últimos sem papel — só o implícito
+`todos`). Conceder papel é pela tela, não por migration.
+
+⚠️ **Aplicar a migration é o que corta o acesso de fato.** Até ela rodar em produção, qualquer
+e-mail `@lmmobilidade.com.br` continua entrando. Sessões já emitidas sobrevivem ao corte: o
+`neo_session` vale até 12h e o access token do Supabase até 1h — para matar todas na hora,
+rotacione `SESSION_SECRET` e faça sign-out dos usuários no Supabase (ver `docs/SECURITY-PLAN.md`).
+
 ## A onda de 31/07 — RBAC do NEO
 
 Permissão deixou de estar espalhada em 34 policies e em TypeScript: virou **`neo_role_permissions`**,

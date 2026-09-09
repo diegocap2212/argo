@@ -283,7 +283,7 @@ export function bearerFrom(authorization: string | undefined | null): string {
 /**
  * Autentica (JWT do Supabase) E autoriza (allowlist do NEO) numa única chamada ao RPC
  * `is_neo_allowed`: o PostgREST rejeita token inválido, e a função retorna true só para
- * @lmmobilidade.com.br ou exceção aprovada em `neo_access`.
+ * quem está aprovado em `neo_access`.
  */
 export async function verifyBearer(authorization: string | undefined | null): Promise<boolean> {
   const url = process.env.SUPABASE_URL;

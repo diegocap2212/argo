@@ -94,9 +94,9 @@ de campos do dataset e offboarding formal.
 
 ## 3. Sessões e ciclo de vida de acesso
 
-- [ ] **Offboarding (T2)**: quando alguém sai da LM: (1) mailbox desativada bloqueia novos OTP; (2) sessão ativa: access token expira ≤1h, refresh token persiste — **revogar no Supabase** (Auth → user → sign out/ban); (3) remover exceção de `neo_access` se houver; (4) `neo_session` morre sozinho em ≤12h ou rotacione `SESSION_SECRET` para matar todos imediatamente.
-- [ ] **Revisão trimestral**: listar `neo_access` (exceções) e usuários Supabase ativos; remover quem não deveria estar.
-- [ ] **Allowlist por domínio**: qualquer mailbox @lmmobilidade entra — o RH/TI da LM é parte do perímetro. Registrar isso como premissa.
+- [ ] **Offboarding (T2)**: quando alguém sai: (1) **desmarcar `approved` em `neo_access`** — desde 09/09/2026 é isto que corta o próximo login, e não depende mais da mailbox ser desativada por terceiros; (2) sessão ativa: access token expira ≤1h, refresh token persiste — **revogar no Supabase** (Auth → user → sign out/ban); (3) revogar papéis com `offboard_person`; (4) `neo_session` morre sozinho em ≤12h ou rotacione `SESSION_SECRET` para matar todos imediatamente.
+- [ ] **Revisão trimestral**: listar `neo_access` e usuários Supabase ativos; remover quem não deveria estar.
+- [x] ~~**Allowlist por domínio**: qualquer mailbox @lmmobilidade entra — o RH/TI da LM é parte do perímetro.~~ **Resolvido em 09/09/2026** (`20260909120000`): a regra de domínio foi removida com a saída da LM. O perímetro não depende mais do RH/TI de ninguém — `neo_access` é enumerável e revisável.
 - [ ] Rate-limit de OTP no Supabase (hoje 100/h) — suficiente; monitorar abuso nos Auth logs.
 
 ## 4. Hardening de aplicação

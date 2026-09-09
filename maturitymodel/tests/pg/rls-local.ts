@@ -993,6 +993,12 @@ async function partE(db: PGlite) {
     "e-mail fora da allowlist do NEO devolve {}",
     (await perms("estranho@outraempresa.com", SEGREDO_BOM)).length === 0,
   );
+  // A saída da LM (20260909120000) em uma asserção: o domínio que liberava acesso sozinho
+  // passou a não significar nada. Sem isto, reintroduzir o atalho no SQL não quebraria nada.
+  check(
+    "domínio @lmmobilidade.com.br não concede mais nada por si só",
+    (await perms("qualquer.pessoa@lmmobilidade.com.br", SEGREDO_BOM)).length === 0,
+  );
   // Caixa alta e espaço em volta são normalizados — o e-mail vem de um JWT, não de um form.
   check(
     "e-mail é normalizado (caixa e espaços)",
@@ -1001,7 +1007,16 @@ async function partE(db: PGlite) {
 
   // ── O papel implícito `todos` alcança quem não tem papel nenhum ──
   // É o que impede a virada do RBAC de trancar fora quem só trabalha na empresa.
-  const semPapel = await perms("ninguem@lmmobilidade.com.br", SEGREDO_BOM);
+  //
+  // "Estar na empresa" hoje é ESTAR NA ALLOWLIST: desde 20260909120000 não existe liberação
+  // por domínio, e `todos` pende de `is_neo_email_allowed()`. Antes disso estas duas fixtures
+  // eram `@lmmobilidade.com.br` e entravam sozinhas — o que fazia o teste depender de uma
+  // regra que não existe mais. Agora o pertencimento é explícito, como em produção.
+  await db.query(
+    `insert into neo_access (email, approved) values ($1, true) on conflict (email) do nothing`,
+    ["ninguem@lm.test"],
+  );
+  const semPapel = await perms("ninguem@lm.test", SEGREDO_BOM);
   check(
     "pessoa sem papel nenhum ainda recebe as permissões de `todos`",
     semPapel.length > 0,
@@ -1012,14 +1027,18 @@ async function partE(db: PGlite) {
   // A PK de `portal_roles` é (email, role) — uma pessoa pode ter mais de um papel —, então o
   // conflito a tratar é o par, não o e-mail.
   await db.query(
-    `insert into portal_roles (email, role) values ($1, 'am') on conflict (email, role) do nothing`,
-    ["revogavel@lmmobilidade.com.br"],
+    `insert into neo_access (email, approved) values ($1, true) on conflict (email) do nothing`,
+    ["revogavel@lm.test"],
   );
-  const antesDaRevogacao = await perms("revogavel@lmmobilidade.com.br", SEGREDO_BOM);
+  await db.query(
+    `insert into portal_roles (email, role) values ($1, 'am') on conflict (email, role) do nothing`,
+    ["revogavel@lm.test"],
+  );
+  const antesDaRevogacao = await perms("revogavel@lm.test", SEGREDO_BOM);
   await db.query(`update portal_roles set revoked_at = now() where email = $1`, [
-    "revogavel@lmmobilidade.com.br",
+    "revogavel@lm.test",
   ]);
-  const depoisDaRevogacao = await perms("revogavel@lmmobilidade.com.br", SEGREDO_BOM);
+  const depoisDaRevogacao = await perms("revogavel@lm.test", SEGREDO_BOM);
   check(
     "papel revogado deixa de conceder imediatamente",
     antesDaRevogacao.length > depoisDaRevogacao.length,

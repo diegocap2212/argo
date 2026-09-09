@@ -10,7 +10,7 @@ interface AuthContextValue {
   session: Session | null;
   loading: boolean;
   isAnonymous: boolean;
-  /** Autorizado pela allowlist do NEO (@lmmobilidade.com.br ou exceção aprovada). */
+  /** Autorizado pela allowlist do NEO (aprovado em `neo_access`). */
   allowed: boolean;
   signOut: () => Promise<void>;
   redirectToHub: () => void;
@@ -26,11 +26,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Domínio corporativo entra direto; exceções são resolvidas pelo RPC is_neo_allowed.
+    // Quem entra é quem está na allowlist — o RPC is_neo_allowed é a única resposta.
     const checkAllowed = async (s: Session | null) => {
       if (!s) { if (mounted) setAllowed(false); return; }
-      const email = (s.user.email ?? "").toLowerCase();
-      if (email.endsWith("@lmmobilidade.com.br")) { if (mounted) setAllowed(true); return; }
       const { data, error } = await supabase.rpc("is_neo_allowed");
       if (mounted) setAllowed(!error && data === true);
     };

@@ -41,7 +41,7 @@ export function requireSecret(): string {
  */
 export async function neoSessionCookie(
   baseURL: string,
-  email = 'e2e@lmmobilidade.com.br',
+  email = 'e2e@neo.test',
   perms: string[] = ['neo.dash.access', 'neo.mma.access'],
 ) {
   const token = await signToken({ email, exp: Date.now() + TTL_MS, perms }, requireSecret());
