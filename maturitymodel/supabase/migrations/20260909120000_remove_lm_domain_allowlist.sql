@@ -35,9 +35,15 @@ begin;
 
 -- Sem isto, o passo 2 tranca todo mundo do lado de fora, o autor incluído.
 --
--- Estes quatro e-mails são a operação do NEO a partir daqui. Papel é outra conversa:
--- só o primeiro recebe `admin_geral` abaixo; os demais entram com o papel implícito
--- `todos` e ganham o que precisarem pela tela de Administração.
+-- Estes quatro e-mails são a operação do NEO a partir daqui, ao lado de
+-- `suelio.lima@venicetech.com.br`, que já estava na allowlist e não é tocado por esta
+-- migration (não é domínio LM).
+--
+-- DUAS DELAS NÃO SÃO PESSOAS NOVAS: `tordiego@` é o Diego Torres e `elainemendes0978@` é
+-- a Elaine Mendes — as mesmas que hoje têm `am` por `diego.torres@lmmobilidade.com.br` e
+-- `elaine.mendes@lmmobilidade.com.br`. Elas trocam de e-mail, não de função, então o papel
+-- vai junto (abaixo). Sem isso o passo 3 as deixaria dentro do NEO e sem poder homologar —
+-- o acesso sobreviveria à troca e a capacidade de trabalhar, não.
 insert into public.neo_access (email, approved, note)
 values
   ('diegocaporusso@gmail.com',    true, 'Admin principal do NEO após a saída da LM Mobilidade (2026-09-09).'),
@@ -58,6 +64,18 @@ values (
   'Sucede ext.diego.caporusso@lmmobilidade.com.br na transferência de operação.',
   'migration:20260909120000'
 )
+on conflict (email, role) do update
+  set revoked_at    = null,
+      revoked_by    = null,
+      revoke_reason = null,
+      note          = excluded.note;
+
+-- O `am` que muda de e-mail junto com a pessoa. Concedido ANTES da revogação do passo 3
+-- para que não exista instante — nem dentro da transação — em que ninguém possa homologar.
+insert into public.portal_roles (email, role, note, granted_by)
+values
+  ('tordiego@gmail.com',         'am', 'Sucede diego.torres@lmmobilidade.com.br.',  'migration:20260909120000'),
+  ('elainemendes0978@gmail.com', 'am', 'Sucede elaine.mendes@lmmobilidade.com.br.', 'migration:20260909120000')
 on conflict (email, role) do update
   set revoked_at    = null,
       revoked_by    = null,
