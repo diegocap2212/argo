@@ -40,14 +40,46 @@ que eram e-mails LM. **Não existe mais liberação implícita:** quem entra é 
 o trigger `assert_admin_path_reachable` aborta a transação — corretamente, porque o estado final
 não teria ninguém capaz de administrar acesso.
 
-**Quem tem acesso agora:** `diegocaporusso@gmail.com` (admin_geral), `carlinha4m@gmail.com`,
-`tordiego@gmail.com`, `elainemendes0978@gmail.com` (os três últimos sem papel — só o implícito
-`todos`). Conceder papel é pela tela, não por migration.
+**Quem tem acesso agora** (estado verificado no banco em 09/09/2026):
 
-⚠️ **Aplicar a migration é o que corta o acesso de fato.** Até ela rodar em produção, qualquer
-e-mail `@lmmobilidade.com.br` continua entrando. Sessões já emitidas sobrevivem ao corte: o
-`neo_session` vale até 12h e o access token do Supabase até 1h — para matar todas na hora,
-rotacione `SESSION_SECRET` e faça sign-out dos usuários no Supabase (ver `docs/SECURITY-PLAN.md`).
+| E-mail | Papel |
+|---|---|
+| `diegocaporusso@gmail.com` | `admin_geral` |
+| `suelio.lima@venicetech.com.br` | `admin_geral` — já estava na allowlist, não é domínio LM, não foi tocado |
+| `tordiego@gmail.com` | `am` — é o Diego Torres, sucede `diego.torres@lmmobilidade.com.br` |
+| `elainemendes0978@gmail.com` | `am` — é a Elaine Mendes, sucede `elaine.mendes@lmmobilidade.com.br` |
+| `carlinha4m@gmail.com` | sem papel (só o implícito `todos`) |
+
+Sete papéis `@lmmobilidade.com.br` revogados com motivo e `revoked_by`: `ext.diego.caporusso@`
+(admin_geral + am), `ext.tiago.massaro@` e `ext.lucas.chagas@` (admin_geral), `diego.torres@`,
+`elaine.mendes@` e `venice.elizabeth@` (am). As linhas ficam — revogar tira o acesso, não o registro.
+
+⚠️ **Dois dos gmails NÃO são pessoas novas.** `tordiego@` e `elainemendes0978@` são as mesmas
+pessoas que tinham `am` pelo e-mail LM. O papel foi junto de propósito: sem isso elas entrariam no
+NEO sem poder homologar — o acesso sobreviveria à troca de e-mail e a capacidade de trabalhar, não.
+Quem for mexer nisso depois: confira se um e-mail "novo" não é alguém que já tinha papel.
+
+✅ **NO AR** — migration aplicada em produção e front promovido (`dpl_BiHVWukdsQiMuKhHHXMEyacMH7Ea`)
+em 09/09/2026. Verificado no banco: `is_neo_email_allowed('qualquer@lmmobilidade.com.br')` = `false`.
+
+Sessões já emitidas sobreviveram ao corte por desenho: o `neo_session` vale até 12h e o access
+token do Supabase até 1h. Para matar todas na hora, rotacione `SESSION_SECRET` nos dois projetos
+Vercel com o mesmo valor e faça sign-out no Supabase (ver `docs/SECURITY-PLAN.md`). **Não foi
+feito** — se alguém da LM estava logado às 09/09, teve até 12h de sobrevida.
+
+### O que esta rodada descobriu sobre o estado real (leia antes de mexer no banco)
+
+**O histórico de migrations mentia.** `supabase migration list` dava cinco migrations de 27–31/07
+como PENDENTES, quando o schema de produção já tinha todas elas: `admin_geral`, `has_perm`,
+`my_permissions`, `neo_perms_for_email`, `offboard_person`, as colunas `granted_by`/`revoked_at`/
+`revoked_by`/`revoke_reason`/`user_id` em `portal_roles`, e `is_portal_admin` já removida. Alguém
+aplicou pelo dashboard sem registrar. O histórico foi reparado (`migration repair --status applied`),
+mas a lição fica: **verifique o schema, não o ledger** — `information_schema` e `pg_proc` são a
+verdade, `supabase_migrations` é só o que alguém lembrou de anotar.
+
+**Sobra uma migration fantasma:** `20260725113124` está aplicada em produção e **não existe no repo**.
+Ninguém consegue reproduzir o schema de produção a partir do código enquanto ela não for
+recuperada (`supabase db diff` ajuda a descobrir o que ela fez).
 
 ## A onda de 31/07 — RBAC do NEO
 
